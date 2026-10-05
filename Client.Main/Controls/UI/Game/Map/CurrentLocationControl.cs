@@ -593,18 +593,30 @@ namespace Client.Main.Controls.UI.Game.Map
         {
             const int frameWidth = 18;
             const int frameHeight = 13;
+            const int frameCount = 3;
 
             if (texture == null ||
                 texture.Width < frameWidth ||
-                texture.Height < frameHeight)
+                texture.Height < frameHeight * frameCount)
             {
                 return;
             }
 
-            // The first vertical frame is the normal button state.
+            // MacroUI textures use vertical states:
+            // normal, hover, pressed. The source files are 18 x 40 and the
+            // loader pads them to a power-of-two height, so use the authored
+            // 13-pixel frame height and keep the unused rows out of the draw.
+            Point mousePosition = MuGame.Instance.UiMouseState.Position;
+            bool hovered = destination.Contains(mousePosition);
+            bool pressed = hovered &&
+                           MuGame.Instance.UiMouseState.LeftButton == ButtonState.Pressed;
+
+            int frame = pressed ? 2 : hovered ? 1 : 0;
+            int sourceY = frame * frameHeight;
+
             Rectangle source = new Rectangle(
                 0,
-                0,
+                sourceY,
                 frameWidth,
                 frameHeight);
 

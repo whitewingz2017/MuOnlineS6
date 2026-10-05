@@ -113,8 +113,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Client.Data\Client.Data.csproj" />
-  </ItemGroup>
+  <ProjectReference Include="..\Client.Data\Client.Data.csproj" />
+  <ProjectReference Include="..\Client.Main\Client.Main.csproj">
+    <AdditionalProperties>ClientMainTargetFramework=$(TargetFramework);MonoGameFramework=$(MonoGameFramework);MonoGamePlatform=$(MonoGamePlatform)</AdditionalProperties>
+  </ProjectReference>
+</ItemGroup>
 
   <!-- Local-build convenience. CI restores tools once and disables this target. -->
   <Target Name="RestoreDotnetTools" BeforeTargets="RunContentBuilder" Condition="'$(RestoreMonoGameTools)' != 'false' AND '$(DesignTimeBuild)' != 'true'">
