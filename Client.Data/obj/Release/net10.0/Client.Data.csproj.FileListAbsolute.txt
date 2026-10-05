@@ -1,0 +1,10 @@
+C:\OpenMU\MuOnlineClient\Client.Data\bin\Release\net10.0\Client.Data.deps.json
+C:\OpenMU\MuOnlineClient\Client.Data\bin\Release\net10.0\Client.Data.dll
+C:\OpenMU\MuOnlineClient\Client.Data\obj\Release\net10.0\Client.Data.csproj.AssemblyReference.cache
+C:\OpenMU\MuOnlineClient\Client.Data\obj\Release\net10.0\Client.Data.GeneratedMSBuildEditorConfig.editorconfig
+C:\OpenMU\MuOnlineClient\Client.Data\obj\Release\net10.0\Client.Data.AssemblyInfoInputs.cache
+C:\OpenMU\MuOnlineClient\Client.Data\obj\Release\net10.0\Client.Data.AssemblyInfo.cs
+C:\OpenMU\MuOnlineClient\Client.Data\obj\Release\net10.0\Client.Data.csproj.CoreCompileInputs.cache
+C:\OpenMU\MuOnlineClient\Client.Data\obj\Release\net10.0\Client.Data.dll
+C:\OpenMU\MuOnlineClient\Client.Data\obj\Release\net10.0\refint\Client.Data.dll
+C:\OpenMU\MuOnlineClient\Client.Data\obj\Release\net10.0\ref\Client.Data.dll

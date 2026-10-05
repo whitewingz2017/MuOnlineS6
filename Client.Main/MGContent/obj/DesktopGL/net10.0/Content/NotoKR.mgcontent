@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PipelineBuildEvent xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <SourceFile>C:/OpenMU/MuOnlineClient/Client.Main/MGContent/NotoKR.spritefont</SourceFile>
+  <SourceTime>2026-10-03T09:42:29.0553066+08:00</SourceTime>
+  <DestFile>C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/DesktopGL/Content/NotoKR.xnb</DestFile>
+  <DestTime>2026-10-03T17:07:22.765735+08:00</DestTime>
+  <Importer>FontDescriptionImporter</Importer>
+  <ImporterTime>2026-07-16T00:21:24+08:00</ImporterTime>
+  <Processor>FontDescriptionProcessor</Processor>
+  <ProcessorTime>2026-07-16T00:21:24+08:00</ProcessorTime>
+  <Parameters>
+    <Key>PremultiplyAlpha</Key>
+    <Value>True</Value>
+  </Parameters>
+  <Dependencies />
+  <BuildAsset />
+  <BuildOutput />
+</PipelineBuildEvent>

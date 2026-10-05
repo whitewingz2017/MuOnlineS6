@@ -1,0 +1,14 @@
+Source File,Dest File,Processor Type,Content Type,Source File Size,Dest File Size,Build Seconds
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/AlphaRGB.fx","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/AlphaRGB.xnb","EffectProcessor","CompiledEffectContent",1955,3193,0.3562436
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/Arial.spritefont","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/Arial.xnb","FontDescriptionProcessor","SpriteFontContent",3168,399601,0.217962
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/ArialSmall.spritefont","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/ArialSmall.xnb","FontDescriptionProcessor","SpriteFontContent",1704,174321,0.0651488
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/Background.jpg","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/Background.xnb","TextureProcessor","Texture2DContent",1418529,16908373,0.314667
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/Bubbles.png","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/Bubbles.xnb","TextureProcessor","Texture2DContent",32056,262229,0.0194427
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/DynamicLighting.fx","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/DynamicLighting.xnb","EffectProcessor","CompiledEffectContent",43129,194675,3.1759121
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/FXAA.fx","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/FXAA.xnb","EffectProcessor","CompiledEffectContent",5508,9299,0.1166999
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/GammaCorrection.fx","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/GammaCorrection.xnb","EffectProcessor","CompiledEffectContent",1199,1941,0.0923787
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/ItemMaterial.fx","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/ItemMaterial.xnb","EffectProcessor","CompiledEffectContent",31348,101033,1.1170859
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/MonsterMaterial.fx","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/MonsterMaterial.xnb","EffectProcessor","CompiledEffectContent",9175,60971,0.3945582
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/NotoKR.spritefont","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/NotoKR.xnb","FontDescriptionProcessor","SpriteFontContent",632,11392823,1.5826788
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/Shadow.fx","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/Shadow.xnb","EffectProcessor","CompiledEffectContent",1466,3237,0.0781115
+"C:/OpenMU/MuOnlineClient/Client.Main/MGContent/WaterSplashParticle.png","C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/WaterSplashParticle.xnb","TextureProcessor","Texture2DContent",55327,284885,0.0143407

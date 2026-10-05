@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PipelineBuildEvent xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <SourceFile>C:/OpenMU/MuOnlineClient/Client.Main/MGContent/Bubbles.png</SourceFile>
+  <SourceTime>2026-10-03T09:42:29.0164295+08:00</SourceTime>
+  <DestFile>C:/OpenMU/MuOnlineClient/Client.Main/MGContent/bin/Windows/Content/Bubbles.xnb</DestFile>
+  <DestTime>2026-10-03T09:58:25.9890171+08:00</DestTime>
+  <Importer>TextureImporter</Importer>
+  <ImporterTime>2026-07-16T00:21:24+08:00</ImporterTime>
+  <Processor>TextureProcessor</Processor>
+  <ProcessorTime>2026-07-16T00:21:24+08:00</ProcessorTime>
+  <Dependencies />
+  <BuildAsset />
+  <BuildOutput />
+</PipelineBuildEvent>
