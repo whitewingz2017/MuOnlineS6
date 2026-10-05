@@ -404,7 +404,7 @@ namespace Client.Main.Scenes
             Controls.Add(_muHelperWindow);
             ApplyHudTheme(force: true);
 
-            _currentLocationControl = new CurrentLocationControl(characterState);
+            _currentLocationControl = new CurrentLocationControl(this, characterState);
             Controls.Add(_currentLocationControl);
             _activeBuffsPanel = new ActiveBuffsPanel(characterState, _currentLocationControl);
             Controls.Add(_activeBuffsPanel);

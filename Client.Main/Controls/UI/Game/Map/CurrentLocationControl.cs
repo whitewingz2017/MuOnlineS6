@@ -1,11 +1,12 @@
 #nullable enable
+
 using System;
 using System.Threading.Tasks;
 using Client.Main.Controls.UI.Common;
 using Client.Main.Controls.UI.Game.Common;
-using Client.Main.Controllers;
 using Client.Main.Core.Client;
 using Client.Main.Core.Utilities;
+using Client.Main.Controllers;
 using Client.Main.Helpers;
 using Client.Main.Models;
 using Client.Main.Scenes;
@@ -15,129 +16,203 @@ using Microsoft.Xna.Framework.Input;
 
 namespace Client.Main.Controls.UI.Game.Map
 {
-    /// <summary>
-    /// Classic MU Main map/position bar.
-    ///
-    /// MuMain renders this control as three adjacent pieces:
-    ///   Minimap_positionA.tga       22 x 25
-    ///   Minimap_positionB.tga       WidenX x 25
-    ///   Minimap_positionC.tga       73 x 20
-    ///
-    /// The middle texture is rendered with the same cropped source region as
-    /// NewUIHeroPositionInfo::Render so its transparent/unused texture area is
-    /// never exposed as a black gap.
-    /// </summary>
     public sealed class CurrentLocationControl : UIControl
     {
-        private const string FrameLeftPath = "Interface/Minimap_positionA.OZT";
-        private const string FrameMiddlePath = "Interface/Minimap_positionB.OZT";
-        private const string FrameRightPath = "Interface/MacroUI/Minimap_positionC.OZT";
-        private const string SetupButtonPath = "Interface/MacroUI/MacroUI_Setup.OZT";
-        private const string StartButtonPath = "Interface/MacroUI/MacroUI_Start.OZT";
-        private const string StopButtonPath = "Interface/MacroUI/MacroUI_Stop.OZT";
-
         private readonly CharacterState _characterState;
+        private readonly GameScene _scene;
 
         private Point _lastVirtualSize = Point.Zero;
         private SpriteFont? _font;
         private string _mapName = string.Empty;
 
+        private float _mapScale = 0.55f;
+        private float _coordsScale = 0.48f;
+
+        private bool IsSeason6 => UiThemeManager.CurrentId == UiThemeId.Season6;
+        private bool IsClassic => UiThemeManager.CurrentId == UiThemeId.Classic;
+
+        // ============================================================
+        // FRAME TEXTURES
+        // ============================================================
+
         private Texture2D? _frameLeft;
         private Texture2D? _frameMiddle;
         private Texture2D? _frameRight;
+
+        // ============================================================
+        // MACRO UI BUTTON TEXTURES
+        // ============================================================
+
         private Texture2D? _btnSetup;
         private Texture2D? _btnStart;
         private Texture2D? _btnStop;
 
         private bool _texturesLoaded;
         private bool _texturesLoading;
-        private bool _helperActive;
-        private bool _previousMouseDown;
+
+        // ============================================================
+        // BUTTON HIT AREAS
+        // ============================================================
 
         private Rectangle _hitSetup;
         private Rectangle _hitStartStop;
 
-        // All classic bar dimensions are derived from this one scale value.
-        private float _uiScale = 1.0f;
-        private float _mapScale;
+        // ============================================================
+        // SCALED SIZES
+        // ============================================================
+
         private int _leftW;
-        private int _middleW;
+        private int _midW;
         private int _rightW;
         private int _frameH;
         private int _rightH;
 
-        public CurrentLocationControl(CharacterState characterState)
+        private float _uiScale = 2.85f;
+        private float _frameScale = 1.15f;
+        private float _middleWidthScale = 1.5f;
+
+        // ============================================================
+        // RIGHT FRAME POSITION / SCALE
+        // ============================================================
+
+        private float _frameRightScaleX = 1.0f;
+        private float _frameRightScaleY = 1.0f;
+
+        private int _frameRightOffsetX = 0;
+        private int _frameRightOffsetY = 0;
+
+        // ============================================================
+        // BUTTON POSITION OFFSETS
+        // ============================================================
+
+        private int _btnSetupOffsetX = -4;
+        private float _btnSetupOffsetY = 0.1f;
+
+        private int _btnStartOffsetX = -9;
+        private float _btnStartOffsetY = 0.3f;
+
+        private int _btnStopOffsetX = -6;
+        private float _btnStopOffsetY = 2f;
+
+        // ============================================================
+        // BUTTON SIZE
+        // ============================================================
+
+        // This controls the actual displayed button size.
+        // Smaller values = smaller MacroUI buttons.
+        private float _buttonWidth = 15f;
+        private float _buttonHeight = 11.5f;
+
+        // ============================================================
+        // CONSTRUCTOR
+        // ============================================================
+
+        public CurrentLocationControl(
+            GameScene scene,
+            CharacterState characterState)
         {
-            _characterState = characterState;
+            _scene = scene ?? throw new ArgumentNullException(nameof(scene));
+            _characterState = characterState ?? throw new ArgumentNullException(nameof(characterState));
 
             AutoViewSize = false;
             Interactive = true;
+
             BackgroundColor = Color.Transparent;
             BorderColor = Color.Transparent;
             BorderThickness = 0;
 
             RefreshLayout();
             RefreshData();
+
             _ = LoadTexturesAsync();
         }
 
+        // ============================================================
+        // BUFF ANCHOR
+        // ============================================================
+
         public Point GetBuffAnchor(int gap)
         {
-            Rectangle rect = DisplayRectangle;
-            return new Point(rect.Right + gap, rect.Y);
+            var rect = DisplayRectangle;
+
+            return new Point(
+                rect.Right + gap,
+                rect.Y);
         }
+
+        // ============================================================
+        // SCREEN SIZE
+        // ============================================================
 
         protected override void OnScreenSizeChanged()
         {
             base.OnScreenSizeChanged();
+
             _lastVirtualSize = Point.Zero;
         }
+
+        // ============================================================
+        // THEME CHANGE
+        // ============================================================
 
         protected override void OnThemeChanged(UiThemeChangedEventArgs e)
         {
             base.OnThemeChanged(e);
+
             _lastVirtualSize = Point.Zero;
-            _texturesLoaded = false;
+
             RefreshLayout();
         }
+
+        // ============================================================
+        // UPDATE
+        // ============================================================
 
         public override void Update(GameTime gameTime)
         {
             base.Update(gameTime);
+
             RefreshLayout();
             RefreshData();
-            UpdateHitAreas();
 
             if (!_texturesLoaded && !_texturesLoading)
+            {
                 _ = LoadTexturesAsync();
+            }
 
-            _helperActive = (Scene as GameScene)?.IsMuHelperActive ?? _helperActive;
             HandleButtonClicks();
         }
+
+        // ============================================================
+        // DRAW
+        // ============================================================
 
         public override void Draw(GameTime gameTime)
         {
             if (Status != GameControlStatus.Ready || !Visible)
                 return;
 
-            SpriteBatch? spriteBatch = GraphicsManager.Instance.Sprite;
+            var spriteBatch = GraphicsManager.Instance.Sprite;
+
             if (spriteBatch == null)
                 return;
 
             SpriteBatchScope? scope = null;
+
             if (!SpriteBatchScope.BatchIsBegun)
             {
                 scope = new SpriteBatchScope(
                     spriteBatch,
                     SpriteSortMode.Deferred,
                     BlendState.AlphaBlend,
-                    SamplerState.LinearClamp,
+                    SamplerState.PointClamp,
                     transform: UiScaler.SpriteTransform);
             }
 
             try
             {
                 _font ??= GraphicsManager.Instance.Font;
+
                 if (_font == null)
                     return;
 
@@ -149,67 +224,128 @@ namespace Client.Main.Controls.UI.Game.Map
             }
         }
 
+        // ============================================================
+        // LAYOUT
+        // ============================================================
+
         private void RefreshLayout()
         {
             Point virtualSize = UiScaler.VirtualSize;
+
             if (virtualSize == _lastVirtualSize)
                 return;
 
             _lastVirtualSize = virtualSize;
 
-            // MuMain uses the 20% middle-width variant below 800px and the
-            // 40% variant above 800px. The source middle width is 80px.
-            // The previous 1.85 multiplier enlarged the 25px MuMain plate to
-            // roughly 45px and made the map label oversized. MuMain's artwork
-            // is already authored at its intended pixel size; UiScaler handles
-            // the physical-window scaling outside this control.
-            _uiScale = Math.Clamp(virtualSize.Y / 720f, 0.85f, 1.25f);
-            _mapScale = 0.55f * _uiScale;
+            // ========================================================
+            // OVERALL UI SCALE
+            // ========================================================
 
-            _leftW = Scaled(22);
-            _middleW = Scaled(virtualSize.X > 800 ? 112 : 96);
-            _rightW = Scaled(73);
-            _frameH = Scaled(25);
-            _rightH = Scaled(20);
+            _uiScale = Math.Clamp(
+                virtualSize.Y / 720f * 1.85f,
+                1.5f,
+                2.3f);
 
-            int totalWidth = _leftW + _middleW + _rightW;
-            X = Scaled(12);
-            Y = Scaled(8);
-            ControlSize = new Point(totalWidth, _frameH);
+            // ========================================================
+            // TEXT SCALE
+            // ========================================================
+
+            _mapScale = 0.2f * _uiScale;
+
+            // ========================================================
+            // FRAME SIZES
+            // ========================================================
+
+            _leftW = (int)(22 * _uiScale * _frameScale);
+            _rightW = (int)(93 * _uiScale * _frameScale);
+            _frameH = (int)(25 * _uiScale * _frameScale);
+            _rightH = (int)(25 * _uiScale * _frameScale);
+
+            // ========================================================
+            // MIDDLE WIDTH
+            // ========================================================
+
+            int midBase = (int)(55 * _uiScale * _frameScale);
+            _midW = (int)(midBase * _middleWidthScale * _frameScale);
+
+            // ========================================================
+            // TOTAL CONTROL SIZE
+            // ========================================================
+
+            int totalWidth =
+                _leftW +
+                _midW +
+                _rightW;
+
+            X = (int)(12 * _uiScale);
+
+            Y = (int)(8 * _uiScale);
+
+            ControlSize = new Point(
+                totalWidth,
+                _frameH);
+
             ViewSize = ControlSize;
         }
 
-        private int Scaled(float value)
-        {
-            return Math.Max(1, (int)MathF.Round(value * _uiScale));
-        }
+        // ============================================================
+        // DATA
+        // ============================================================
 
         private void RefreshData()
         {
-            _mapName = MapDatabase.GetMapName(_characterState.MapId);
+            _mapName = MapDatabase.GetMapName(
+                _characterState.MapId);
         }
+
+        // ============================================================
+        // LOAD TEXTURES
+        // ============================================================
 
         private async Task LoadTexturesAsync()
         {
-            if (_texturesLoading)
+            if (_texturesLoaded || _texturesLoading)
                 return;
 
             _texturesLoading = true;
-            _texturesLoaded = false;
 
             try
             {
-                _frameLeft = await UiThemeManager.LoadThemeTextureAsync(FrameLeftPath);
-                _frameMiddle = await UiThemeManager.LoadThemeTextureAsync(FrameMiddlePath);
-                _frameRight = await UiThemeManager.LoadThemeTextureAsync(FrameRightPath);
-                _btnSetup = await UiThemeManager.LoadThemeTextureAsync(SetupButtonPath);
-                _btnStart = await UiThemeManager.LoadThemeTextureAsync(StartButtonPath);
-                _btnStop = await UiThemeManager.LoadThemeTextureAsync(StopButtonPath);
+                // ====================================================
+                // MAIN BAR
+                // ====================================================
+
+                _frameLeft =
+                    await UiThemeManager.LoadThemeTextureAsync(
+                        "Interface/Minimap_positionA.OZT");
+
+                _frameMiddle =
+                    await UiThemeManager.LoadThemeTextureAsync(
+                        "Interface/Minimap_positionB.OZT");
+
+                _frameRight =
+                    await UiThemeManager.LoadThemeTextureAsync(
+                        "Interface/MacroUI/Minimap_positionC.OZT");
+
+                // ====================================================
+                // MACRO BUTTONS
+                // ====================================================
+
+                _btnSetup =
+                    await UiThemeManager.LoadThemeTextureAsync(
+                        "Interface/MacroUI/MacroUI_Setup.OZT");
+
+                _btnStart =
+                    await UiThemeManager.LoadThemeTextureAsync(
+                        "Interface/MacroUI/MacroUI_Start.OZT");
+
+                _btnStop =
+                    await UiThemeManager.LoadThemeTextureAsync(
+                        "Interface/MacroUI/MacroUI_Stop.OZT");
             }
             catch
             {
-                // The pixel/background fallback in DrawMuMainStyleBar keeps the
-                // control usable while an optional texture is unavailable.
+                // Missing textures → fallback rendering will be used.
             }
             finally
             {
@@ -218,138 +354,311 @@ namespace Client.Main.Controls.UI.Game.Map
             }
         }
 
+        // ============================================================
+        // MAIN BAR
+        // ============================================================
+
         private void DrawMuMainStyleBar(SpriteBatch spriteBatch)
         {
-            Texture2D? pixel = GraphicsManager.Instance.Pixel;
+            var pixel = GraphicsManager.Instance.Pixel;
+
             if (pixel == null || _font == null)
                 return;
 
-            Rectangle bar = DisplayRectangle;
-            int leftX = bar.X;
-            int middleX = leftX + _leftW;
-            int rightX = middleX + _middleW;
+            Rectangle rect = DisplayRectangle;
 
-            Rectangle leftRect = new(leftX, bar.Y, _leftW, _frameH);
-            Rectangle middleRect = new(middleX, bar.Y, _middleW, _frameH);
-            Rectangle rightRect = new(rightX, bar.Y, _rightW, _rightH);
+            // ========================================================
+            // BAR POSITIONS
+            // ========================================================
 
-            // Draw a complete middle plate first. This guarantees an opaque,
-            // dark connection between the two ornate pieces even if the B
-            // texture contains transparent pixels.
-            spriteBatch.Draw(pixel, middleRect, new Color(20, 14, 11, 245) * Alpha);
+            int leftX = rect.X;
+
+            int midX =
+                leftX +
+                _leftW -
+                (int)(10 * _uiScale);
+
+            int rightX =
+                midX +
+                _midW -
+                (int)(22 * _uiScale);
+
+            // ========================================================
+            // LEFT FRAME
+            // ========================================================
 
             if (_frameLeft != null)
             {
-                spriteBatch.Draw(_frameLeft, leftRect, Color.White * Alpha);
+                spriteBatch.Draw(
+                    _frameLeft,
+                    new Rectangle(
+                        leftX,
+                        rect.Y,
+                        _leftW,
+                        _frameH),
+                    Color.White * Alpha);
             }
+
+            // ========================================================
+            // MIDDLE FRAME
+            // ========================================================
 
             if (_frameMiddle != null)
             {
-                // MuMain's RenderImage call uses:
-                //   u = 0.1f, v = 0f, width = 22.4f / 32f,
-                //   height = 25f / 32f.
-                Rectangle source = GetMuMainMiddleSource(_frameMiddle);
-                spriteBatch.Draw(_frameMiddle, middleRect, source, Color.White * Alpha);
+                spriteBatch.Draw(
+                    _frameMiddle,
+                    new Rectangle(
+                        midX,
+                        rect.Y,
+                        _midW,
+                        _frameH),
+                    Color.White * Alpha);
             }
+
+            // ========================================================
+            // RIGHT FRAME
+            // ========================================================
 
             if (_frameRight != null)
             {
-                spriteBatch.Draw(_frameRight, rightRect, Color.White * Alpha);
+                int frameRightW =
+                    (int)(_rightW * _frameRightScaleX);
+
+                int frameRightH =
+                    (int)(_rightH * _frameRightScaleY);
+
+                int frameRightX =
+                    rightX +
+                    (int)(_frameRightOffsetX * _uiScale);
+
+                int frameRightY =
+                    rect.Y +
+                    (int)(_frameRightOffsetY * _uiScale);
+
+                spriteBatch.Draw(
+                    _frameRight,
+                    new Rectangle(
+                        frameRightX,
+                        frameRightY,
+                        frameRightW,
+                        frameRightH),
+                    Color.White * Alpha);
             }
 
-            // Keep a thin middle border after the texture so the seams remain
-            // closed and readable even when an asset has transparent edges.
-            int border = Math.Max(1, Scaled(1));
-            Color borderColor = new Color(151, 119, 74, 180) * Alpha;
-            spriteBatch.Draw(pixel, new Rectangle(middleRect.X, middleRect.Y, middleRect.Width, border), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(middleRect.X, middleRect.Bottom - border, middleRect.Width, border), borderColor);
+            // ========================================================
+            // MACRO BUTTONS
+            // ========================================================
 
-            // MuMain button placement is relative to the complete bar:
-            // setup at x + WidenX + 41, start/stop at x + WidenX + 59.
-            int buttonW = Scaled(18);
-            int buttonH = Scaled(13);
-            _hitSetup = new Rectangle(rightX + Scaled(19), bar.Y, buttonW, buttonH);
-            _hitStartStop = new Rectangle(rightX + Scaled(37), bar.Y, buttonW, buttonH);
+            DrawMacroButtons(
+                spriteBatch,
+                rect,
+                rightX);
 
-            if (_btnSetup != null)
-            {
-                spriteBatch.Draw(_btnSetup, _hitSetup, Color.White * Alpha);
-            }
+            // ========================================================
+            // MAP TEXT
+            // ========================================================
 
-            Texture2D? activeButton = _helperActive ? _btnStop : _btnStart;
-            if (activeButton != null)
-            {
-                spriteBatch.Draw(activeButton, _hitStartStop, Color.White * Alpha);
-            }
+            string text =
+                $"{_mapName} ({_characterState.PositionX}, {_characterState.PositionY})";
 
-            string text = $"{_mapName} ({_characterState.PositionX} , {_characterState.PositionY})";
-            Vector2 textSize = _font.MeasureString(text) * _mapScale;
-            float textX = middleRect.Center.X - textSize.X / 2f;
-            float textY = middleRect.Center.Y - textSize.Y / 2f;
+            Vector2 size =
+                _font.MeasureString(text) *
+                _mapScale;
+
+            float textX =
+                midX +
+                (_midW - size.X) / 2.8f;
+
+            float textY =
+                rect.Y +
+                (_frameH - size.Y) / 5.0f;
 
             spriteBatch.DrawString(
                 _font,
                 text,
-                new Vector2(textX + Scaled(1), textY + Scaled(1)),
-                Color.Black * 0.8f * Alpha,
+                new Vector2(
+                    textX,
+                    textY),
+                new Color(
+                    255,
+                    230,
+                    180) * Alpha,
                 0f,
                 Vector2.Zero,
                 _mapScale,
                 SpriteEffects.None,
                 0f);
-            spriteBatch.DrawString(
-                _font,
-                text,
-                new Vector2(textX, textY),
-                Color.White * Alpha,
-                0f,
-                Vector2.Zero,
-                _mapScale,
-                SpriteEffects.None,
-                0f);
         }
 
-        private static Rectangle GetMuMainMiddleSource(Texture2D texture)
+        // ============================================================
+        // MACRO BUTTONS
+        // ============================================================
+
+        private void DrawMacroButtons(
+            SpriteBatch spriteBatch,
+            Rectangle rect,
+            int rightX)
         {
-            int sourceX = Math.Clamp((int)MathF.Round(texture.Width * 0.1f), 0, texture.Width - 1);
-            int sourceY = 0;
-            int sourceWidth = Math.Max(1, (int)MathF.Round(texture.Width * (22.4f / 32f)));
-            int sourceHeight = Math.Max(1, (int)MathF.Round(texture.Height * (25f / 32f)));
+            // ========================================================
+            // BUTTON SIZE
+            // ========================================================
 
-            sourceWidth = Math.Min(sourceWidth, texture.Width - sourceX);
-            sourceHeight = Math.Min(sourceHeight, texture.Height - sourceY);
-            return new Rectangle(sourceX, sourceY, sourceWidth, sourceHeight);
+            int btnW =
+                (int)(_buttonWidth * _uiScale);
+
+            int btnH =
+                (int)(_buttonHeight * _uiScale);
+
+            // ========================================================
+            // SETUP BUTTON
+            // ========================================================
+
+            _hitSetup = new Rectangle(
+                rightX +
+                (int)((20 + _btnSetupOffsetX) * _uiScale),
+
+                rect.Y +
+                (int)((1 + _btnSetupOffsetY) * _uiScale),
+
+                btnW,
+                btnH);
+
+            // ========================================================
+            // START / STOP BUTTON
+            // ========================================================
+
+            _hitStartStop = new Rectangle(
+                rightX +
+                (int)((40 + _btnStartOffsetX) * _uiScale),
+
+                rect.Y +
+                (int)((1 + _btnStartOffsetY) * _uiScale),
+
+                btnW,
+                btnH);
+
+            // ========================================================
+            // SETUP
+            // ========================================================
+
+            DrawMacroButton(
+                spriteBatch,
+                _btnSetup,
+                _hitSetup);
+
+            // ========================================================
+            // START / STOP
+            // ========================================================
+
+            if (_scene.IsMuHelperActive)
+            {
+                DrawMacroButton(
+                    spriteBatch,
+                    _btnStop,
+                    _hitStartStop);
+            }
+            else
+            {
+                DrawMacroButton(
+                    spriteBatch,
+                    _btnStart,
+                    _hitStartStop);
+            }
         }
 
-        private void UpdateHitAreas()
+        // ============================================================
+        // DRAW ONE MACRO BUTTON
+        // ============================================================
+        //
+        // The MacroUI textures contain 3 vertical frames.
+        //
+        // Instead of drawing the whole texture, we only take the
+        // FIRST frame:
+        //
+        // [ FRAME 1 ]
+        // [ FRAME 2 ]
+        // [ FRAME 3 ]
+        //     ^
+        //     |
+        //     +---- draw only this
+        //
+        // The OZT loader pads textures to power-of-two dimensions, so use
+        // the authored 18 x 13 frame size rather than texture.Width/Height.
+        // ============================================================
+
+        private void DrawMacroButton(
+            SpriteBatch spriteBatch,
+            Texture2D? texture,
+            Rectangle destination)
         {
-            Rectangle bar = DisplayRectangle;
-            int rightX = bar.X + _leftW + _middleW;
-            _hitSetup = new Rectangle(rightX + Scaled(19), bar.Y, Scaled(18), Scaled(13));
-            _hitStartStop = new Rectangle(rightX + Scaled(37), bar.Y, Scaled(18), Scaled(13));
+            const int frameWidth = 18;
+            const int frameHeight = 13;
+
+            if (texture == null ||
+                texture.Width < frameWidth ||
+                texture.Height < frameHeight)
+            {
+                return;
+            }
+
+            // The first vertical frame is the normal button state.
+            Rectangle source = new Rectangle(
+                0,
+                0,
+                frameWidth,
+                frameHeight);
+
+            spriteBatch.Draw(
+                texture,
+                destination,
+                source,
+                Color.White * Alpha);
         }
+
+        // ============================================================
+        // BUTTON CLICK HANDLING
+        // ============================================================
 
         private void HandleButtonClicks()
         {
-            MouseState mouse = Mouse.GetState();
-            bool mouseDown = mouse.LeftButton == ButtonState.Pressed;
-            bool pressedThisFrame = mouseDown && !_previousMouseDown;
-            _previousMouseDown = mouseDown;
+            var mouse =
+                MuGame.Instance.UiMouseState;
 
-            if (!pressedThisFrame)
+            var previousMouse =
+                MuGame.Instance.PrevUiMouseState;
+
+            bool leftJustPressed =
+                mouse.LeftButton == ButtonState.Pressed &&
+                previousMouse.LeftButton == ButtonState.Released;
+
+            if (!leftJustPressed)
                 return;
 
-            Point virtualMousePosition = UiScaler.ToVirtual(mouse.Position);
-            GameScene? gameScene = Scene as GameScene;
+            Point mousePos =
+                mouse.Position;
 
-            if (_hitSetup.Contains(virtualMousePosition))
+            // ========================================================
+            // SETUP
+            // ========================================================
+
+            if (_hitSetup.Contains(mousePos))
             {
-                gameScene?.MuHelperWindow?.ToggleVisibility();
+                _scene.MuHelperWindow?.ToggleVisibility();
+
+                _scene.SetMouseInputConsumed();
+
+                return;
             }
-            else if (_hitStartStop.Contains(virtualMousePosition))
+
+            // ========================================================
+            // START / STOP
+            // ========================================================
+
+            if (_hitStartStop.Contains(mousePos))
             {
-                gameScene?.MuHelperController?.Toggle();
-                _helperActive = gameScene?.IsMuHelperActive ?? !_helperActive;
+                _scene.MuHelperController?.Toggle();
+
+                _scene.SetMouseInputConsumed();
             }
         }
     }
