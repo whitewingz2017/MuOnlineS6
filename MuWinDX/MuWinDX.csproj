@@ -2,6 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <MonoGamePlatform>Windows</MonoGamePlatform>
+    <!-- Content.mgcb is referenced explicitly below; disable package auto-discovery so its wildcard item cannot leak into the output path. -->
+    <EnableMGCBItems>false</EnableMGCBItems>
     <TargetFramework>net10.0-windows</TargetFramework>
     <ClientMainTargetFramework>net10.0-windows</ClientMainTargetFramework>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>

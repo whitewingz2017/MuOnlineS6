@@ -1,9 +1,0 @@
-C:\OpenMU\MuOnlineClient\Client.Telemetry\bin\Release\net10.0\Client.Telemetry.deps.json
-C:\OpenMU\MuOnlineClient\Client.Telemetry\bin\Release\net10.0\Client.Telemetry.dll
-C:\OpenMU\MuOnlineClient\Client.Telemetry\obj\Release\net10.0\Client.Telemetry.GeneratedMSBuildEditorConfig.editorconfig
-C:\OpenMU\MuOnlineClient\Client.Telemetry\obj\Release\net10.0\Client.Telemetry.AssemblyInfoInputs.cache
-C:\OpenMU\MuOnlineClient\Client.Telemetry\obj\Release\net10.0\Client.Telemetry.AssemblyInfo.cs
-C:\OpenMU\MuOnlineClient\Client.Telemetry\obj\Release\net10.0\Client.Telemetry.csproj.CoreCompileInputs.cache
-C:\OpenMU\MuOnlineClient\Client.Telemetry\obj\Release\net10.0\Client.Telemetry.dll
-C:\OpenMU\MuOnlineClient\Client.Telemetry\obj\Release\net10.0\refint\Client.Telemetry.dll
-C:\OpenMU\MuOnlineClient\Client.Telemetry\obj\Release\net10.0\ref\Client.Telemetry.dll
