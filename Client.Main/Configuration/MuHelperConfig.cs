@@ -18,6 +18,7 @@ namespace Client.Main.Configuration
         public MuHelperSkillActivation ActivationSkill1 { get; set; } = new();
         public MuHelperSkillActivation ActivationSkill2 { get; set; } = new();
         public bool UseCombo { get; set; }
+        public ushort[] ComboSkillIds { get; set; } = new ushort[3];
         public ushort[] BuffSkillIds { get; set; } = new ushort[3];
         public bool BuffDuration { get; set; }
         public bool BuffDurationParty { get; set; }

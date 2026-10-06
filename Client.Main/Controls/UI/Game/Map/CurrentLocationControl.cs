@@ -2,6 +2,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Client.Main.Configuration;
 using Client.Main.Controls.UI.Common;
 using Client.Main.Controls.UI.Game.Common;
 using Client.Main.Core.Client;
@@ -131,7 +132,21 @@ namespace Client.Main.Controls.UI.Game.Map
         // BUFF ANCHOR
         // ============================================================
 
+        private const int OriginalBaseX = 12;
+        private const int OriginalBaseY = 10;
+        private const int OriginalPlateWidth = 220;
+        private const int OriginalBaseHeight = 28;
+        private const int OriginalPadX = 10;
+        private const int OriginalButtonGap = 4;
+        private const int OriginalButtonWidth = 52;
+        private const int OriginalButtonHeight = 22;
+
+        private bool UseOriginalLocationBar =>
+            UiThemeManager.CurrentId == UiThemeId.Classic ||
+            (MuGame.AppSettings?.HudTheme ?? HudTheme.Hybrid) != HudTheme.ClassicPc;
+
         public Point GetBuffAnchor(int gap)
+
         {
             var rect = DisplayRectangle;
 
@@ -175,12 +190,24 @@ namespace Client.Main.Controls.UI.Game.Map
             RefreshLayout();
             RefreshData();
 
+            if (UseOriginalLocationBar)
+            {
+                HandleButtonClicks();
+                return;
+            }
+
             if (!_texturesLoaded && !_texturesLoading)
             {
                 _ = LoadTexturesAsync();
             }
 
             HandleButtonClicks();
+        }
+
+        public void InvalidateLayout()
+        {
+            _lastVirtualSize = Point.Zero;
+            RefreshLayout();
         }
 
         // ============================================================
@@ -205,7 +232,7 @@ namespace Client.Main.Controls.UI.Game.Map
                     spriteBatch,
                     SpriteSortMode.Deferred,
                     BlendState.AlphaBlend,
-                    SamplerState.PointClamp,
+                    UseOriginalLocationBar ? SamplerState.LinearClamp : SamplerState.PointClamp,
                     transform: UiScaler.SpriteTransform);
             }
 
@@ -216,7 +243,10 @@ namespace Client.Main.Controls.UI.Game.Map
                 if (_font == null)
                     return;
 
-                DrawMuMainStyleBar(spriteBatch);
+                if (UseOriginalLocationBar)
+                    DrawOriginalBar(spriteBatch);
+                else
+                    DrawMuMainStyleBar(spriteBatch);
             }
             finally
             {
@@ -236,6 +266,12 @@ namespace Client.Main.Controls.UI.Game.Map
                 return;
 
             _lastVirtualSize = virtualSize;
+
+            if (UseOriginalLocationBar)
+            {
+                ApplyOriginalLayout(virtualSize);
+                return;
+            }
 
             // ========================================================
             // OVERALL UI SCALE
@@ -286,6 +322,7 @@ namespace Client.Main.Controls.UI.Game.Map
                 _frameH);
 
             ViewSize = ControlSize;
+            Interactive = true;
         }
 
         // ============================================================
@@ -296,6 +333,171 @@ namespace Client.Main.Controls.UI.Game.Map
         {
             _mapName = MapDatabase.GetMapName(
                 _characterState.MapId);
+        }
+
+        private void ApplyOriginalLayout(Point virtualSize)
+        {
+            Interactive = true;
+
+            float scaleX = virtualSize.X / 1024f;
+            float scaleY = virtualSize.Y / 768f;
+            float scale = Math.Clamp(MathF.Min(scaleX, scaleY), 0.82f, 1.35f);
+
+            X = ScaleOriginal(OriginalBaseX, scale);
+            Y = ScaleOriginal(OriginalBaseY, scale);
+
+            int plateWidth = ScaleOriginal(OriginalPlateWidth, scale);
+            int height = ScaleOriginal(OriginalBaseHeight, scale);
+            int gap = ScaleOriginal(OriginalButtonGap, scale);
+            int buttonWidth = ScaleOriginal(OriginalButtonWidth, scale);
+            int buttonHeight = ScaleOriginal(OriginalButtonHeight, scale);
+
+            ControlSize = new Point(plateWidth + gap + (buttonWidth * 2) + gap, height);
+            ViewSize = ControlSize;
+
+            _mapScale = Math.Clamp(0.54f * scale, 0.46f, 0.72f);
+            _coordsScale = Math.Clamp(0.47f * scale, 0.40f, 0.62f);
+        }
+
+        private void DrawOriginalBar(SpriteBatch spriteBatch)
+        {
+            var pixel = GraphicsManager.Instance.Pixel;
+            if (pixel == null || _font == null)
+                return;
+
+            Rectangle rect = DisplayRectangle;
+            float scale = Math.Max(0.82f, rect.Height / (float)OriginalBaseHeight);
+            int plateWidth = ScaleOriginal(OriginalPlateWidth, scale);
+            var plate = new Rectangle(rect.X, rect.Y, Math.Min(plateWidth, rect.Width), rect.Height);
+
+            spriteBatch.Draw(pixel, plate, ModernHudTheme.BorderOuter);
+
+            var inner = new Rectangle(plate.X + 1, plate.Y + 1,
+                Math.Max(1, plate.Width - 2), Math.Max(1, plate.Height - 2));
+            UiDrawHelper.DrawVerticalGradient(spriteBatch, inner,
+                ModernHudTheme.BgDark, ModernHudTheme.BgDarkest);
+
+            spriteBatch.Draw(pixel,
+                new Rectangle(inner.X + 1, inner.Y, Math.Max(1, inner.Width - 2), 1),
+                ModernHudTheme.Accent * 0.6f * Alpha);
+
+            spriteBatch.Draw(pixel,
+                new Rectangle(inner.X, inner.Y + 1, inner.Width, 1),
+                ModernHudTheme.BorderInner * 0.3f * Alpha);
+
+            float wScale = scale;
+            int padX = ScaleOriginal(OriginalPadX, wScale);
+
+            string coords = $"X:{_characterState.PositionX}  Y:{_characterState.PositionY}";
+            Vector2 coordsSize = _font.MeasureString(coords) * _coordsScale;
+            float coordsX = plate.Right - padX - coordsSize.X;
+            float coordsY = plate.Y + (plate.Height - coordsSize.Y) / 2f;
+
+            spriteBatch.DrawString(_font, coords, new Vector2(coordsX + 1, coordsY + 1),
+                Color.Black * 0.6f * Alpha, 0f, Vector2.Zero, _coordsScale, SpriteEffects.None, 0f);
+            spriteBatch.DrawString(_font, coords, new Vector2(coordsX, coordsY),
+                ModernHudTheme.TextGray * Alpha, 0f, Vector2.Zero, _coordsScale, SpriteEffects.None, 0f);
+
+            int separatorGap = ScaleOriginal(6, wScale);
+            int mapMaxWidth = Math.Max(1, (int)(coordsX - plate.X - padX - separatorGap));
+            string clippedMap = ClipTextWithEllipsis(_font, _mapName, _mapScale, mapMaxWidth);
+
+            if (!string.IsNullOrEmpty(clippedMap))
+            {
+                Vector2 mapSize = _font.MeasureString(clippedMap) * _mapScale;
+                float mapX = plate.X + padX;
+                float mapY = plate.Y + (plate.Height - mapSize.Y) / 2f;
+
+                spriteBatch.DrawString(_font, clippedMap, new Vector2(mapX + 1, mapY + 1),
+                    Color.Black * 0.6f * Alpha, 0f, Vector2.Zero, _mapScale, SpriteEffects.None, 0f);
+                spriteBatch.DrawString(_font, clippedMap, new Vector2(mapX, mapY),
+                    ModernHudTheme.TextGold * Alpha, 0f, Vector2.Zero, _mapScale, SpriteEffects.None, 0f);
+            }
+
+            UiDrawHelper.DrawCornerAccents(spriteBatch, plate,
+                ModernHudTheme.Accent * 0.3f * Alpha, size: 6, thickness: 1);
+
+            int gap = ScaleOriginal(OriginalButtonGap, wScale);
+            int buttonWidth = ScaleOriginal(OriginalButtonWidth, wScale);
+            int buttonHeight = ScaleOriginal(OriginalButtonHeight, wScale);
+            int buttonY = plate.Y + Math.Max(0, (plate.Height - buttonHeight) / 2);
+            _hitSetup = new Rectangle(plate.Right + gap, buttonY, buttonWidth, buttonHeight);
+            _hitStartStop = new Rectangle(_hitSetup.Right + gap, buttonY, buttonWidth, buttonHeight);
+
+            DrawThemedHelperButton(spriteBatch, _hitSetup, "Setup", false);
+            DrawThemedHelperButton(spriteBatch, _hitStartStop,
+                _scene.IsMuHelperActive ? "Stop" : "Start",
+                _scene.IsMuHelperActive);
+        }
+
+        private void DrawThemedHelperButton(SpriteBatch spriteBatch, Rectangle destination, string text, bool active)
+        {
+            var pixel = GraphicsManager.Instance.Pixel;
+            if (pixel == null || _font == null || destination.Width <= 0 || destination.Height <= 0)
+                return;
+
+            Point mouse = MuGame.Instance.UiMouseState.Position;
+            bool hovered = destination.Contains(mouse);
+            bool pressed = hovered && MuGame.Instance.UiMouseState.LeftButton == ButtonState.Pressed;
+            bool classic = UiThemeManager.CurrentId == UiThemeId.Classic;
+
+            Color fill = active
+                ? (classic ? new Color(92, 34, 42, 245) : new Color(86, 37, 39, 245))
+                : hovered
+                    ? ModernHudTheme.SlotHover
+                    : ModernHudTheme.SlotBg;
+            if (pressed)
+                fill = Color.Lerp(fill, Color.Black, 0.25f);
+
+            spriteBatch.Draw(pixel, destination, ModernHudTheme.BorderOuter * Alpha);
+            var inner = new Rectangle(destination.X + 1, destination.Y + 1,
+                Math.Max(1, destination.Width - 2), Math.Max(1, destination.Height - 2));
+            spriteBatch.Draw(pixel, inner, fill * Alpha);
+            spriteBatch.Draw(pixel, new Rectangle(inner.X, inner.Y, inner.Width, 1),
+                (active ? ModernHudTheme.Danger : ModernHudTheme.Accent) * (classic ? 0.85f : 0.55f) * Alpha);
+
+            float scale = Math.Clamp(destination.Height / 28f, 0.38f, 0.62f);
+            Vector2 size = _font.MeasureString(text) * scale;
+            var position = new Vector2(
+                destination.X + (destination.Width - size.X) / 2f,
+                destination.Y + (destination.Height - size.Y) / 2f);
+            spriteBatch.DrawString(_font, text, position + Vector2.One, Color.Black * 0.65f * Alpha,
+                0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+            spriteBatch.DrawString(_font, text, position,
+                (active ? Color.White : ModernHudTheme.TextGold) * Alpha,
+                0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+        }
+
+        private static int ScaleOriginal(int value, float scale)
+        {
+            return Math.Max(1, (int)MathF.Round(value * scale));
+        }
+
+        private static string ClipTextWithEllipsis(SpriteFont font, string text, float scale, int maxWidth)
+        {
+            if (string.IsNullOrEmpty(text))
+                return string.Empty;
+
+            if (font.MeasureString(text).X * scale <= maxWidth)
+                return text;
+
+            const string ellipsis = "...";
+            if (font.MeasureString(ellipsis).X * scale > maxWidth)
+                return string.Empty;
+
+            int left = 0;
+            int right = text.Length;
+            while (left < right)
+            {
+                int mid = (left + right + 1) / 2;
+                string probe = text[..mid] + ellipsis;
+                if (font.MeasureString(probe).X * scale <= maxWidth)
+                    left = mid;
+                else
+                    right = mid - 1;
+            }
+
+            return left > 0 ? text[..left] + ellipsis : ellipsis;
         }
 
         // ============================================================

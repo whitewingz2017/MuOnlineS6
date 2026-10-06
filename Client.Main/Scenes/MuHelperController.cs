@@ -17,8 +17,9 @@ using MUnique.OpenMU.Network.Packets;
 namespace Client.Main.Scenes
 {
     /// <summary>
-    /// Client-local MU Helper loop. It deliberately reuses the current character,
-    /// skill, movement, inventory, and pickup request paths; it adds no protocol.
+    /// Client-local MU Helper loop. Reuses character, skill, movement, inventory,
+    /// and pickup paths. Pipeline mirrors MuMain CMuHelper::Work order:
+    /// Pet → Buff → Party → Potion/Heal → Loot → Regroup → Combo/Attack → Repair.
     /// </summary>
     internal sealed class MuHelperController
     {
@@ -26,6 +27,11 @@ namespace Client.Main.Scenes
         private static readonly TimeSpan PotionCooldown = TimeSpan.FromMilliseconds(900);
         private static readonly TimeSpan PickupCooldown = TimeSpan.FromMilliseconds(850);
         private static readonly TimeSpan FallbackBuffInterval = TimeSpan.FromMinutes(3);
+        private static readonly TimeSpan RepairCooldown = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan PetCooldown = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan PartySupportCooldown = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan ComboStepTimeout = TimeSpan.FromSeconds(2);
+        private const int PickupReachTiles = 1;
 
         private readonly GameScene _scene;
         private readonly GameSceneSkillController _skillController;
@@ -34,6 +40,9 @@ namespace Client.Main.Scenes
         private DateTime _nextPotionAt;
         private DateTime _nextPickupAt;
         private DateTime _nextRegroupAt;
+        private DateTime _nextRepairAt;
+        private DateTime _nextPetAt;
+        private DateTime _nextPartyBuffAt;
         private DateTime _awaySince;
         private Vector2 _originalPosition;
         private MonsterObject _currentTarget;
@@ -41,6 +50,8 @@ namespace Client.Main.Scenes
         private bool _active;
         private readonly DateTime[] _nextActivationCastAt = new DateTime[2];
         private readonly DateTime[] _nextBuffCastAt = new DateTime[3];
+        private int _comboStep;
+        private DateTime _comboStepAt;
 
         public MuHelperConfig Config { get; private set; } = new();
         public bool IsActive => _active;
@@ -97,10 +108,14 @@ namespace Client.Main.Scenes
             _nextPotionAt = DateTime.MinValue;
             _nextPickupAt = DateTime.MinValue;
             _nextRegroupAt = DateTime.MinValue;
+            _nextRepairAt = DateTime.MinValue;
+            _nextPetAt = DateTime.MinValue;
+            _nextPartyBuffAt = DateTime.MinValue;
+            _comboStep = 0;
+            _comboStepAt = DateTime.MinValue;
             Array.Clear(_nextActivationCastAt);
             Array.Clear(_nextBuffCastAt);
 
-            // Helper owns automated combat; clear both legacy/manual persistent targets.
             _scene.DisableAutoAttack();
             _skillController.CancelPersistentTarget();
             _active = true;
@@ -115,6 +130,7 @@ namespace Client.Main.Scenes
 
             _active = false;
             _currentTarget = null;
+            _comboStep = 0;
             _skillController.CancelPersistentTarget();
             _logger?.LogInformation("MU Helper stopped");
             StateChanged?.Invoke();
@@ -160,13 +176,18 @@ namespace Client.Main.Scenes
                 _awaySince = now;
             }
 
+            // MuMain Work order: Pet → Buff → Party → Heal → Loot → Regroup → Attack → Repair
+            if (TryActivatePet(characterState, now))
+                return;
+            if (TryCastBuff(characterState, now))
+                return;
+            if (TryPartySupport(characterState, now))
+                return;
             if (TryUsePotion(characterState, now))
                 return;
             if (TryUseHealSkill(characterState, now))
                 return;
-            if (TryCastBuff(characterState, now))
-                return;
-            if (TryPickupNearbyItem(characterState, now))
+            if (TryPickupOrApproachItem(characterState, now))
                 return;
             if (TryRegroup(hero, now))
                 return;
@@ -174,16 +195,21 @@ namespace Client.Main.Scenes
             MonsterObject target = SelectTarget(hero, characterState);
             _currentTarget = target;
             if (target == null || hero.IsAttackOrSkillAnimationPlaying())
+            {
+                TryRepairEquipment(characterState, now);
                 return;
+            }
 
+            if (TryCombo(characterState, target, now))
+                return;
             if (TryCastActivationSkill(characterState, target, now))
                 return;
-
             if (Config.BasicSkillId != 0 && TryCastSkill(characterState, Config.BasicSkillId, target))
                 return;
-
             if (Config.FallbackBasicAttack)
                 hero.Attack(target);
+
+            TryRepairEquipment(characterState, now);
         }
 
         private bool CanOperate(out string reason)
@@ -219,6 +245,28 @@ namespace Client.Main.Scenes
             return true;
         }
 
+        private bool TryActivatePet(CharacterState state, DateTime now)
+        {
+            if (!Config.UseDarkRaven || now < _nextPetAt)
+                return false;
+
+            var petSkill = state.GetSkills().FirstOrDefault(skill =>
+            {
+                string name = SkillDatabase.GetSkillName(skill.SkillId);
+                return name.Contains("raven", StringComparison.OrdinalIgnoreCase)
+                    || name.Contains("dark raven", StringComparison.OrdinalIgnoreCase);
+            });
+
+            if (petSkill == null)
+                return false;
+
+            if (!_skillController.CastSkillFromHotbar(petSkill, null))
+                return false;
+
+            _nextPetAt = now + PetCooldown;
+            return true;
+        }
+
         private bool TryUsePotion(CharacterState state, DateTime now)
         {
             if (!Config.UseHealPotion || now < _nextPotionAt || state.MaximumHealth == 0)
@@ -228,10 +276,6 @@ namespace Client.Main.Scenes
             if (hpPercent > Config.PotionThreshold)
                 return false;
 
-            // The existing HUD uses inventory slots 12+ for consumables. MU Helper
-            // healing potions are item group 14, IDs 0-2 in the embedded Season 6 data.
-            // Use the healing potion assigned to Q/W/E. This keeps Helper automation
-            // aligned with the player's existing quick-slot preferences and inventory lookup.
             if (_scene.ModernHud?.TryConsumeHealPotionForHelper(Config.PotionHotbarSlot) != true)
                 return false;
 
@@ -301,6 +345,115 @@ namespace Client.Main.Scenes
 
             return false;
         }
+        private bool TryPartySupport(CharacterState state, DateTime now)
+        {
+            // No PartyMembers / player-target cast API yet — pipeline placeholder.
+            if (!Config.SupportParty && !Config.AutoHealParty)
+                return false;
+
+            return false;
+        }
+        /// <summary>
+        /// Party heal / buff. Requires CharacterState party APIs; no-ops if unavailable.
+        /// </summary>
+        // private bool TryPartySupport(CharacterState state, DateTime now)
+        // {
+        //     if ((!Config.SupportParty && !Config.AutoHealParty) || now < _nextPartyBuffAt)
+        //         return false;
+
+        //     // Adjust property names to your CharacterState party model if different.
+        //     var partyMembers = state.PartyMembers;
+        //     if (partyMembers == null || partyMembers.Count == 0)
+        //         return false;
+
+        //     var hero = _scene.Hero;
+        //     if (hero == null)
+        //         return false;
+
+        //     if (Config.AutoHealParty && Config.HealPartyThreshold > 0 && state.MaximumHealth > 0)
+        //     {
+        //         var healSkill = state.GetSkills().FirstOrDefault(skill =>
+        //         {
+        //             string name = SkillDatabase.GetSkillName(skill.SkillId);
+        //             return name.Contains("heal", StringComparison.OrdinalIgnoreCase);
+        //         });
+
+        //         if (healSkill != null)
+        //         {
+        //             foreach (var member in partyMembers)
+        //             {
+        //                 if (member == null || member.IsSelf)
+        //                     continue;
+
+        //                 // Expected shape: member has CurrentHealth/MaximumHealth and can resolve to a world target.
+        //                 if (member.MaximumHealth <= 0)
+        //                     continue;
+
+        //                 int hpPercent = (int)(member.CurrentHealth * 100L / member.MaximumHealth);
+        //                 if (hpPercent > Config.HealPartyThreshold)
+        //                     continue;
+
+        //                 PlayerObject partyPlayer = FindPartyPlayer(member.NetworkId);
+        //                 if (partyPlayer == null)
+        //                     continue;
+
+        //                 if (ChebyshevDistance(partyPlayer.Location, hero.Location) > Config.HuntingRange + 2)
+        //                     continue;
+
+        //                 if (_skillController.CastSkillFromHotbar(healSkill, partyPlayer))
+        //                 {
+        //                     _nextPartyBuffAt = now + PartySupportCooldown;
+        //                     return true;
+        //                 }
+        //             }
+        //         }
+        //     }
+
+        //     if (Config.SupportParty)
+        //     {
+        //         for (int index = 0; index < Config.BuffSkillIds.Length; index++)
+        //         {
+        //             ushort skillId = Config.BuffSkillIds[index];
+        //             if (skillId == 0)
+        //                 continue;
+
+        //             var skill = state.GetSkills().FirstOrDefault(candidate => candidate.SkillId == skillId);
+        //             if (skill == null)
+        //                 continue;
+
+        //             foreach (var member in partyMembers)
+        //             {
+        //                 if (member == null || member.IsSelf)
+        //                     continue;
+
+        //                 PlayerObject partyPlayer = FindPartyPlayer(member.NetworkId);
+        //                 if (partyPlayer == null)
+        //                     continue;
+
+        //                 if (ChebyshevDistance(partyPlayer.Location, hero.Location) > Config.HuntingRange + 2)
+        //                     continue;
+
+        //                 if (_skillController.CastSkillFromHotbar(skill, partyPlayer))
+        //                 {
+        //                     _nextPartyBuffAt = now + PartySupportCooldown;
+        //                     return true;
+        //                 }
+        //             }
+        //         }
+        //     }
+
+        //     return false;
+        // }
+
+        private PlayerObject FindPartyPlayer(ushort networkId)
+        {
+            if (_scene.World == null)
+                return null;
+
+            return _scene.World.VisibleObjects
+                .OfType<PlayerObject>()
+                .FirstOrDefault(player => player.NetworkId == networkId && !player.IsDead);
+        }
 
         private bool TryCastActivationSkill(CharacterState state, MonsterObject target, DateTime now)
         {
@@ -334,6 +487,35 @@ namespace Client.Main.Scenes
             }
 
             return false;
+        }
+
+        private bool TryCombo(CharacterState state, MonsterObject target, DateTime now)
+        {
+            if (!Config.UseCombo || Config.ComboSkillIds == null || Config.ComboSkillIds.Length == 0)
+                return false;
+
+            if (now > _comboStepAt + ComboStepTimeout)
+                _comboStep = 0;
+
+            if (_comboStep >= Config.ComboSkillIds.Length)
+                _comboStep = 0;
+
+            ushort skillId = Config.ComboSkillIds[_comboStep];
+            if (skillId == 0)
+            {
+                _comboStep = 0;
+                return false;
+            }
+
+            if (!TryCastSkill(state, skillId, target))
+                return false;
+
+            _comboStep++;
+            _comboStepAt = now;
+            if (_comboStep >= Config.ComboSkillIds.Length)
+                _comboStep = 0;
+
+            return true;
         }
 
         private bool TryCastSkill(CharacterState state, ushort skillId, MonsterObject target)
@@ -376,9 +558,9 @@ namespace Client.Main.Scenes
                 .FirstOrDefault();
         }
 
-        private bool TryPickupNearbyItem(CharacterState state, DateTime now)
+        private bool TryPickupOrApproachItem(CharacterState state, DateTime now)
         {
-            if (now < _nextPickupAt || _pickupInFlight || Config.ObtainingRange <= 0)
+            if (Config.ObtainingRange <= 0 || _pickupInFlight)
                 return false;
 
             var network = MuGame.Network;
@@ -400,6 +582,19 @@ namespace Client.Main.Scenes
 
             if (candidate == null)
                 return false;
+
+            var itemPos = new Vector2(candidate.PositionX, candidate.PositionY);
+            int dist = ChebyshevDistance(itemPos, hero.Location);
+
+            // MuMain-style approach: walk into reach before sending pickup.
+            if (dist > PickupReachTiles)
+            {
+                hero.MoveTo(new Vector2((int)itemPos.X, (int)itemPos.Y));
+                return true;
+            }
+
+            if (now < _nextPickupAt)
+                return true;
 
             var currentEntry = scopeManager.GetScopeObjectByMaskedId((ushort)(candidate.RawId & 0x7FFF));
             if (currentEntry == null)
@@ -471,6 +666,26 @@ namespace Client.Main.Scenes
             return true;
         }
 
+        /// <summary>
+        /// Equipment repair. Wire to CharacterService repair API when available.
+        /// </summary>
+        private bool TryRepairEquipment(CharacterState state, DateTime now)
+        {
+            if (!Config.RepairItem || now < _nextRepairAt)
+                return false;
+
+            var service = MuGame.Network?.GetCharacterService();
+            if (service == null)
+                return false;
+
+            // TODO: call your real repair method when it exists, e.g.:
+            // bool repaired = service.SendRepairEquippedItemsAsync(...).GetAwaiter().GetResult();
+            // if (!repaired) return false;
+
+            _nextRepairAt = now + RepairCooldown;
+            return false;
+        }
+
         private bool IsValidMonster(MonsterObject monster)
         {
             return monster != null && !monster.IsDead && monster.World == _scene.World;
@@ -478,7 +693,9 @@ namespace Client.Main.Scenes
 
         private static int ChebyshevDistance(Vector2 left, Vector2 right)
         {
-            return Math.Max(Math.Abs((int)left.X - (int)right.X), Math.Abs((int)left.Y - (int)right.Y));
+            return Math.Max(
+                Math.Abs((int)left.X - (int)right.X),
+                Math.Abs((int)left.Y - (int)right.Y));
         }
     }
 }

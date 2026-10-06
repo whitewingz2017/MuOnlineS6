@@ -97,6 +97,7 @@ namespace Client.Main.Controls.UI.Game.Hud
         private SkillEntryState? _selectedSkillOverride;
         private int _activeSkillSlot = 3;
         private int _pendingAssignSlot = -1;
+        private Func<SkillEntryState, bool>? _pendingSkillSelectionHandler;
         private bool _quickSlotsRestored;
         private bool _lastDarkRavenEquipped;
 
@@ -202,6 +203,9 @@ namespace Client.Main.Controls.UI.Game.Hud
             BorderThickness = 0;
 
             _skillPanel.SkillSelected += OnSkillSelectedFromPanel;
+            _skillPanel.SkillSelectionRequested += OnSkillSelectionRequested;
+            _skillPanel.SkillSelectedFromPanel += OnSkillSelectionCompleted;
+            _skillPanel.Closed += OnSkillPickerClosed;
             _state.InventoryChanged += OnInventoryChanged;
 
             RefreshLayout();
@@ -215,6 +219,10 @@ namespace Client.Main.Controls.UI.Game.Hud
         public override void Dispose()
         {
             _state.InventoryChanged -= OnInventoryChanged;
+            _skillPanel.SkillSelected -= OnSkillSelectedFromPanel;
+            _skillPanel.SkillSelectionRequested -= OnSkillSelectionRequested;
+            _skillPanel.SkillSelectedFromPanel -= OnSkillSelectionCompleted;
+            _skillPanel.Closed -= OnSkillPickerClosed;
             base.Dispose();
         }
 
@@ -532,6 +540,46 @@ namespace Client.Main.Controls.UI.Game.Hud
                     }
                 }
             }
+        }
+
+        private void OnSkillSelectionCompleted()
+        {
+            _skillPanel.Interactive = false;
+        }
+
+        private void OnSkillPickerClosed()
+        {
+            _pendingSkillSelectionHandler = null;
+            _skillPanel.Interactive = false;
+        }
+
+        private bool OnSkillSelectionRequested(SkillEntryState skill)
+        {
+            var handler = _pendingSkillSelectionHandler;
+            _pendingSkillSelectionHandler = null;
+            return handler?.Invoke(skill) == true;
+        }
+
+        /// <summary>
+        /// Opens the shared learned-skill picker and lets another UI consume the selection
+        /// without changing the combat hotbar.
+        /// </summary>
+        public void BeginSkillSelection(Func<SkillEntryState, bool> selectionHandler)
+        {
+            _pendingSkillSelectionHandler = selectionHandler;
+            BeginSkillSelection();
+        }
+
+        private void BeginSkillSelection()
+        {
+            if (_pendingSkillSelectionHandler == null || _skillPanel == null)
+                return;
+
+            _skillPanel.Interactive = true;
+            _skillPanel.Open(_state);
+            _skillPanel.BringToFront();
+            if (Scene != null)
+                Scene.FocusControl = _skillPanel;
         }
 
         private void OnSkillSelectedFromPanel(SkillEntryState skill)

@@ -57,6 +57,9 @@ namespace Client.Main.Controls.UI.Game.Skills
         /// Fired when a skill is selected from the panel.
         /// </summary>
         public event Action<SkillEntryState>? SkillSelected;
+        public event Func<SkillEntryState, bool>? SkillSelectionRequested;
+        public event Action? SkillSelectedFromPanel;
+        public event Action? Closed;
 
         public SkillSelectionPanel()
         {
@@ -245,6 +248,7 @@ namespace Client.Main.Controls.UI.Game.Skills
             Offset = Point.Zero;
             ApplyAlphaToChildren(1f);
             Visible = false;
+            Closed?.Invoke();
         }
 
         public override void Draw(GameTime gameTime)
@@ -457,7 +461,14 @@ namespace Client.Main.Controls.UI.Game.Skills
             }
 
             _selectedSkillId = slot.Skill.SkillId;
+            if (SkillSelectionRequested?.Invoke(slot.Skill) == true)
+            {
+                Close();
+                return;
+            }
+
             SkillSelected?.Invoke(slot.Skill);
+            SkillSelectedFromPanel?.Invoke();
             Close();
         }
 

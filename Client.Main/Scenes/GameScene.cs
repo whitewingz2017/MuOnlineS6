@@ -115,6 +115,8 @@ namespace Client.Main.Scenes
         private bool _initialWorldActivationCooldown;
         private bool _initialWorldLoadInProgress = true;
 
+        internal MuHelperPotionWindow MuHelperPotionWindow { get; private set; }
+
         // Performance optimization fields - track object IDs for O(1) lookups
         // ───────────────────────── Properties ─────────────────────────
         public HeroObject Hero => _hero;
@@ -402,6 +404,10 @@ namespace Client.Main.Scenes
             _muHelperController = new MuHelperController(this, _skillController, _logger);
             _muHelperWindow = new MuHelperWindow(this, _muHelperController, _logger);
             Controls.Add(_muHelperWindow);
+
+            MuHelperPotionWindow = new MuHelperPotionWindow(this, _muHelperController);
+            Controls.Add(MuHelperPotionWindow);
+
             ApplyHudTheme(force: true);
 
             _currentLocationControl = new CurrentLocationControl(this, characterState);
@@ -477,6 +483,7 @@ namespace Client.Main.Scenes
             _pauseMenu.BringToFront();
             _modernHud.BringToFront();
             _muHelperWindow.BringToFront();
+            MuHelperPotionWindow?.BringToFront();
             _classicBottomBar.BringToFront();
             _classicTouchActions.BringToFront();
             _classicJoystick.BringToFront();
@@ -965,6 +972,19 @@ namespace Client.Main.Scenes
                 : Task.CompletedTask;
         }
 
+        internal void OpenMuHelperPotionSettings()
+        {
+            if (MuHelperPotionWindow == null || _muHelperWindow == null)
+                return;
+
+            if (!Controls.Contains(MuHelperPotionWindow))
+                Controls.Add(MuHelperPotionWindow);
+
+            MuHelperPotionWindow.OpenBeside(_muHelperWindow);
+            MuHelperPotionWindow.BringToFront();
+            _muHelperWindow.BringToFront();
+        }
+
         private async Task UpdateMapNameNextFrameAsync(string actionName)
         {
             await MuGame.YieldToNextFrameAsync(
@@ -1291,6 +1311,7 @@ namespace Client.Main.Scenes
                 : _hybridHudShell;
             _hudShell?.Attach(this);
             _lastHudTheme = requested;
+            _currentLocationControl?.InvalidateLayout();
         }
 
         private void HideHybridHudControls()
