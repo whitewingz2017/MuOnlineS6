@@ -40,6 +40,7 @@ namespace Client.Main.Scenes
         private readonly ChatInputBoxControl _chatInput;
         private readonly ChatLogWindow _chatLog;
         private readonly GameSceneObjectEditorController _objectEditorController;
+        private readonly GameSceneUiEditorController _uiEditorController;
         private readonly MuHelperController _muHelperController;
         private readonly MuHelperWindow _muHelperWindow;
         private readonly ILogger _logger;
@@ -58,6 +59,7 @@ namespace Client.Main.Scenes
             ChatInputBoxControl chatInput,
             ChatLogWindow chatLog,
             GameSceneObjectEditorController objectEditorController,
+            GameSceneUiEditorController uiEditorController,
             MuHelperController muHelperController,
             MuHelperWindow muHelperWindow,
             ILogger logger = null)
@@ -72,6 +74,7 @@ namespace Client.Main.Scenes
             _chatInput = chatInput;
             _chatLog = chatLog;
             _objectEditorController = objectEditorController;
+            _uiEditorController = uiEditorController;
             _muHelperController = muHelperController;
             _muHelperWindow = muHelperWindow;
             _logger = logger ?? NullLogger.Instance;
@@ -100,7 +103,9 @@ namespace Client.Main.Scenes
             bool isUiInputActive =
                 (_scene.FocusControl is TextFieldControl textField && textField.Visible)
                 || (_scene.FocusControl == _moveCommandWindow && _moveCommandWindow.Visible)
-                || (_pauseMenu != null && _pauseMenu.Visible);
+                || (_pauseMenu != null && _pauseMenu.Visible)
+                || (_uiEditorController?.IsOpen == true)
+                || (_muHelperWindow?.Visible == true);
 
             var modifiers = GetModifiers(keyboard);
 
@@ -140,6 +145,12 @@ namespace Client.Main.Scenes
 
         private static bool WhenEscapeNotConsumed(HotkeyContext context) => !context.Scene.IsKeyboardEscapeConsumedThisFrame;
 
+        private bool WhenMuHelperVisible(HotkeyContext context)
+            => _muHelperWindow?.Visible == true;
+
+        private bool WhenUiEditorToggle(HotkeyContext context)
+            => _uiEditorController != null && (_uiEditorController.IsOpen || !context.IsUiInputActive);
+
         private static bool WhenMoveCommandFocused(HotkeyContext context)
         {
             return context.Scene.FocusControl == context.MoveCommandWindow && context.MoveCommandWindow.Visible;
@@ -148,7 +159,11 @@ namespace Client.Main.Scenes
         private static bool WhenNotUiInput(HotkeyContext context) => !context.IsUiInputActive;
 
         private bool WhenMuHelperToggle(HotkeyContext context)
-            => _muHelperWindow != null && (_muHelperWindow.Visible || !context.IsUiInputActive);
+            => context.Modifiers == HotkeyModifiers.None
+               && _uiEditorController?.IsOpen != true
+               && !(_scene.FocusControl is TextFieldControl textField && textField.Visible)
+               && _muHelperWindow != null
+               && (_muHelperWindow.Visible || !context.IsUiInputActive);
 
         private bool WhenMuHelperStartStop(HotkeyContext context)
             => _muHelperController != null && !(_pauseMenu?.Visible == true) &&
@@ -168,6 +183,17 @@ namespace Client.Main.Scenes
 
         private void RegisterGlobalHotkeys(HotkeySet hotkeys)
         {
+            hotkeys.OnKeyPressed(
+                Keys.F11,
+                ToggleUiEditor,
+                when: WhenUiEditorToggle);
+
+            hotkeys.OnKeyPressed(
+                Keys.Escape,
+                CloseMuHelperWindow,
+                when: WhenMuHelperVisible,
+                stopPropagation: true);
+
             hotkeys.OnKeyPressed(
                 Keys.Escape,
                 TogglePauseMenu,
@@ -220,6 +246,10 @@ namespace Client.Main.Scenes
             hotkeys.OnKeyPressed(Keys.Space, PickupNearestItem, when: WhenNotUiInput);
         }
 
+        private void ToggleUiEditor(HotkeyContext context)
+        {
+            _uiEditorController?.Toggle();
+        }
         private void TogglePauseMenu(HotkeyContext context)
         {
             if (_playerMenuController?.IsMenuVisible == true)
@@ -294,6 +324,12 @@ namespace Client.Main.Scenes
         private void ToggleMuHelperWindow(HotkeyContext context)
         {
             _muHelperWindow?.ToggleVisibility();
+        }
+
+        private void CloseMuHelperWindow(HotkeyContext context)
+        {
+            _muHelperWindow?.Close();
+            context.Scene.ConsumeKeyboardEscape();
         }
 
         private void ToggleMuHelper(HotkeyContext context)

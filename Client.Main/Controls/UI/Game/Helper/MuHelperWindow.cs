@@ -24,7 +24,7 @@ namespace Client.Main.Controls.UI.Game.Helper
     /// S6 Helper settings presented in the compact Hunting, Obtaining, and Other Settings tabs.
     /// Settings remain bound to the existing MuHelperConfig and controller.
     /// </summary>
-    internal sealed class MuHelperWindow : UIControl
+    internal sealed partial class MuHelperWindow : UIControl
     {
         // MuMain CNewUIMuHelper uses a fixed 190x429 logical canvas.
         private const int ClassicPcWidth = 190;
@@ -110,7 +110,8 @@ namespace Client.Main.Controls.UI.Game.Helper
             "Interface/newui_skillbox.OZJ",
             "Interface/newui_skillbox2.OZJ",
             "Interface/InGameShop/ingame_Bt03.OZT",
-            "Interface/newui_exit_00.OZT"
+            "Interface/newui_exit_00.OZT",
+            "Interface/newui_chainfo_btn_level.tga"
         };
 
         private readonly GameScene _scene;
@@ -126,6 +127,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         private readonly UIControl _potionSettingsPage;
         private readonly List<GameControl> _classicHuntingControls = new();
         private readonly List<HelperThresholdSegmentButton> _potionThresholdSegments = new();
+        private readonly List<(ButtonControl Button, bool Flip)> _classicIconButtons = new();
         private HelperActionButton _potionSettingsBackButton;
         private readonly List<HelperToggleButton> _potionSettingsToggles = new();
         private HelperToggleButton _potionAutoHealToggle;
@@ -139,6 +141,12 @@ namespace Client.Main.Controls.UI.Game.Helper
         private readonly ButtonControl _resetButton;
         private readonly ButtonControl _closeButton;
         private readonly TextBoxControl _extraItemsBox;
+        private readonly ButtonControl _addExtraItemButton;
+        private readonly ButtonControl _deleteExtraItemButton;
+        private readonly LabelControl _extraItemsListLabel;
+        private readonly List<ButtonControl> _extraItemRowButtons = new();
+        private UIControl _extraItemsPage;
+        private int _selectedExtraItemIndex = -1;
         private readonly Texture2D[] _frameTextures = new Texture2D[FrameTexturePaths.Length];
         private readonly Texture2D[] _panelTextures = new Texture2D[PanelTexturePaths.Length];
         private Texture2D _checkBoxTexture;
@@ -187,13 +195,30 @@ namespace Client.Main.Controls.UI.Game.Helper
                 MaxLength = 200,
                 FontSize = IsClassicPc ? 8 : 10,
                 Padding = 4,
-                PlaceholderText = "Comma-separated item fragments",
+                PlaceholderText = "Item name",
                 BackgroundColor = new Color(16, 20, 28, 245),
                 BorderColor = ModernHudTheme.BorderInner,
                 FocusedBorderColor = ModernHudTheme.AccentBright,
                 TextColor = ModernHudTheme.TextWhite
             };
             _extraItemsBox.Visible = false;
+            _addExtraItemButton = CreateButton("Add", 0, 0, 36, 22, AddExtraItem);
+            _addExtraItemButton.Name = "Add Extra Item";
+            _addExtraItemButton.FontSize = IsClassicPc ? 6.5f : 8;
+            _deleteExtraItemButton = CreateButton("Delete", 0, 0, 48, 22, DeleteSelectedExtraItem);
+            _deleteExtraItemButton.Name = "Delete Extra Item";
+            _deleteExtraItemButton.FontSize = IsClassicPc ? 6.5f : 8;
+            _extraItemsListLabel = new LabelControl
+            {
+                Name = "Extra Items List",
+                Text = string.Empty,
+                ControlSize = new Point(IsClassicPc ? 145 : WindowWidth - 68, 64),
+                ViewSize = new Point(IsClassicPc ? 145 : WindowWidth - 68, 64),
+                AutoViewSize = false,
+                FontSize = IsClassicPc ? 6.5f : 8,
+                TextColor = ModernHudTheme.TextGray,
+                HasShadow = false
+            };
 
             for (int i = 0; i < _pages.Length; i++)
             {
@@ -226,9 +251,9 @@ namespace Client.Main.Controls.UI.Game.Helper
             _inputHintLabel = AddLabel(this, "Manual input keeps existing Helper ownership rules.", 15, 361, 160, 15, 6.4f, ModernHudTheme.TextGray);
             _inputHintLabel.Visible = false;
 
-            _startButton = CreateButton("Start", 35, FooterTop - 30, 117, 26, _controller.Toggle);
-            _startButton.FontSize = 7.5f;
-            Controls.Add(_startButton);
+            // _startButton = CreateButton("Start", 35, FooterTop - 30, 117, 26, _controller.Toggle);
+            // _startButton.FontSize = 7.5f;
+            // Controls.Add(_startButton);
             _saveButton = CreateButton("Save", 120, FooterTop, 52, 26, SaveSettings);
             _saveButton.FontSize = 7.5f;
             Controls.Add(_saveButton);
@@ -246,6 +271,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             _controller.StateChanged += OnControllerStateChanged;
             SetActiveTab(0);
             RefreshValues();
+            ApplyVisualDesignerLayout();
         }
 
         public void ToggleVisibility()
@@ -262,7 +288,8 @@ namespace Client.Main.Controls.UI.Game.Helper
             Visible = true;
             BringToFront();
             Scene.FocusControl = this;
-            _extraItemsBox.Text = string.Join(", ", _controller.Config.ExtraItems ?? new List<string>());
+            _extraItemsBox.Text = string.Empty;
+            UpdateExtraItemsList();
             RefreshValues();
         }
 
@@ -363,10 +390,19 @@ namespace Client.Main.Controls.UI.Game.Helper
             foreach (HelperToggleButton toggle in _potionSettingsToggles)
                 toggle.GetCheckBoxTexture = () => _checkBoxTexture;
 
-            ((HelperActionButton)_startButton).SetTexture(IsClassicPc ? _helperTextures[6] : null);
+            // ((HelperActionButton)_startButton).SetTexture(IsClassicPc ? _helperTextures[6] : null);
             ((HelperActionButton)_saveButton).SetTexture(IsClassicPc ? _helperTextures[6] : null);
             ((HelperActionButton)_resetButton).SetTexture(IsClassicPc ? _helperTextures[6] : null);
             ((HelperActionButton)_closeButton).SetTexture(IsClassicPc ? _helperTextures[7] : null);
+
+            foreach ((ButtonControl button, bool flip) in _classicIconButtons)
+            {
+                if (button is HelperActionButton iconButton)
+                {
+                    iconButton.SetTexture(_helperTextures[0]);
+                    iconButton.FlipTextureHorizontally = flip;
+                }
+            }
 
             foreach (var binding in _boundButtons)
             {
@@ -386,7 +422,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         {
             var sprite = GraphicsManager.Instance.Sprite;
             var pixel = GraphicsManager.Instance.Pixel;
-            if (pixel == null)
+            if (sprite == null || pixel == null)
                 return;
 
             var rect = DisplayRectangle;
@@ -631,7 +667,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             AddClassicLabel(page, "Range", 18, 8, 34, 16, 8, ModernHudTheme.TextWhite);
             AddClassicValueLabel(page, () => _controller.Config.HuntingRange.ToString(), 40, 25, 18, 18, 11, ModernHudTheme.TextGold);
             AddClassicIconButton(page, 56, 8, 16, 15,
-                () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange + 1, 0, 15), _helperTextures[0]);
+                () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange + 1, 0, 15), _helperTextures[8]);
             AddClassicIconButton(page, 56, 27, 16, 15,
                 () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange - 1, 0, 15), _helperTextures[0], flip: true);
 
@@ -702,6 +738,7 @@ namespace Client.Main.Controls.UI.Game.Helper
                 7, ModernHudTheme.TextWhite);
             toggle = new HelperToggleButton(getValue)
             {
+                Name = $"{text} Toggle",
                 X = x,
                 Y = y,
                 ControlSize = new Point(15, 15),
@@ -772,8 +809,9 @@ namespace Client.Main.Controls.UI.Game.Helper
             });
             button.SetTexture(texture);
             button.FlipTextureHorizontally = flip;
+            button.DrawRangeFallback = true;
             page.Controls.Add(button);
-            _boundButtons.Add((button, () => string.Empty));
+            _classicIconButtons.Add((button, flip));
             _classicHuntingControls.Add(button);
         }
 
@@ -820,6 +858,7 @@ namespace Client.Main.Controls.UI.Game.Helper
 
         private void BuildObtainingPage(UIControl page)
         {
+            _extraItemsPage = page;
             if (IsClassicPc)
             {
                 BuildClassicObtainingPage(page);
@@ -837,12 +876,32 @@ namespace Client.Main.Controls.UI.Game.Helper
             AddToggleRow(page, "Pick Excellent", 5, row++, () => _controller.Config.PickExcellent, value => _controller.Config.PickExcellent = value);
             AddToggleRow(page, "Use extra name filters", 5, row++, () => _controller.Config.PickExtraItems, value => _controller.Config.PickExtraItems = value);
             AddValueRow(page, "Filter entries", 5, row++, () => (_controller.Config.ExtraItems?.Count ?? 0).ToString(), FocusExtraItemFilter);
-            AddLabel(page, "Item name fragments", 5, row * RowHeight + 4, 150, 14, 7, ModernHudTheme.TextGray);
+            AddLabel(page, "Item name filters", 5, row * RowHeight + 4, 150, 14, 7, ModernHudTheme.TextGray);
+            int inputY = row * RowHeight + 20;
             _extraItemsBox.X = 5;
-            _extraItemsBox.Y = row * RowHeight + 20;
+            _extraItemsBox.Y = inputY;
+            _extraItemsBox.ControlSize = new Point(WindowWidth - 130, IsClassicPc ? 22 : 30);
+            _extraItemsBox.ViewSize = _extraItemsBox.ControlSize;
             page.Controls.Add(_extraItemsBox);
-            _extraItemsBox.Visible = false;
-            AddLabel(page, "Pickup uses the existing nearby item request path.", 5, row * RowHeight + 47, 145, 28, 6.5f, ModernHudTheme.TextGray);
+            _addExtraItemButton.X = WindowWidth - 112;
+            _addExtraItemButton.Y = inputY;
+            _addExtraItemButton.ControlSize = new Point(50, IsClassicPc ? 22 : 30);
+            _addExtraItemButton.ViewSize = _addExtraItemButton.ControlSize;
+            page.Controls.Add(_addExtraItemButton);
+            _extraItemsListLabel.X = 5;
+            _extraItemsListLabel.Y = inputY + (IsClassicPc ? 27 : 34);
+            _extraItemsListLabel.ControlSize = new Point(WindowWidth - 68, IsClassicPc ? 48 : 72);
+            _extraItemsListLabel.ViewSize = _extraItemsListLabel.ControlSize;
+            page.Controls.Add(_extraItemsListLabel);
+            _deleteExtraItemButton.X = WindowWidth - 112;
+            _deleteExtraItemButton.Y = _extraItemsListLabel.Y + _extraItemsListLabel.ViewSize.Y + 4;
+            _deleteExtraItemButton.ControlSize = new Point(50, IsClassicPc ? 22 : 30);
+            _deleteExtraItemButton.ViewSize = _deleteExtraItemButton.ControlSize;
+            page.Controls.Add(_deleteExtraItemButton);
+            _extraItemsBox.Visible = true;
+            _addExtraItemButton.Visible = true;
+            _extraItemsListLabel.Visible = true;
+            AddLabel(page, "Enter an item name and press Add.", 5, inputY + (IsClassicPc ? 76 : 108), 150, 18, 6.5f, ModernHudTheme.TextGray);
         }
 
         private void BuildOtherSettingsPage(UIControl page)
@@ -912,13 +971,31 @@ namespace Client.Main.Controls.UI.Game.Helper
                 value => _controller.Config.PickExcellent = value, out _);
             AddClassicToggle(page, "Extra name filters", 18, 130, () => _controller.Config.PickExtraItems,
                 value => _controller.Config.PickExtraItems = value, out _);
-            AddClassicLabel(page, "Comma-separated item fragments", 20, 160, 140, 14, 6.5f, ModernHudTheme.TextGray);
+            AddClassicLabel(page, "Add Extra Item", 20, 160, 110, 14, 6.5f, ModernHudTheme.TextWhite);
             _extraItemsBox.X = 20;
             _extraItemsBox.Y = 178;
-            _extraItemsBox.ControlSize = new Point(145, 22);
+            _extraItemsBox.ControlSize = new Point(105, 22);
             _extraItemsBox.ViewSize = _extraItemsBox.ControlSize;
             page.Controls.Add(_extraItemsBox);
+            _addExtraItemButton.X = 128;
+            _addExtraItemButton.Y = 178;
+            _addExtraItemButton.ControlSize = new Point(34, 22);
+            _addExtraItemButton.ViewSize = _addExtraItemButton.ControlSize;
+            page.Controls.Add(_addExtraItemButton);
+            _extraItemsListLabel.X = 20;
+            _extraItemsListLabel.Y = 205;
+            _extraItemsListLabel.ControlSize = new Point(145, 90);
+            _extraItemsListLabel.ViewSize = _extraItemsListLabel.ControlSize;
+            page.Controls.Add(_extraItemsListLabel);
+            _deleteExtraItemButton.X = 116;
+            _deleteExtraItemButton.Y = 300;
+            _deleteExtraItemButton.ControlSize = new Point(48, 22);
+            _deleteExtraItemButton.ViewSize = _deleteExtraItemButton.ControlSize;
+            page.Controls.Add(_deleteExtraItemButton);
             _classicHuntingControls.Add(_extraItemsBox);
+            _classicHuntingControls.Add(_addExtraItemButton);
+            _classicHuntingControls.Add(_deleteExtraItemButton);
+            _classicHuntingControls.Add(_extraItemsListLabel);
         }
 
         private void BuildClassicOtherSettingsPage(UIControl page)
@@ -1064,7 +1141,17 @@ namespace Client.Main.Controls.UI.Game.Helper
         private void UpdateClassicHuntingControlVisibility()
         {
             foreach (GameControl control in _classicHuntingControls)
-                control.Visible = IsClassicPc && _activeTab == 0 && !_showPotionSettings;
+            {
+                int pageIndex = Array.FindIndex(_pages, page => ReferenceEquals(page, control.Parent));
+                if (pageIndex < 0)
+                    continue;
+
+                UIControl page = _pages[pageIndex];
+                int top = control.Y + page.Offset.Y;
+                int bottom = top + control.ViewSize.Y;
+                control.Visible = IsClassicPc && !_showPotionSettings && page.Visible &&
+                                  bottom > 0 && top < ContentHeight;
+            }
         }
 
         private UIControl CreatePage()
@@ -1137,6 +1224,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             LabelControl rowLabel = AddLabel(parent, label, columnX, y + 1, labelWidth, buttonHeight, IsClassicPc ? 7.2f : (IsHybrid ? 10 : 11), ModernHudTheme.TextWhite);
             var button = new HelperValueButton
             {
+                Name = $"{label} Value",
                 Text = string.Empty,
                 X = buttonX,
                 Y = y,
@@ -1173,6 +1261,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             LabelControl rowLabel = AddLabel(parent, label, columnX, y + 1, labelWidth, checkSize, IsClassicPc ? 7.2f : (IsHybrid ? 10 : 11), ModernHudTheme.TextWhite);
             var button = new HelperToggleButton(getValue)
             {
+                Name = $"{label} Toggle",
                 X = checkX,
                 Y = y,
                 ControlSize = new Point(checkSize, checkSize),
@@ -1211,6 +1300,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             LabelControl rowLabel = AddLabel(parent, label, columnX, y + 1, labelWidth, buttonHeight, IsClassicPc ? 7.2f : (IsHybrid ? 10 : 11), ModernHudTheme.TextWhite);
             var button = new SkillSlotButton(getSkillId)
             {
+                Name = $"{label} Skill",
                 Text = string.Empty,
                 X = buttonX,
                 Y = y,
@@ -1265,6 +1355,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         {
             var label = new LabelControl
             {
+                Name = string.IsNullOrWhiteSpace(text) ? "Label" : text,
                 Text = text,
                 X = x,
                 Y = y,
@@ -1285,6 +1376,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             bool classic = UiThemeManager.CurrentId == UiThemeId.Classic;
             var button = new HelperActionButton
             {
+                Name = string.IsNullOrWhiteSpace(text) ? "Action Button" : text,
                 Text = text,
                 X = x,
                 Y = y,
@@ -1398,10 +1490,10 @@ namespace Client.Main.Controls.UI.Game.Helper
             foreach (HelperThresholdSegmentButton segment in _potionThresholdSegments)
                 segment.BackgroundColor = Color.Transparent;
 
-            _startButton.Text = IsClassicPc
-                ? (_controller.IsActive ? "Stop" : "Start")
-                : (_controller.IsActive ? "STOP HELPER" : "START HELPER");
-            _startButton.Visible = !_showPotionSettings;
+            // _startButton.Text = IsClassicPc
+            //     ? (_controller.IsActive ? "StopX" : "StartX")
+            //     : (_controller.IsActive ? "STOP HELPER" : "START HELPER");
+            // _startButton.Visible = !_showPotionSettings;
             _scrollUpButton.Visible = !_showPotionSettings;
             _scrollDownButton.Visible = !_showPotionSettings;
             foreach (ButtonControl tab in _tabButtons)
@@ -1410,11 +1502,102 @@ namespace Client.Main.Controls.UI.Game.Helper
             _resetButton.Visible = true;
             _saveButton.Visible = true;
             bool classic = UiThemeManager.CurrentId == UiThemeId.Classic;
-            _startButton.BackgroundColor = _controller.IsActive
-                ? (classic ? new Color(104, 36, 46, 245) : new Color(86, 37, 39, 245))
-                : (classic ? new Color(24, 58, 46, 245) : new Color(31, 65, 48, 245));
-            if (_extraItemsBox != null && !_extraItemsBox.HasFocus)
-                _extraItemsBox.Text = string.Join(", ", _controller.Config.ExtraItems ?? new List<string>());
+            // _startButton.BackgroundColor = _controller.IsActive
+            //     ? (classic ? new Color(104, 36, 46, 245) : new Color(86, 37, 39, 245))
+            //     : (classic ? new Color(24, 58, 46, 245) : new Color(31, 65, 48, 245));
+            UpdateExtraItemsList();
+        }
+
+        private void AddExtraItem()
+        {
+            if (_extraItemsBox == null)
+                return;
+
+            List<string> values = _extraItemsBox.Text
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToList();
+            if (values.Count == 0)
+            {
+                FocusExtraItemFilter();
+                return;
+            }
+
+            List<string> items = _controller.Config.ExtraItems ?? new List<string>();
+            foreach (string value in values)
+            {
+                if (!items.Any(item => string.Equals(item, value, StringComparison.OrdinalIgnoreCase)))
+                    items.Add(value);
+            }
+            _controller.Config.ExtraItems = items;
+            _controller.Config.Normalize();
+            _controller.Save();
+            _extraItemsBox.Text = string.Empty;
+            UpdateExtraItemsList();
+            RefreshValues();
+            _extraItemsBox.Text = string.Empty;
+        }
+
+        private void UpdateExtraItemsList()
+        {
+            if (_extraItemsListLabel == null || _extraItemsPage == null)
+                return;
+
+            foreach (ButtonControl row in _extraItemRowButtons)
+            {
+                _extraItemsPage.Controls.Remove(row);
+                row.Dispose();
+            }
+            _extraItemRowButtons.Clear();
+
+            List<string> items = _controller.Config.ExtraItems ?? new List<string>();
+            _extraItemsListLabel.Text = items.Count == 0 ? "No item filters added." : string.Empty;
+            int rowHeight = IsClassicPc ? 14 : 20;
+            int listTop = _extraItemsListLabel.Y;
+            int visibleRows = Math.Max(1, _extraItemsListLabel.ViewSize.Y / rowHeight);
+            for (int i = 0; i < Math.Min(items.Count, visibleRows); i++)
+            {
+                int index = i;
+                ButtonControl row = CreateButton(items[i], _extraItemsListLabel.X, listTop + i * rowHeight,
+                    _extraItemsListLabel.ViewSize.X, rowHeight, () => SelectExtraItem(index));
+                row.Name = $"Extra Item {items[i]}";
+                row.FontSize = IsClassicPc ? 6.2f : 8;
+                row.TextColor = i == _selectedExtraItemIndex ? ModernHudTheme.TextGold : ModernHudTheme.TextWhite;
+                row.HoverTextColor = ModernHudTheme.TextGold;
+                row.BackgroundColor = i == _selectedExtraItemIndex
+                    ? new Color(74, 57, 24, 240)
+                    : new Color(8, 11, 16, 220);
+                row.HoverBackgroundColor = new Color(62, 48, 24, 235);
+                row.PressedBackgroundColor = new Color(45, 35, 20, 245);
+                row.BorderColor = i == _selectedExtraItemIndex ? ModernHudTheme.AccentBright : ModernHudTheme.BorderInner;
+                row.BorderThickness = 1;
+                _extraItemsPage.Controls.Add(row);
+                _extraItemRowButtons.Add(row);
+            }
+
+            _deleteExtraItemButton.Interactive = _selectedExtraItemIndex >= 0 &&
+                                                  _selectedExtraItemIndex < items.Count;
+        }
+
+        private void SelectExtraItem(int index)
+        {
+            _selectedExtraItemIndex = index;
+            UpdateExtraItemsList();
+        }
+
+        private void DeleteSelectedExtraItem()
+        {
+            List<string> items = _controller.Config.ExtraItems ?? new List<string>();
+            if (_selectedExtraItemIndex < 0 || _selectedExtraItemIndex >= items.Count)
+                return;
+
+            items.RemoveAt(_selectedExtraItemIndex);
+            _controller.Config.ExtraItems = items;
+            _controller.Config.Normalize();
+            _controller.Save();
+            _selectedExtraItemIndex = Math.Min(_selectedExtraItemIndex, items.Count - 1);
+            UpdateExtraItemsList();
+            RefreshValues();
         }
 
         private void SaveSettings()
@@ -1451,11 +1634,18 @@ namespace Client.Main.Controls.UI.Game.Helper
             if (_extraItemsBox == null)
                 return;
 
-            _controller.Config.ExtraItems = _extraItemsBox.Text
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            List<string> items = _controller.Config.ExtraItems ?? new List<string>();
+            foreach (string value in _extraItemsBox.Text
+                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                         .Where(value => !string.IsNullOrWhiteSpace(value)))
+            {
+                if (!items.Any(item => string.Equals(item, value, StringComparison.OrdinalIgnoreCase)))
+                    items.Add(value);
+            }
+            _controller.Config.ExtraItems = items;
+            _controller.Config.Normalize();
+            _extraItemsBox.Text = string.Empty;
+            UpdateExtraItemsList();
         }
 
         private string GetPotionSlotText()
@@ -1491,7 +1681,11 @@ namespace Client.Main.Controls.UI.Game.Helper
         private void FocusExtraItemFilter()
         {
             _extraItemsBox.Visible = true;
+            _addExtraItemButton.Visible = true;
+            _extraItemsListLabel.Visible = true;
             _extraItemsBox.BringToFront();
+            _addExtraItemButton.BringToFront();
+            _extraItemsListLabel.BringToFront();
             Scene.FocusControl = _extraItemsBox;
             _extraItemsBox.OnClick();
         }
@@ -1548,6 +1742,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             UpdateClassicHuntingControlVisibility();
             ApplyLoadedHelperTextures();
             Recenter();
+            ApplyVisualDesignerLayout();
         }
 
         private void ApplyPresentationLayout()
@@ -1680,9 +1875,35 @@ namespace Client.Main.Controls.UI.Game.Helper
 
                 if (_extraItemsBox != null)
                 {
-                    _extraItemsBox.ControlSize = new Point(156, 22);
+                    _extraItemsBox.X = 20;
+                    _extraItemsBox.Y = 178;
+                    _extraItemsBox.ControlSize = new Point(105, 22);
                     _extraItemsBox.ViewSize = _extraItemsBox.ControlSize;
                     _extraItemsBox.FontSize = 8;
+                }
+                if (_addExtraItemButton != null)
+                {
+                    _addExtraItemButton.X = 128;
+                    _addExtraItemButton.Y = 178;
+                    _addExtraItemButton.ControlSize = new Point(34, 22);
+                    _addExtraItemButton.ViewSize = _addExtraItemButton.ControlSize;
+                    _addExtraItemButton.FontSize = 6.5f;
+                }
+                if (_extraItemsListLabel != null)
+                {
+                    _extraItemsListLabel.X = 20;
+                    _extraItemsListLabel.Y = 205;
+                    _extraItemsListLabel.ControlSize = new Point(145, 90);
+                    _extraItemsListLabel.ViewSize = _extraItemsListLabel.ControlSize;
+                    _extraItemsListLabel.FontSize = 6.5f;
+                }
+                if (_deleteExtraItemButton != null)
+                {
+                    _deleteExtraItemButton.X = 116;
+                    _deleteExtraItemButton.Y = 300;
+                    _deleteExtraItemButton.ControlSize = new Point(48, 22);
+                    _deleteExtraItemButton.ViewSize = _deleteExtraItemButton.ControlSize;
+                    _deleteExtraItemButton.FontSize = 6.5f;
                 }
             }
             else
@@ -1761,13 +1982,43 @@ namespace Client.Main.Controls.UI.Game.Helper
                 }
 
                 if (_extraItemsBox != null)
+                {
+                    _extraItemsBox.X = 5;
+                    _extraItemsBox.Y = 10 + 9 * RowHeight + 20;
+                    _extraItemsBox.ControlSize = new Point(WindowWidth - 130, 30);
+                    _extraItemsBox.ViewSize = _extraItemsBox.ControlSize;
                     _extraItemsBox.FontSize = 10;
+                }
+                if (_addExtraItemButton != null)
+                {
+                    _addExtraItemButton.X = WindowWidth - 112;
+                    _addExtraItemButton.Y = 10 + 9 * RowHeight + 20;
+                    _addExtraItemButton.ControlSize = new Point(50, 30);
+                    _addExtraItemButton.ViewSize = _addExtraItemButton.ControlSize;
+                    _addExtraItemButton.FontSize = 8;
+                }
+                if (_extraItemsListLabel != null)
+                {
+                    _extraItemsListLabel.X = 5;
+                    _extraItemsListLabel.Y = 10 + 9 * RowHeight + 54;
+                    _extraItemsListLabel.ControlSize = new Point(WindowWidth - 68, 72);
+                    _extraItemsListLabel.ViewSize = _extraItemsListLabel.ControlSize;
+                    _extraItemsListLabel.FontSize = 8;
+                }
+                if (_deleteExtraItemButton != null)
+                {
+                    _deleteExtraItemButton.X = WindowWidth - 112;
+                    _deleteExtraItemButton.Y = 10 + 9 * RowHeight + 130;
+                    _deleteExtraItemButton.ControlSize = new Point(50, 30);
+                    _deleteExtraItemButton.ViewSize = _deleteExtraItemButton.ControlSize;
+                    _deleteExtraItemButton.FontSize = 8;
+                }
             }
 
             foreach (GameControl control in new GameControl[]
                     {
                         _startButton, _saveButton, _resetButton, _closeButton,
-                        _scrollUpButton, _scrollDownButton
+                        _scrollUpButton, _scrollDownButton, _addExtraItemButton, _deleteExtraItemButton
                     })
             {
                 if (control == null)
@@ -1798,6 +2049,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         private sealed class HelperActionButton : ButtonControl
         {
             public bool FlipTextureHorizontally { get; set; }
+            public bool DrawRangeFallback { get; set; }
 
             public new void SetTexture(Texture2D texture) => Texture = texture;
 
@@ -1823,6 +2075,20 @@ namespace Client.Main.Controls.UI.Game.Helper
                     {
                         GraphicsManager.Instance.Sprite.Draw(texture, DisplayRectangle, Color.White * Alpha);
                     }
+                }
+                else if (DrawRangeFallback)
+                {
+                    SpriteBatch sprite = GraphicsManager.Instance.Sprite;
+                    Texture2D pixel = GraphicsManager.Instance.Pixel;
+                    if (pixel == null)
+                        return;
+                    Rectangle rect = DisplayRectangle;
+                    Color color = new Color(232, 166, 45, 255) * Alpha;
+                    int centerX = rect.Center.X;
+                    int centerY = rect.Center.Y;
+                    sprite.Draw(pixel, new Rectangle(centerX - 5, centerY - 1, 10, 2), color);
+                    if (!FlipTextureHorizontally)
+                        sprite.Draw(pixel, new Rectangle(centerX - 1, centerY - 5, 2, 10), color);
                 }
                 else
                     base.Draw(gameTime);

@@ -184,14 +184,17 @@ public static class UiThemeManager
     private static readonly ConcurrentDictionary<string, Lazy<Task<Texture2D?>>> _textureTasks = new();
     private static readonly UiThemeDefinition _modern = CreateModernDefinition();
     private static readonly UiThemeDefinition _classic = CreateClassicDefinition();
+    private static readonly IReadOnlyList<UiThemeDefinition> _desktopThemes = new[] { _modern };
+    private static readonly IReadOnlyList<UiThemeDefinition> _mobileThemes = new[] { _modern, _classic };
     private static UiThemeDefinition _current = _modern;
     private static Action<UiThemeId>? _persist;
 
     public static event EventHandler<UiThemeChangedEventArgs>? ThemeChanged;
 
+    public static bool IsMobilePlatform => OperatingSystem.IsAndroid() || OperatingSystem.IsIOS();
     public static UiThemeDefinition Current => _current;
     public static UiThemeId CurrentId => _current.Id;
-    public static IReadOnlyList<UiThemeDefinition> AvailableThemes { get; } = new[] { _modern, _classic };
+    public static IReadOnlyList<UiThemeDefinition> AvailableThemes => IsMobilePlatform ? _mobileThemes : _desktopThemes;
 
     public static void ConfigurePersistence(Action<UiThemeId> persist)
     {
@@ -205,6 +208,12 @@ public static class UiThemeManager
             (logger ?? _logger)?.LogWarning(
                 "Unsupported UI theme '{ConfiguredTheme}'. Falling back to Modern.",
                 configuredTheme);
+            parsed = UiThemeId.Modern;
+        }
+        else if (!IsMobilePlatform && parsed == UiThemeId.Classic)
+        {
+            (logger ?? _logger)?.LogInformation(
+                "The Classic Phone UI is available only on mobile platforms. Falling back to Modern.");
             parsed = UiThemeId.Modern;
         }
 
@@ -230,7 +239,7 @@ public static class UiThemeManager
 
     public static bool SetTheme(UiThemeId theme, bool persist = true)
     {
-        if (!Enum.IsDefined(theme))
+        if (!Enum.IsDefined(theme) || (!IsMobilePlatform && theme == UiThemeId.Classic))
             theme = UiThemeId.Modern;
 
         UiThemeDefinition next = GetDefinition(theme);
@@ -379,7 +388,7 @@ public static class UiThemeManager
 
     private static UiThemeDefinition CreateClassicDefinition() => new(
         UiThemeId.Classic,
-        "Classic",
+        "Classic Phone",
         new UiThemePalette
         {
             BgDarkest = new Color(5, 7, 12, 255), BgDark = new Color(11, 15, 24, 250),

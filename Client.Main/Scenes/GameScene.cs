@@ -3,6 +3,7 @@ using Client.Main.Configuration;
 using Client.Main.Controls;
 using Client.Main.Controls.UI;
 using Client.Main.Controls.UI.Game;
+using Client.Main.Controls.UI.Game.Layouts;
 using Client.Main.Models;
 using Client.Main.Objects.Player;
 using Client.Main.Worlds;
@@ -26,6 +27,7 @@ using Client.Main.Controls.UI.Game.Trade;
 using Client.Main.Controls.UI.Game.Quest;
 using Microsoft.Xna.Framework.Graphics;
 using Client.Main.Networking;
+using System;
 using System.Reflection;
 using System.Diagnostics.CodeAnalysis;
 using Client.Main.Controls.UI.Game.Buffs;
@@ -93,6 +95,7 @@ namespace Client.Main.Scenes
         private GameScenePlayerMenuController _playerMenuController;
         private GameSceneHotkeys _hotkeys;
         private GameSceneScopeImportController _scopeImportController;
+        private GameSceneUiEditorController _uiEditorController;
         private GameSceneObjectEditorController _objectEditorController;
         private GameSceneDuelController _duelController;
         private GameSceneChatController _chatController;
@@ -124,6 +127,7 @@ namespace Client.Main.Scenes
         public InventoryControl InventoryControl => _inventoryControl;
         public TradeControl TradeControl => TradeControl.Instance;
         public PauseMenuControl PauseMenu => _pauseMenu;
+        public UiLayoutRuntimeControl RuntimeUiLayout { get; private set; }
         internal ModernBottomHud ModernHud => _modernHud;
         internal GameSceneSkillController SkillController => _skillController;
         internal MuHelperController MuHelperController => _muHelperController;
@@ -429,8 +433,21 @@ namespace Client.Main.Scenes
                 StartWhisperToPlayer,
                 _duelController.OnDuelRequestedFromContextMenu);
             _playerMenuController.Initialize();
-            _objectEditorController = new GameSceneObjectEditorController(this, _logger);
+            _objectEditorController =
+                new GameSceneObjectEditorController(this, _logger);
+
             _objectEditorController.Initialize();
+
+            RuntimeUiLayout = new UiLayoutRuntimeControl(_logger);
+            RuntimeUiLayout.ButtonClicked += element =>
+            {
+                if (string.Equals(element?.Name, "Close Button", StringComparison.OrdinalIgnoreCase))
+                    RuntimeUiLayout.Hide();
+            };
+            Controls.Add(RuntimeUiLayout);
+            _uiEditorController = new GameSceneUiEditorController(this, _logger, RuntimeUiLayout, _muHelperWindow);
+            _uiEditorController.Initialize();
+
             _hotkeys = new GameSceneHotkeys(
                 this,
                 _pauseMenu,
@@ -442,6 +459,7 @@ namespace Client.Main.Scenes
                 _chatInput,
                 _chatLog,
                 _objectEditorController,
+                _uiEditorController,
                 _muHelperController,
                 _muHelperWindow,
                 _logger);

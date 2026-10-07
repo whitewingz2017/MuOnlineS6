@@ -1088,36 +1088,26 @@ namespace Client.Main.Controls.UI.Game.PauseMenu
             {
                 BuildCategory("Interface", (ref int currentY) =>
                 {
-                    AddOption(
-                        "Classic interface",
-                        () => UiThemeManager.CurrentId == UiThemeId.Classic,
-                        value => UiThemeManager.SetTheme(value ? UiThemeId.Classic : UiThemeId.Modern),
-                        ref currentY,
-                        OptionRowHeight);
-
-                    AddOption(
-                        "HUD: Hybrid",
-                        () => MuGame.AppSettings?.HudTheme != HudTheme.ClassicPc,
-                        value =>
-                        {
-                            if (value)
-                                _owner.SetHudTheme(HudTheme.Hybrid);
-                        },
-                        ref currentY,
-                        OptionRowHeight);
-
-                    AddOption(
-                        "HUD: Classic PC",
-                        () => MuGame.AppSettings?.HudTheme == HudTheme.ClassicPc,
-                        value =>
-                        {
-                            if (value)
-                                _owner.SetHudTheme(HudTheme.ClassicPc);
-                        },
-                        ref currentY,
-                        OptionRowHeight);
-
-                    AddHeading("Hybrid keeps the current ModernBottomHud, touch, and imprint UI. Classic PC adds the optional Season 6 PC bottom bar.", ref currentY);
+                    if (UiThemeManager.IsMobilePlatform)
+                    {
+                        AddOption(
+                            "Classic Phone",
+                            () => UiThemeManager.CurrentId == UiThemeId.Classic,
+                            value => UiThemeManager.SetTheme(value ? UiThemeId.Classic : UiThemeId.Modern),
+                            ref currentY,
+                            OptionRowHeight);
+                        AddHeading("Classic Phone includes touch controls and the virtual joystick.", ref currentY);
+                    }
+                    else
+                    {
+                        AddOption(
+                            "Hybrid Theme",
+                            () => MuGame.AppSettings?.HudTheme != HudTheme.ClassicPc,
+                            value => _owner.SetHudTheme(value ? HudTheme.Hybrid : HudTheme.ClassicPc),
+                            ref currentY,
+                            OptionRowHeight);
+                        AddHeading("Enabled: Hybrid. Disabled: Classic PC.", ref currentY);
+                    }
                 });
             }
 

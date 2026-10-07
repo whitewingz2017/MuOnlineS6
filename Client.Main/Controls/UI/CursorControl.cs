@@ -6,12 +6,25 @@ using Client.Main.Objects.NPCS;
 using Client.Main.Objects.Monsters;
 using Client.Main.Objects.Player;
 using Client.Main;
+using Client.Main.Controllers;
+using Client.Main.Models;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Microsoft.Xna.Framework.Input.Touch;
 using System;
 using System.Linq;
 using Client.Main.Objects;
+
+public enum EditorCursorMode
+{
+    Default,
+    Move,
+    ResizeHorizontal,
+    ResizeVertical,
+    ResizeDiagonalNWSE,
+    ResizeDiagonalNESW
+}
 
 public class CursorControl : SpriteControl
 {
@@ -24,6 +37,9 @@ public class CursorControl : SpriteControl
     private Type[] restPlaceTypes;
     private string currentTexturePath = "";
     private Vector2[] currentAnimationState;
+    public EditorCursorMode EditorCursorMode { get; private set; }
+
+    public void SetEditorCursorMode(EditorCursorMode mode) => EditorCursorMode = mode;
 
     // BringToFront throttling - no need to call every frame
     private double _bringToFrontTimer = 0;
@@ -265,5 +281,82 @@ public class CursorControl : SpriteControl
         }
 
         base.Update(gameTime);
+    }
+
+    public override void Draw(GameTime gameTime)
+    {
+        if (EditorCursorMode == EditorCursorMode.Default)
+        {
+            base.Draw(gameTime);
+            return;
+        }
+
+        if (Status != GameControlStatus.Ready || !Visible)
+            return;
+
+        Texture2D pixel = GraphicsManager.Instance.Pixel;
+        SpriteBatch sprite = GraphicsManager.Instance.Sprite;
+        if (pixel == null || sprite == null)
+            return;
+
+        int x = (int)X + 2;
+        int y = (int)Y + 2;
+        Color color = Color.White;
+        switch (EditorCursorMode)
+        {
+            case EditorCursorMode.Move:
+                DrawMoveCursor(sprite, pixel, x, y, color);
+                break;
+            case EditorCursorMode.ResizeHorizontal:
+                DrawResizeCursor(sprite, pixel, x, y, color, horizontal: true, diagonal: false, reverse: false);
+                break;
+            case EditorCursorMode.ResizeVertical:
+                DrawResizeCursor(sprite, pixel, x, y, color, horizontal: false, diagonal: false, reverse: false);
+                break;
+            case EditorCursorMode.ResizeDiagonalNWSE:
+                DrawResizeCursor(sprite, pixel, x, y, color, horizontal: false, diagonal: true, reverse: false);
+                break;
+            case EditorCursorMode.ResizeDiagonalNESW:
+                DrawResizeCursor(sprite, pixel, x, y, color, horizontal: false, diagonal: true, reverse: true);
+                break;
+        }
+    }
+
+    private static void DrawMoveCursor(SpriteBatch sprite, Texture2D pixel, int x, int y, Color color)
+    {
+        sprite.Draw(pixel, new Rectangle(x + 8, y, 2, 20), color);
+        sprite.Draw(pixel, new Rectangle(x, y + 8, 20, 2), color);
+        sprite.Draw(pixel, new Rectangle(x + 5, y, 8, 2), color);
+        sprite.Draw(pixel, new Rectangle(x + 5, y + 18, 8, 2), color);
+        sprite.Draw(pixel, new Rectangle(x, y + 5, 2, 8), color);
+        sprite.Draw(pixel, new Rectangle(x + 18, y + 5, 2, 8), color);
+    }
+
+    private static void DrawResizeCursor(SpriteBatch sprite, Texture2D pixel, int x, int y, Color color,
+        bool horizontal, bool diagonal, bool reverse)
+    {
+        if (horizontal)
+        {
+            sprite.Draw(pixel, new Rectangle(x, y + 9, 20, 2), color);
+            sprite.Draw(pixel, new Rectangle(x, y + 6, 2, 8), color);
+            sprite.Draw(pixel, new Rectangle(x + 18, y + 6, 2, 8), color);
+            return;
+        }
+        if (!diagonal)
+        {
+            sprite.Draw(pixel, new Rectangle(x + 9, y, 2, 20), color);
+            sprite.Draw(pixel, new Rectangle(x + 6, y, 8, 2), color);
+            sprite.Draw(pixel, new Rectangle(x + 6, y + 18, 8, 2), color);
+            return;
+        }
+
+        for (int offset = 0; offset < 20; offset++)
+        {
+            int px = reverse ? x + 19 - offset : x + offset;
+            int py = y + offset;
+            sprite.Draw(pixel, new Rectangle(px, py, 2, 2), color);
+        }
+        sprite.Draw(pixel, new Rectangle(reverse ? x + 17 : x, y, 3, 8), color);
+        sprite.Draw(pixel, new Rectangle(reverse ? x : x + 17, y + 17, 3, 3), color);
     }
 }
