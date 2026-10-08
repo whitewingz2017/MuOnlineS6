@@ -4,6 +4,7 @@ using Client.Main.Controllers;
 using Client.Main.Controls;
 using Client.Main.Controls.UI;
 using Client.Main.Controls.UI.Game.Inventory;
+using Client.Main.Controls.UI.Game.Helper;
 using Client.Main.Core.Client;
 using Client.Main.Core.Utilities;
 using Client.Main.Data;
@@ -31,12 +32,24 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Client.Telemetry;
-
+#if WINDOWS_DX
+using MGUI.Shared.Rendering;
+using MGUI.Core.UI;
+#endif
 
 namespace Client.Main
 {
+#if WINDOWS_DX
+    public class MuGame : Game, IObservableUpdate
+#else
     public class MuGame : Game
+#endif
     {
+#if WINDOWS_DX
+        public event EventHandler<TimeSpan> PreviewUpdate;
+        public event EventHandler<EventArgs> EndUpdate;
+#endif
+
         private const string LocalSettingsFileName = "appsettings.local.json";
         public readonly record struct SlowFrameSnapshot(
             long Sequence,
@@ -63,7 +76,11 @@ namespace Client.Main
             string Phase,
             string ExceptionType,
             string Message);
-
+#if WINDOWS_DX
+        private MainRenderer _mguiRenderer;
+        private MGDesktop _mguiDesktop;
+        private MguiHelperWindow _mguiHelperWindow;
+#endif
         private const int MaxMainThreadActionsPerFrame = 96;
         private static readonly TimeSpan MaxMainThreadActionTimePerFrame = TimeSpan.FromMilliseconds(2);
         private static readonly TimeSpan SimulationFixedStep = TimeSpan.FromSeconds(1.0 / 60.0);
@@ -650,6 +667,13 @@ namespace Client.Main
                 UiScaler.VirtualSize.Y,
                 UiScaler.ActualSize.X,
                 UiScaler.ActualSize.Y);
+#if WINDOWS_DX
+            _mguiRenderer = new MainRenderer(
+                new GameRenderHost<MuGame>(this));
+
+            _mguiDesktop = new MGDesktop(_mguiRenderer);
+            _mguiHelperWindow = new MguiHelperWindow(_mguiDesktop);
+#endif
 
             base.Initialize();
         }
@@ -667,6 +691,10 @@ namespace Client.Main
 
         protected override void Update(GameTime gameTime)
         {
+#if WINDOWS_DX
+            PreviewUpdate?.Invoke(this, gameTime.TotalGameTime);
+#endif
+
 #if PERFORMANCE_RELEASE
             _detailedPassProfilingThisFrame = false;
 #else
@@ -694,6 +722,9 @@ namespace Client.Main
                 GameTime = gameTime;
                 FrameIndex++;
                 UpdateInputInfo(gameTime);
+#if WINDOWS_DX
+                _mguiDesktop?.Update();
+#endif
                 CheckShaderToggles();
                 SunCycleManager.Update();
                 Camera.Instance.UpdateShake((float)gameTime.ElapsedGameTime.TotalSeconds);
@@ -743,6 +774,9 @@ namespace Client.Main
 #else
                 _frameProfiler.EndUpdate();
                 UpdatePassProfiler.EndFrame(_frameProfiler.Current.UpdateMs);
+#endif
+#if WINDOWS_DX
+                EndUpdate?.Invoke(this, EventArgs.Empty);
 #endif
             }
         }
@@ -877,7 +911,14 @@ namespace Client.Main
 
                 _currentDrawPhase = "FrameworkDraw";
                 var frameworkDrawStarted = RenderPassProfiler.Start();
+                GraphicsDevice.SetRenderTarget(null);
+
                 base.Draw(gameTime);
+
+#if WINDOWS_DX
+                _mguiDesktop?.Draw();
+#endif
+
                 RenderPassProfiler.AddFrameworkDraw(frameworkDrawStarted);
 
                 // Commit only a fully completed GameScene frame. The next frame renders into

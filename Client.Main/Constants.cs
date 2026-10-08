@@ -286,7 +286,8 @@ namespace Client.Main
             SHADOW_BIAS = 0.005f;
             SHADOW_NORMAL_BIAS = 0.008f;
 
-            DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+            // DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+            DataPath = @"C:\OpenMU\Data";
         }
 
 #if DEBUG

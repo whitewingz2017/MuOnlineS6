@@ -41,6 +41,14 @@
     <MonoGameContentReference Include="..\Client.Main\MGContent\Content.mgcb">
       <Link>Content\Content.mgcb</Link>
     </MonoGameContentReference>
+
+    <MonoGameContentReference Include="..\MGUI\MGUI.Shared\Content\MGUI.Shared.Content.mgcb">
+      <Link>Content\MGUI.Shared.Content.mgcb</Link>
+    </MonoGameContentReference>
+
+    <MonoGameContentReference Include="..\MGUI\MGUI.Core\Content\MGUI.Core.Content.mgcb">
+      <Link>Content\MGUI.Core.Content.mgcb</Link>
+    </MonoGameContentReference>
   </ItemGroup>
 
   <ItemGroup>

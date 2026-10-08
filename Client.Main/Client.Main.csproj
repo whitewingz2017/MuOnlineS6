@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <ClientMainTargetFramework Condition="'$(ClientMainTargetFramework)' == ''">net10.0</ClientMainTargetFramework>
+    <ClientMainTargetFramework Condition="'$(ClientMainTargetFramework)' == ''">net10.0-windows</ClientMainTargetFramework>
     <ClientMainTargetFramework Condition="'$(MonoGameFramework)' == 'MonoGame.Framework.Android'">net10.0-android</ClientMainTargetFramework>
     <ClientMainTargetFramework Condition="'$(MonoGameFramework)' == 'MonoGame.Framework.WindowsDX'">net10.0-windows</ClientMainTargetFramework>
     <TargetFramework>$(ClientMainTargetFramework)</TargetFramework>
@@ -32,6 +32,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -81,6 +82,11 @@
   <ItemGroup>
     <ProjectReference Include="..\Client.Data\Client.Data.csproj" />
     <ProjectReference Include="..\Client.Telemetry\Client.Telemetry.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <ProjectReference Include="..\MGUI\MGUI.Shared\MGUI.Shared.csproj" />
+    <ProjectReference Include="..\MGUI\MGUI.Core\MGUI.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
