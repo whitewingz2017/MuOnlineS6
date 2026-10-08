@@ -63,6 +63,9 @@ namespace Client.Main.Controls.UI
         public string Label { get; set; }
         public string Placeholder { get; set; }
 
+        public Color FocusedBorderColor { get; set; } = new Color(255, 215, 0);
+        public Color FocusedBackgroundColor { get; set; } = Color.Transparent;
+
         public string Value
         {
             get => GetCachedValue();
@@ -163,6 +166,13 @@ namespace Client.Main.Controls.UI
 
         public new void Focus() => OnFocus();
         public new void Blur() => OnBlur();
+
+        public override bool OnClick()
+        {
+            OnFocus();
+            base.OnClick();
+            return true;
+        }
 
         public void MoveCursorToEnd()
         {
@@ -388,8 +398,20 @@ namespace Client.Main.Controls.UI
 
         private void DrawFlatBackground(SpriteBatch spriteBatch)
         {
+            // Swap to focused colors when this field has focus so the user can see it is active.
+            Color originalBackground = BackgroundColor;
+            Color originalBorder = BorderColor;
+            if (IsFocused)
+            {
+                BackgroundColor = FocusedBackgroundColor.A > 0 ? FocusedBackgroundColor : originalBackground;
+                BorderColor = FocusedBorderColor;
+            }
+
             DrawBackground();
             DrawBorder();
+
+            BackgroundColor = originalBackground;
+            BorderColor = originalBorder;
         }
 
         private void DrawNineSliceBackground(SpriteBatch spriteBatch)

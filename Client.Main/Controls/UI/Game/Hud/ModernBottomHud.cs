@@ -14,6 +14,7 @@ using Client.Main.Core.Client;
 using Client.Main.Core.Utilities;
 using Client.Main.Helpers;
 using Client.Main.Models;
+using Client.Main.Scenes;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -260,7 +261,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             _displayAgPct = MathHelper.Lerp(_displayAgPct, _targetAgPct, LerpSpeed * dt);
 
             RefreshCompanionLifeInfos();
-            if (IsModernRenderer)
+            if (IsModernRenderer && !IsMuHelperWindowOpen())
             {
                 HandleKeyboard();
                 HandleMouseHover();
@@ -404,6 +405,9 @@ namespace Client.Main.Controls.UI.Game.Hud
                 _abilityText = $"{_lastCurrentAbility}/{_lastMaximumAbility}";
             }
         }
+
+        private static bool IsMuHelperWindowOpen()
+            => MuGame.Instance?.ActiveScene is GameScene gameScene && gameScene.MuHelperWindow?.Visible == true;
 
         private void HandleKeyboard()
         {

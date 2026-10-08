@@ -41,6 +41,10 @@ namespace Client.Main.Controls.UI.Common
         }
 
         public int MaxLength { get; set; } = 50;
+        public bool DigitsOnly { get; set; }
+        public bool IsFocused => _isFocused;
+        public event EventHandler EnterKeyPressed;
+
         public string PlaceholderText
         {
             get => _placeholderText;
@@ -56,6 +60,8 @@ namespace Client.Main.Controls.UI.Common
         public new Color BackgroundColor { get; set; } = new Color(32, 32, 42, 200);
         public new Color BorderColor { get; set; } = Color.Gray;
         public Color FocusedBorderColor { get; set; } = Color.Gold;
+        public Texture2D BackgroundTexture { get; set; }
+        public Rectangle? BackgroundTextureSource { get; set; }
         public new int BorderThickness { get; set; } = 1;
         public new int Padding { get; set; } = 8;
 
@@ -88,7 +94,11 @@ namespace Client.Main.Controls.UI.Common
                 {
                     Keys key = inputKeys[i];
                     if (currentKeyboardState.IsKeyDown(key) && _previousKeyboardState.IsKeyUp(key))
+                    {
                         HandleKeyPress(key, currentKeyboardState);
+                        if (!_isFocused)
+                            break;
+                    }
                 }
 
                 _previousKeyboardState = currentKeyboardState;
@@ -113,9 +123,20 @@ namespace Client.Main.Controls.UI.Common
                 return;
             }
 
-            if (key == Keys.Enter || key == Keys.Escape)
+            if (key == Keys.Enter)
+            {
+                EnterKeyPressed?.Invoke(this, EventArgs.Empty);
+                _isFocused = false;
+                if (ReferenceEquals(Scene?.FocusControl, this))
+                    Scene.FocusControl = null;
+                return;
+            }
+
+            if (key == Keys.Escape)
             {
                 _isFocused = false;
+                if (ReferenceEquals(Scene?.FocusControl, this))
+                    Scene.FocusControl = null;
                 return;
             }
 
@@ -126,7 +147,7 @@ namespace Client.Main.Controls.UI.Common
 
             // Convert key to character
             char? c = KeyToChar(key, shift);
-            if (c.HasValue)
+            if (c.HasValue && (!DigitsOnly || c.Value >= '0' && c.Value <= '9'))
             {
                 _text.Append(c.Value);
                 MarkTextChanged();
@@ -198,11 +219,31 @@ namespace Client.Main.Controls.UI.Common
             };
         }
 
-        public override bool OnClick()
+        public override void OnFocus()
         {
+            if (_isFocused)
+                return;
+
             _isFocused = true;
             _cursorVisible = true;
             _cursorBlinkTimer = 0;
+            _previousKeyboardState = Keyboard.GetState();
+            base.OnFocus();
+        }
+
+        public override void OnBlur()
+        {
+            _isFocused = false;
+            _cursorVisible = false;
+            _cursorBlinkTimer = 0;
+            _previousKeyboardState = Keyboard.GetState();
+            base.OnBlur();
+        }
+
+        public override bool OnClick()
+        {
+            Scene?.FocusControlIfInteractive(this);
+            OnFocus();
             return base.OnClick();
         }
 
@@ -214,8 +255,11 @@ namespace Client.Main.Controls.UI.Common
 
             var bounds = new Rectangle(DisplayPosition.X, DisplayPosition.Y, ViewSize.X, ViewSize.Y);
 
-            // Background
-            spriteBatch.Draw(pixel, bounds, BackgroundColor);
+            // Use the Classic MU Helper input skin when a background texture is assigned.
+            if (BackgroundTexture != null)
+                spriteBatch.Draw(BackgroundTexture, bounds, BackgroundTextureSource, Color.White);
+            else
+                spriteBatch.Draw(pixel, bounds, BackgroundColor);
 
             // Border
             var borderColor = _isFocused ? FocusedBorderColor : BorderColor;
@@ -262,16 +306,8 @@ namespace Client.Main.Controls.UI.Common
             spriteBatch.Draw(pixel, new Rectangle(rect.Right - thickness, rect.Y, thickness, rect.Height), color);
         }
 
-        public new void Focus()
-        {
-            _isFocused = true;
-            _cursorVisible = true;
-            _cursorBlinkTimer = 0;
-        }
+        public new void Focus() => OnFocus();
 
-        public void Unfocus()
-        {
-            _isFocused = false;
-        }
+        public void Unfocus() => OnBlur();
     }
 }

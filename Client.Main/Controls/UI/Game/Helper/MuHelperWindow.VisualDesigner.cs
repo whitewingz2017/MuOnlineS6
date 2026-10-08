@@ -162,7 +162,21 @@ namespace Client.Main.Controls.UI.Game.Helper
 
         public void SetVisualDesignerEditing(bool editing)
         {
-            _visualDesignerEditing = editing;
+            if (_visualDesignerEditing == editing)
+                return;
+
+            if (editing)
+            {
+                // Remove the runtime dock transform before the live tree is moved into the
+                // editor canvas; its coordinates must remain canvas-local while being edited.
+                RestoreClassicDockScale();
+                _visualDesignerEditing = true;
+                return;
+            }
+
+            _visualDesignerEditing = false;
+            if (_classicDockScaleReady)
+                ApplyClassicDockScale();
         }
 
         private void ApplyVisualDesignerLayout()
