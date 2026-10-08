@@ -33,6 +33,50 @@ namespace Client.Main.Networking.Services
             _logger = logger;
         }
 
+        public async Task SendMuHelperStatusChangeAsync(bool pause)
+        {
+            if (!_connectionManager.IsConnected)
+            {
+                _logger.LogWarning("Not connected - cannot send MU Helper status change.");
+                return;
+            }
+
+            try
+            {
+                await _connectionManager.Connection.SendMuHelperStatusChangeRequestAsync(pause).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send MU Helper status change (pause={Pause}).", pause);
+            }
+        }
+
+        public async Task SendMuHelperSaveDataAsync(ReadOnlyMemory<byte> helperData257)
+        {
+            if (helperData257.Length != 257)
+            {
+                _logger.LogWarning("Cannot save MU Helper data with length {Length}; expected 257 bytes.", helperData257.Length);
+                return;
+            }
+
+            if (!_connectionManager.IsConnected)
+            {
+                _logger.LogWarning("Not connected - cannot save MU Helper data to the server.");
+                return;
+            }
+
+            try
+            {
+                await _connectionManager.Connection
+                    .SendMuHelperSaveDataRequestAsync(new Memory<byte>(helperData257.ToArray()))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save MU Helper data to the server.");
+            }
+        }
+
         /// <summary>
         /// Sends a request to drop an item from inventory onto the ground at the specified tile.
         /// </summary>

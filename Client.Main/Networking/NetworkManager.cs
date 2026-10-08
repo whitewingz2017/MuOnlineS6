@@ -48,6 +48,8 @@ namespace Client.Main.Networking
         private readonly Dictionary<byte, byte> _serverDirectionMap;
         private string _selectedCharacterNameForLogin = string.Empty;
         private readonly Ping _pingSender = new Ping();
+        private readonly object _muHelperConfigurationSync = new();
+        private byte[] _cachedMuHelperConfigurationData;
 
         private ClientConnectionState _currentState = ClientConnectionState.Initial;
         private List<ServerInfo> _serverList = new();
@@ -66,6 +68,8 @@ namespace Client.Main.Networking
         public event EventHandler EnteredGame;
         public event EventHandler<LoginResponse.LoginResult> LoginFailed;
         public event EventHandler<LogOutType> LogoutResponseReceived;
+        public event Action<bool, uint, bool> MuHelperStatusUpdated;
+        public event Action<byte[]> MuHelperConfigurationDataReceived;
 
         // Properties
         public ClientConnectionState CurrentState => _currentState;
@@ -76,6 +80,38 @@ namespace Client.Main.Networking
             => _characterService.SendClientReadyAfterMapChangeAsync();
 
         public CharacterService GetCharacterService() => _characterService;
+        public byte[] GetCachedMuHelperConfigurationData()
+        {
+            lock (_muHelperConfigurationSync)
+                return _cachedMuHelperConfigurationData?.ToArray();
+        }
+
+        internal void ProcessMuHelperStatusUpdate(bool consumeMoney, uint money, bool pauseStatus)
+        {
+            MuGame.ScheduleOnMainThread(
+                () => MuHelperStatusUpdated?.Invoke(consumeMoney, money, pauseStatus),
+                MainThreadDispatcher.WorkPriority.High,
+                "NetworkManager.MuHelperStatusUpdate");
+        }
+
+        internal void ProcessMuHelperConfigurationData(byte[] helperData)
+        {
+            if (helperData == null || helperData.Length != 257)
+            {
+                _logger.LogWarning("Ignoring invalid MU Helper configuration payload of {Length} bytes.", helperData?.Length ?? 0);
+                return;
+            }
+
+            byte[] snapshot = helperData.ToArray();
+            lock (_muHelperConfigurationSync)
+                _cachedMuHelperConfigurationData = snapshot;
+
+            MuGame.ScheduleOnMainThread(
+                () => MuHelperConfigurationDataReceived?.Invoke(snapshot.ToArray()),
+                MainThreadDispatcher.WorkPriority.High,
+                "NetworkManager.MuHelperConfigurationData");
+        }
+
         public ScopeManager GetScopeManager() => _scopeManager;
         public PartyManager GetPartyManager() => _partyManager;
         public TargetProtocolVersion TargetVersion => _packetRouter.TargetVersion;

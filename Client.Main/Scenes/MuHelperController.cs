@@ -48,6 +48,7 @@ namespace Client.Main.Scenes
         private MonsterObject _currentTarget;
         private volatile bool _pickupInFlight;
         private bool _active;
+        private bool _startRequestPending;
         private readonly DateTime[] _nextActivationCastAt = new DateTime[2];
         private readonly DateTime[] _nextBuffCastAt = new DateTime[3];
         private int _comboStep;
@@ -55,6 +56,8 @@ namespace Client.Main.Scenes
 
         public MuHelperConfig Config { get; private set; } = new();
         public bool IsActive => _active;
+        public bool IsStartRequestPending => _startRequestPending;
+        public uint LastMuHelperZenCost { get; private set; }
         public event Action StateChanged;
 
         public MuHelperController(GameScene scene, GameSceneSkillController skillController, ILogger logger)
@@ -62,7 +65,30 @@ namespace Client.Main.Scenes
             _scene = scene ?? throw new ArgumentNullException(nameof(scene));
             _skillController = skillController ?? throw new ArgumentNullException(nameof(skillController));
             _logger = logger;
-            Load(MuGame.AppSettings?.MuHelper);
+
+            if (MuGame.Network is { } network)
+            {
+                network.MuHelperStatusUpdated += OnMuHelperStatusUpdate;
+                network.MuHelperConfigurationDataReceived += OnMuHelperConfigurationData;
+            }
+
+            byte[] serverConfiguration = MuGame.Network?.GetCachedMuHelperConfigurationData();
+            if (serverConfiguration is { Length: 257 })
+            {
+                try
+                {
+                    Load(MuHelperConfig.FromHelperDataBytes(serverConfiguration));
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to load cached server MU Helper configuration; using local settings.");
+                    Load(MuGame.AppSettings?.MuHelper);
+                }
+            }
+            else
+            {
+                Load(MuGame.AppSettings?.MuHelper);
+            }
         }
 
         public void Load(MuHelperConfig config = null)
@@ -76,6 +102,8 @@ namespace Client.Main.Scenes
         {
             Config.Normalize();
             MuGame.PersistMuHelperConfig(Config);
+            byte[] helperData = Config.ToHelperDataBytes();
+            _ = MuGame.Network?.GetCharacterService().SendMuHelperSaveDataAsync(helperData);
             StateChanged?.Invoke();
         }
 
@@ -89,13 +117,55 @@ namespace Client.Main.Scenes
 
         public void Start()
         {
-            if (_active)
+            if (_active || _startRequestPending)
                 return;
 
             Config.Normalize();
             if (!CanOperate(out string reason))
             {
                 _logger?.LogInformation("MU Helper cannot start: {Reason}", reason);
+                StateChanged?.Invoke();
+                return;
+            }
+
+            CharacterService service = MuGame.Network?.GetCharacterService();
+            if (service == null)
+            {
+                _logger?.LogInformation("MU Helper cannot start: character service is unavailable.");
+                StateChanged?.Invoke();
+                return;
+            }
+
+            _startRequestPending = true;
+            _logger?.LogInformation("Requesting MU Helper start from server.");
+            _ = service.SendMuHelperStatusChangeAsync(pause: false);
+            StateChanged?.Invoke();
+        }
+
+        public void Stop()
+        {
+            _startRequestPending = false;
+            StopLocal();
+            _ = MuGame.Network?.GetCharacterService().SendMuHelperStatusChangeAsync(pause: true);
+        }
+
+        public void Toggle()
+        {
+            if (_active || _startRequestPending)
+                Stop();
+            else
+                Start();
+        }
+
+        private void StartLocal()
+        {
+            if (_active)
+                return;
+
+            Config.Normalize();
+            if (!CanOperate(out string reason))
+            {
+                _logger?.LogInformation("MU Helper server start rejected locally: {Reason}", reason);
                 StateChanged?.Invoke();
                 return;
             }
@@ -123,10 +193,13 @@ namespace Client.Main.Scenes
             StateChanged?.Invoke();
         }
 
-        public void Stop()
+        private void StopLocal()
         {
             if (!_active)
+            {
+                StateChanged?.Invoke();
                 return;
+            }
 
             _active = false;
             _currentTarget = null;
@@ -136,12 +209,50 @@ namespace Client.Main.Scenes
             StateChanged?.Invoke();
         }
 
-        public void Toggle()
+        private void OnMuHelperStatusUpdate(bool consumeMoney, uint money, bool pause)
         {
-            if (_active)
-                Stop();
-            else
-                Start();
+            _startRequestPending = false;
+            if (consumeMoney)
+                LastMuHelperZenCost = money;
+
+            if (pause)
+            {
+                StopLocal();
+                return;
+            }
+
+            if (consumeMoney)
+            {
+                StateChanged?.Invoke();
+                return;
+            }
+
+            LastMuHelperZenCost = 0;
+            StartLocal();
+        }
+
+        private void OnMuHelperConfigurationData(byte[] helperData)
+        {
+            try
+            {
+                Config = MuHelperConfig.FromHelperDataBytes(helperData);
+                Config.Normalize();
+                MuGame.PersistMuHelperConfig(Config);
+                StateChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to apply server MU Helper configuration data.");
+            }
+        }
+
+        public void Dispose()
+        {
+            if (MuGame.Network is { } network)
+            {
+                network.MuHelperStatusUpdated -= OnMuHelperStatusUpdate;
+                network.MuHelperConfigurationDataReceived -= OnMuHelperConfigurationData;
+            }
         }
 
         public void Update(GameTime gameTime)
@@ -616,22 +727,34 @@ namespace Client.Main.Scenes
         {
             if (scopeObject is MoneyScopeObject)
                 return Config.PickZen;
+
             if (scopeObject is not ItemScopeObject item)
                 return false;
 
-            bool selectedName = Config.ExtraItems.Any(name =>
-                !string.IsNullOrWhiteSpace(name) && item.ItemDescription.Contains(name.Trim(), StringComparison.OrdinalIgnoreCase));
+            // 1) Pick everything
             if (Config.PickAllItems)
                 return true;
-            if (selectedName && (Config.PickSelectedItems || Config.PickExtraItems))
+
+            bool nameMatch = Config.ExtraItems != null &&
+                Config.ExtraItems.Any(name =>
+                    !string.IsNullOrWhiteSpace(name) &&
+                    item.ItemDescription.Contains(name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            // 2) Extra list — ONLY when "Add Extra Item" is checked
+            if (Config.PickExtraItems && nameMatch)
                 return true;
+
+            // 3) Category filters — only in "Pick Selected Items" mode
+            if (!Config.PickSelectedItems)
+                return false;
+
             if (!ItemDatabase.TryGetItemGroupAndNumber(item.ItemData.Span, out byte group, out short number))
                 return false;
 
             var details = ItemDatabase.ParseItemDetails(item.ItemData.Span);
             return (Config.PickJewel && ItemDatabase.IsJewelItem(group, number)) ||
-                   (Config.PickAncient && details.IsAncient) ||
-                   (Config.PickExcellent && details.IsExcellent);
+                (Config.PickAncient && details.IsAncient) ||
+                (Config.PickExcellent && details.IsExcellent);
         }
 
         private async Task SendPickupAsync(CharacterService service, TargetProtocolVersion version, CharacterState state, ushort rawId)

@@ -1550,6 +1550,7 @@ namespace Client.Main.Scenes
             _initialWorldActivationCooldown = false;
             _pendingWorldActivationCompletion?.TrySetCanceled();
             _pendingWorldActivationCompletion = null;
+            _muHelperController?.Dispose();
 
             if (_hero != null)
             {

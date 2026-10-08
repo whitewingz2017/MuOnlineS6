@@ -2804,9 +2804,12 @@ namespace Client.Main.Controls.UI.Game.Helper
                     return;
 
                 var rect = DisplayRectangle;
-                var iconRect = new Rectangle(rect.X + 5, rect.Y + 1, 14, 16);
+                bool classicSlot = rect.Width <= 40;
+                Rectangle iconRect = classicSlot
+                    ? new Rectangle(rect.Center.X - 10, rect.Center.Y - 11, 20, 22)
+                    : new Rectangle(rect.X + 5, rect.Y + 1, 14, 16);
                 if (!Client.Main.Controls.UI.Game.Skills.SkillIconRenderer.DrawSkillRect(
-                        GraphicsManager.Instance.Sprite, skillId, iconRect, Color.White * Alpha))
+                        GraphicsManager.Instance.Sprite, skillId, iconRect, Color.White * Alpha) || classicSlot)
                     return;
 
                 SpriteFont font = GraphicsManager.GetUiFont(6.2f, out float scale);
@@ -2846,8 +2849,8 @@ namespace Client.Main.Controls.UI.Game.Helper
                 if (checkBoxTexture == null || checkBoxTexture.Width < 15 || checkBoxTexture.Height < 30)
                     return;
 
-                // MuMain's newui_option_check.OZT is a 15x30 atlas: unchecked
-                // in the first 15px row and checked in the second.
+                // MuMain's newui_option_check.OZT is a 15x30 atlas: checked
+                // in the first 15px row and unchecked in the second.
                 const int sourceSize = 15;
                 Rectangle bounds = DisplayRectangle;
                 int logicalSize = Math.Clamp(LogicalCheckSize, 1, 32);
@@ -2855,7 +2858,7 @@ namespace Client.Main.Controls.UI.Game.Helper
                 int size = Math.Max(1, (int)MathF.Round(Math.Min(bounds.Width, bounds.Height) * logicalSize / (float)controlSize));
                 int x = bounds.X + (bounds.Width - size) / 2;
                 int y = bounds.Y + (bounds.Height - size) / 2;
-                int sourceY = _isChecked() ? sourceSize : 0;
+                int sourceY = _isChecked() ? 0 : sourceSize;
                 GraphicsManager.Instance.Sprite.Draw(
                     checkBoxTexture,
                     new Rectangle(x, y, size, size),

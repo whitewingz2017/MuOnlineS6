@@ -47,6 +47,37 @@ namespace Client.Main.Networking.PacketHandling.Handlers
 
         // ─────────────────────── Packet Handlers ────────────────────────
 
+        [PacketHandler(0xBF, 0x51)] // MuHelperStatusUpdate (S2C)
+        public Task HandleMuHelperStatusUpdateAsync(Memory<byte> packet)
+        {
+            if (packet.Length < MuHelperStatusUpdate.Length)
+            {
+                _logger.LogWarning("Ignoring short MU Helper status update ({Length} bytes).", packet.Length);
+                return Task.CompletedTask;
+            }
+
+            MuHelperStatusUpdate update = packet;
+            _networkManager.ProcessMuHelperStatusUpdate(
+                update.ConsumeMoney,
+                update.Money,
+                update.PauseStatus);
+            return Task.CompletedTask;
+        }
+
+        [PacketHandler(0xAE, PacketRouter.NoSubCode)] // MuHelperConfigurationData (S2C)
+        public Task HandleMuHelperConfigurationDataAsync(Memory<byte> packet)
+        {
+            if (packet.Length < MuHelperConfigurationData.Length)
+            {
+                _logger.LogWarning("Ignoring short MU Helper configuration data ({Length} bytes).", packet.Length);
+                return Task.CompletedTask;
+            }
+
+            MuHelperConfigurationData configuration = packet;
+            _networkManager.ProcessMuHelperConfigurationData(configuration.HelperData.ToArray());
+            return Task.CompletedTask;
+        }
+
         [PacketHandler(0x50, PacketRouter.NoSubCode)] // GuildJoinRequest (S2C)
         public Task HandleGuildJoinRequestAsync(Memory<byte> packet)
         {
