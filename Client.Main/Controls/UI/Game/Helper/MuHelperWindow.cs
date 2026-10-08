@@ -952,6 +952,7 @@ namespace Client.Main.Controls.UI.Game.Helper
                 ViewSize = new Point(width, height),
                 AutoViewSize = false,
                 FontSize = 6.5f,
+                UseClassicIconLayout = true,
                 GetSkillFrame = () => _helperTextures[4],
                 GetActiveSkillFrame = () => _helperTextures[5],
                 BackgroundColor = Color.Transparent,
@@ -2403,6 +2404,15 @@ namespace Client.Main.Controls.UI.Game.Helper
                 }
             }
 
+            if (IsClassicPc)
+            {
+                foreach (SkillSlotButton skillSlot in _classicHuntingControls.OfType<SkillSlotButton>())
+                {
+                    skillSlot.ControlSize = new Point(36, 36);
+                    skillSlot.ViewSize = skillSlot.ControlSize;
+                }
+            }
+
             ConfigureExtraItemsScrollButtons();
             foreach (GameControl control in new GameControl[]
                     {
@@ -2732,8 +2742,12 @@ namespace Client.Main.Controls.UI.Game.Helper
 
         private sealed class SkillSlotButton : ButtonControl
         {
+            private static readonly ILogger _logger = MuGame.AppLoggerFactory?.CreateLogger<SkillSlotButton>();
             private readonly Func<ushort> _getSkillId;
             private Action _clearSkill;
+            private bool _loggedClassicGeometry;
+
+            public bool UseClassicIconLayout { get; set; }
             public Func<Texture2D> GetSkillFrame { get; set; }
             public Func<Texture2D> GetActiveSkillFrame { get; set; }
             public new void SetTexture(Texture2D texture)
@@ -2800,14 +2814,21 @@ namespace Client.Main.Controls.UI.Game.Helper
                 else
                     base.Draw(gameTime);
 
+                var rect = DisplayRectangle;
+                bool classicSlot = UseClassicIconLayout || rect.Width <= 40;
+                Rectangle iconRect = classicSlot
+                    ? new Rectangle(rect.X + 1, rect.Y + 1, Math.Max(1, rect.Width - 2), Math.Max(1, rect.Height - 2))
+                    : new Rectangle(rect.X + 5, rect.Y + 1, 14, 16);
+                if (UseClassicIconLayout && !_loggedClassicGeometry)
+                {
+                    _logger?.LogInformation(
+                        "MU Helper classic skill slot {Name}: skillId={SkillId}, display={DisplayWidth}x{DisplayHeight}, icon={IconWidth}x{IconHeight}, control={ControlWidth}x{ControlHeight}",
+                        Name, skillId, rect.Width, rect.Height, iconRect.Width, iconRect.Height, ControlSize.X, ControlSize.Y);
+                    _loggedClassicGeometry = true;
+                }
                 if (skillId == 0)
                     return;
 
-                var rect = DisplayRectangle;
-                bool classicSlot = rect.Width <= 40;
-                Rectangle iconRect = classicSlot
-                    ? new Rectangle(rect.Center.X - 10, rect.Center.Y - 11, 20, 22)
-                    : new Rectangle(rect.X + 5, rect.Y + 1, 14, 16);
                 if (!Client.Main.Controls.UI.Game.Skills.SkillIconRenderer.DrawSkillRect(
                         GraphicsManager.Instance.Sprite, skillId, iconRect, Color.White * Alpha) || classicSlot)
                     return;
