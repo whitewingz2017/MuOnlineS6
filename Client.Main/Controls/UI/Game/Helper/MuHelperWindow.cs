@@ -29,6 +29,9 @@ namespace Client.Main.Controls.UI.Game.Helper
         // MuMain CNewUIMuHelper uses a fixed 190x429 logical canvas.
         private const int ClassicPcWidth = 190;
         private const int ClassicPcHeight = 429;
+        // OZTReader pads the 190x64 source texture to 256x64; draw only its real pixels.
+        private const int ClassicHeaderTextureWidth = 190;
+        private const int ClassicHeaderTextureHeight = 64;
         private const int ClassicPcRowHeight = 17;
         private const int ClassicPcContentTop = 70;
         private const int ClassicPcContentHeight = 298;
@@ -127,7 +130,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         private readonly UIControl _potionSettingsPage;
         private readonly List<GameControl> _classicHuntingControls = new();
         private readonly List<HelperThresholdSegmentButton> _potionThresholdSegments = new();
-        private readonly List<(ButtonControl Button, bool Flip)> _classicIconButtons = new();
+        private readonly List<(ButtonControl Button, int TextureIndex, bool Flip)> _classicIconButtons = new();
         private HelperActionButton _potionSettingsBackButton;
         private readonly List<HelperToggleButton> _potionSettingsToggles = new();
         private HelperToggleButton _potionAutoHealToggle;
@@ -251,9 +254,9 @@ namespace Client.Main.Controls.UI.Game.Helper
             _inputHintLabel = AddLabel(this, "Manual input keeps existing Helper ownership rules.", 15, 361, 160, 15, 6.4f, ModernHudTheme.TextGray);
             _inputHintLabel.Visible = false;
 
-            // _startButton = CreateButton("Start", 35, FooterTop - 30, 117, 26, _controller.Toggle);
-            // _startButton.FontSize = 7.5f;
-            // Controls.Add(_startButton);
+            _startButton = CreateButton("Start", 35, FooterTop - 30, 117, 26, _controller.Toggle);
+            _startButton.FontSize = 7.5f;
+            Controls.Add(_startButton);
             _saveButton = CreateButton("Save", 120, FooterTop, 52, 26, SaveSettings);
             _saveButton.FontSize = 7.5f;
             Controls.Add(_saveButton);
@@ -395,11 +398,13 @@ namespace Client.Main.Controls.UI.Game.Helper
             ((HelperActionButton)_resetButton).SetTexture(IsClassicPc ? _helperTextures[6] : null);
             ((HelperActionButton)_closeButton).SetTexture(IsClassicPc ? _helperTextures[7] : null);
 
-            foreach ((ButtonControl button, bool flip) in _classicIconButtons)
+            foreach ((ButtonControl button, int textureIndex, bool flip) in _classicIconButtons)
             {
                 if (button is HelperActionButton iconButton)
                 {
-                    iconButton.SetTexture(_helperTextures[0]);
+                    iconButton.SetTexture((uint)textureIndex < (uint)_helperTextures.Length
+                        ? _helperTextures[textureIndex]
+                        : null);
                     iconButton.FlipTextureHorizontally = flip;
                 }
             }
@@ -434,11 +439,21 @@ namespace Client.Main.Controls.UI.Game.Helper
                 var header = new Rectangle(rect.X + ScaleLogical(margin), rect.Y + ScaleLogical(44), rect.Width - ScaleLogical(margin * 2), ScaleLogical(3));
                 sprite.Draw(pixel, header, new Color(125, 99, 54, 230) * Alpha);
                 DrawPanel(sprite, pixel, new Rectangle(rect.X + ScaleLogical(margin), rect.Y + ScaleLogical(ContentTop - 8), rect.Width - ScaleLogical(margin * 2), ScaleLogical(ContentHeight + 16)));
-                DrawPanel(sprite, pixel, new Rectangle(rect.X + ScaleLogical(margin), rect.Y + ScaleLogical(FooterTop - 8), rect.Width - ScaleLogical(margin * 2), rect.Height - ScaleLogical(FooterTop) - ScaleLogical(8)));
+                DrawPanel(sprite, pixel, new Rectangle(rect.X + ScaleLogical(margin), rect.Y + ScaleLogical(FooterTop - 8), rect.Width + ScaleLogical(margin * 2), rect.Height - ScaleLogical(FooterTop) - ScaleLogical(8)));
                 return;
             }
             DrawTextureOrFill(sprite, pixel, _frameTextures[0], rect, new Color(8, 10, 16, 238));
-            DrawTextureOrFill(sprite, pixel, _frameTextures[1], new Rectangle(rect.X, rect.Y, rect.Width, ScaleLogical(64)), new Color(18, 22, 30, 245));
+            // Crop the power-of-two padding from the OZT source, then stretch the real pixels across the frame.
+            Rectangle headerBack = new(rect.X, rect.Y, rect.Width, ScaleLogical(ClassicHeaderTextureHeight));
+            if (_frameTextures[1] is { } itemBackTexture)
+            {
+                var source = new Rectangle(0, 0, ClassicHeaderTextureWidth, ClassicHeaderTextureHeight);
+                sprite.Draw(itemBackTexture, headerBack, source, Color.White * Alpha);
+            }
+            else
+            {
+                DrawTextureOrFill(sprite, pixel, null, headerBack, new Color(18, 22, 30, 245));
+            }
             int sideTop = rect.Y + ScaleLogical(64);
             int sideHeight = rect.Height - ScaleLogical(109);
             DrawTextureOrFill(sprite, pixel, _frameTextures[2], new Rectangle(rect.X, sideTop, ScaleLogical(21), sideHeight), new Color(11, 14, 20, 245));
@@ -664,12 +679,12 @@ namespace Client.Main.Controls.UI.Game.Helper
 
         private void BuildClassicHuntingPage(UIControl page)
         {
-            AddClassicLabel(page, "Range", 18, 8, 34, 16, 8, ModernHudTheme.TextWhite);
-            AddClassicValueLabel(page, () => _controller.Config.HuntingRange.ToString(), 40, 25, 18, 18, 11, ModernHudTheme.TextGold);
-            AddClassicIconButton(page, 56, 8, 16, 15,
-                () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange + 1, 0, 15), _helperTextures[8]);
-            AddClassicIconButton(page, 56, 27, 16, 15,
-                () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange - 1, 0, 15), _helperTextures[0], flip: true);
+            AddClassicLabel(page, "Range", 8, 8, 34, 16, 8, ModernHudTheme.TextWhite);
+            AddClassicValueLabel(page, () => _controller.Config.HuntingRange.ToString(), 18, 25, 18, 18, 11, ModernHudTheme.TextGold);
+            AddClassicIconButton(page, 43, 8, 16, 15,
+                () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange + 1, 0, 15), 8);
+            AddClassicIconButton(page, 43, 27, 16, 15,
+                () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange - 1, 0, 15), 0, flip: true);
 
             AddClassicToggle(page, "Potion", 79, 10, () => _controller.Config.UseHealPotion,
                 value => _controller.Config.UseHealPotion = value, out _);
@@ -799,7 +814,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         }
 
         private void AddClassicIconButton(UIControl page, int x, int y, int width, int height,
-            Action action, Texture2D texture, bool flip = false)
+            Action action, int textureIndex, bool flip = false)
         {
             var button = CreateButton(string.Empty, x, y, width, height, () =>
             {
@@ -807,11 +822,14 @@ namespace Client.Main.Controls.UI.Game.Helper
                 _controller.Config.Normalize();
                 RefreshValues();
             });
+            Texture2D texture = (uint)textureIndex < (uint)_helperTextures.Length
+                ? _helperTextures[textureIndex]
+                : null;
             button.SetTexture(texture);
             button.FlipTextureHorizontally = flip;
             button.DrawRangeFallback = true;
             page.Controls.Add(button);
-            _classicIconButtons.Add((button, flip));
+            _classicIconButtons.Add((button, textureIndex, flip));
             _classicHuntingControls.Add(button);
         }
 
@@ -949,12 +967,17 @@ namespace Client.Main.Controls.UI.Game.Helper
 
         private void BuildClassicObtainingPage(UIControl page)
         {
+            // All coordinates and dimensions below are logical pixels relative to `page`.
+            // AddClassicLabel/AddClassicValueLabel arguments after text/value are:
+            // x, y, width, height, fontSize, color. Icon button arguments are x, y, width, height.
             AddClassicLabel(page, "Range", 18, 8, 34, 16, 8, ModernHudTheme.TextWhite);
-            AddClassicValueLabel(page, () => _controller.Config.ObtainingRange.ToString(), 40, 25, 18, 18, 11, ModernHudTheme.TextGold);
-            AddClassicIconButton(page, 56, 8, 16, 15,
-                () => _controller.Config.ObtainingRange = Math.Clamp(_controller.Config.ObtainingRange + 1, 0, 15), _helperTextures[0]);
-            AddClassicIconButton(page, 56, 27, 16, 15,
-                () => _controller.Config.ObtainingRange = Math.Clamp(_controller.Config.ObtainingRange - 1, 0, 15), _helperTextures[0], flip: true);
+            AddClassicValueLabel(page, () => _controller.Config.ObtainingRange.ToString(), 33, 49, 18, 18, 11, ModernHudTheme.TextGold);
+            // Increase button: rectangle (62, 30, 16, 15), increments obtaining range by one.
+            AddClassicIconButton(page, 62, 30, 16, 15,
+                () => _controller.Config.ObtainingRange = Math.Clamp(_controller.Config.ObtainingRange + 1, 0, 15), 8);
+            // Decrease button: rectangle (62, 51, 16, 15), decrements by one; flipped icon orientation.
+            AddClassicIconButton(page, 62, 51, 16, 15,
+                () => _controller.Config.ObtainingRange = Math.Clamp(_controller.Config.ObtainingRange - 1, 0, 15), 0, flip: true);
             AddClassicToggle(page, "Repair equipment", 79, 10, () => _controller.Config.RepairItem,
                 value => _controller.Config.RepairItem = value, out _);
             AddClassicToggle(page, "Pick all items", 18, 52, () => _controller.Config.PickAllItems,

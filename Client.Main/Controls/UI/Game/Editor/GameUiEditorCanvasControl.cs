@@ -493,7 +493,11 @@ namespace Client.Main.Controls.UI.Game.Editor
             {
                 Id = stableId,
                 ParentId = parentId,
-                SourcePath = hasSourceBinding ? savedPath : sourcePath,
+                // Source paths are runtime tree addresses. A generated descriptor can
+                // be stale when conditional Helper presentations change the child order;
+                // retain stable IDs where they still bind, but always save the current
+                // live path so the next build rebinds this descriptor to this control.
+                SourcePath = isDesignerAdded ? null : sourcePath,
                 IsSourceBacked = !isDesignerAdded,
                 IsDesignerAdded = isDesignerAdded,
                 DesignerPageId = owningPage?.Id ?? "root",

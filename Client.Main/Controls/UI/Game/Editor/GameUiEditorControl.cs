@@ -22,6 +22,7 @@ namespace Client.Main.Controls.UI.Game.Editor
         private readonly ButtonControl _nextPageButton;
         private readonly ButtonControl _undoButton;
         private readonly ButtonControl _redoButton;
+        private readonly ButtonControl _documentSaveButton;
         private readonly LabelControl _viewportLabel;
         private readonly GameUiEditorAssetBrowserControl _assetBrowser;
         private readonly GameUiEditorCanvasControl _canvas;
@@ -193,7 +194,8 @@ namespace Client.Main.Controls.UI.Game.Editor
 
             // Keep document actions in the header; object actions live in the bottom toolbar
             // beside the canvas so they are visually separated from file/page operations.
-            AddActionButton("Save", 1072, 62, SaveDocument, 64);
+            _documentSaveButton = CreateToolbarButton("Save", 1072, 62, 64, SaveCurrentDocument);
+            Controls.Add(_documentSaveButton);
             AddActionButton("Load", 1138, 62, LoadDocument, 64);
             AddActionButton("Preview", 1204, 62, PreviewLayout, 64);
 
@@ -305,18 +307,16 @@ namespace Client.Main.Controls.UI.Game.Editor
                 _hintLabel.Text = "Open a supported C# UI source first.";
                 return;
             }
-            if (!string.IsNullOrWhiteSpace(_sourceBindingError))
-            {
-                _hintLabel.Text = $"C# save blocked: live source bindings are stale or ambiguous. Rebuild the client and reopen the UI. {_sourceBindingError}";
-                return;
-            }
-
             try
             {
                 UiLayoutDocument document = _canvas.CreateSourceDocument(_sourceInspection.ClassName);
+                bool staleBindings = !string.IsNullOrWhiteSpace(_sourceBindingError);
                 string path = _sourceWriter.Save(_sourceInspection, document.Elements);
                 _canvas.MarkSaved();
-                _hintLabel.Text = $"C# layout saved: {path} (MuHelperWindow.cs was preserved)";
+                string bindingNote = staleBindings
+                    ? " Stale bindings were normalized to the current live control paths."
+                    : string.Empty;
+                _hintLabel.Text = $"C# layout saved: {path} ({document.Elements.Count} elements).{bindingNote} Rebuild/restart the client to apply the saved descriptors.";
             }
             catch (Exception ex)
             {
@@ -401,6 +401,8 @@ namespace Client.Main.Controls.UI.Game.Editor
 
         private void UpdateHistoryButtons()
         {
+            if (_documentSaveButton != null)
+                _documentSaveButton.Text = _canvas.IsSourceMode ? "Save C#" : "Save";
             _undoButton.Interactive = _canvas.CanUndo;
             _redoButton.Interactive = _canvas.CanRedo;
             _undoButton.Text = "Undo";
@@ -440,6 +442,17 @@ namespace Client.Main.Controls.UI.Game.Editor
             _canvas.SelectPage(_canvas.Pages[index].Id);
             UpdatePageSelector();
             _hintLabel.Text = $"PAGE: {_canvas.CurrentPageName} | Select an object to edit";
+        }
+
+        private void SaveCurrentDocument()
+        {
+            if (_canvas.IsSourceMode)
+            {
+                SaveCSharpUi();
+                return;
+            }
+
+            SaveDocument();
         }
 
         private void SaveDocument()
