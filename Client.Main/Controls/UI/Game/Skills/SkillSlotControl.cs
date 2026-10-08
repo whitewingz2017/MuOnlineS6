@@ -3,6 +3,7 @@ using System;
 using System.Threading.Tasks;
 using Client.Data.BMD;
 using Client.Main.Content;
+using Client.Main.Controls.UI;
 using Client.Main.Controls.UI.Common;
 using Client.Main.Controls.UI.Game.Common;
 using Client.Main.Controllers;
@@ -21,6 +22,8 @@ namespace Client.Main.Controls.UI.Game.Skills
     {
         private SkillEntryState? _skill;
         private Texture2D? _iconTexture;
+        private Texture2D? _classicSkillFrame;
+        private Texture2D? _classicSkillFrameActive;
         private Rectangle _iconSource;
         private bool _isSelected;
         private bool _wasHovered;
@@ -29,6 +32,9 @@ namespace Client.Main.Controls.UI.Game.Skills
 
         public const int SLOT_WIDTH = 28;
         public const int SLOT_HEIGHT = 48;
+        public const int CLASSIC_SLOT_WIDTH = ClassicSkillSlotRenderer.CellWidth;
+        public const int CLASSIC_SLOT_HEIGHT = ClassicSkillSlotRenderer.CellHeight;
+        public static bool UseClassicPresentation => UiThemeManager.CurrentId == UiThemeId.Classic;
 
         public SkillEntryState? Skill
         {
@@ -76,6 +82,14 @@ namespace Client.Main.Controls.UI.Game.Skills
                 await TextureLoader.Instance.Prepare(texturePath);
             }
 
+            if (UseClassicPresentation)
+            {
+                await TextureLoader.Instance.Prepare(ClassicSkillSlotRenderer.NormalFramePath);
+                await TextureLoader.Instance.Prepare(ClassicSkillSlotRenderer.ActiveFramePath);
+                _classicSkillFrame = TextureLoader.Instance.GetTexture2D(ClassicSkillSlotRenderer.NormalFramePath);
+                _classicSkillFrameActive = TextureLoader.Instance.GetTexture2D(ClassicSkillSlotRenderer.ActiveFramePath);
+            }
+
             await base.Load();
             RefreshSkillIconTexture();
         }
@@ -102,6 +116,19 @@ namespace Client.Main.Controls.UI.Game.Skills
             }
 
             Rectangle rect = DisplayRectangle;
+            if (UseClassicPresentation)
+            {
+                ClassicSkillSlotRenderer.Draw(
+                    spriteBatch,
+                    rect,
+                    _skill?.SkillId,
+                    _isSelected,
+                    _classicSkillFrame,
+                    _classicSkillFrameActive,
+                    Color.White * Alpha);
+                return;
+            }
+
             DrawSlotFrame(spriteBatch, pixel, rect, gameTime);
             DrawIconArea(spriteBatch, pixel, rect);
             DrawSkillIcon(spriteBatch, rect);

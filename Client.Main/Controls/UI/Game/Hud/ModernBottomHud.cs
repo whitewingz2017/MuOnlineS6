@@ -1893,70 +1893,163 @@ namespace Client.Main.Controls.UI.Game.Hud
             }
         }
 
-        internal bool TryConsumeHealPotionForHelper(int preferredSlotIndex = -1)
+        internal async Task<bool> TryConsumeHealPotionForHelper(int preferredSlotIndex = -1)
         {
-            if (preferredSlotIndex >= 0)
-                return ConsumePotionInSlot(preferredSlotIndex, requireHealingPotion: true);
+            if (preferredSlotIndex >= 0 &&
+                await ConsumePotionInSlotForHelperAsync(preferredSlotIndex, requireHealingPotion: true))
+            {
+                return true;
+            }
 
             for (int slotIndex = 0; slotIndex < PotionSlotCount; slotIndex++)
             {
-                if (ConsumePotionInSlot(slotIndex, requireHealingPotion: true))
+                if (slotIndex == preferredSlotIndex)
+                    continue;
+
+                if (await ConsumePotionInSlotForHelperAsync(slotIndex, requireHealingPotion: true))
                     return true;
+            }
+
+            var service = MuGame.Network?.GetCharacterService();
+            if (service == null)
+                return false;
+
+            // No valid potion was available through Q/W/E. Auto HP can use the first
+            // matching potion anywhere in the character inventory, using its absolute slot.
+            foreach (var item in _state.GetInventoryItems())
+            {
+                if (item.Key < 12)
+                    continue;
+
+                var definition = ItemDatabase.GetItemDefinition(item.Value);
+                if (definition?.Group != 14 || !(definition.Id is 0 or 1 or 2 or 3 or 70 or 94))
+                    continue;
+
+                return await SendPotionConsumeRequestAsync(
+                    service, item.Key, (byte)definition.Group, definition.Id);
             }
 
             return false;
         }
 
-        private bool ConsumePotionInSlot(int slotIndex, bool requireHealingPotion = false)
+        internal async Task<bool> TryConsumeManaPotionForHelper()
         {
-            if (slotIndex < 0 || slotIndex >= PotionSlotCount)
+            var service = MuGame.Network?.GetCharacterService();
+            if (service == null)
                 return false;
 
-            var assignment = _potionAssignments[slotIndex];
-            if (assignment == null) return false;
-
-            var (group, id) = assignment.Value;
-            if (requireHealingPotion && (group != 14 || id is < 0 or > 2))
-                return false;
-
-            // Find first matching item in inventory
-            var items = _state.GetInventoryItems();
-            byte? foundSlot = null;
-
-            foreach (var kvp in items)
+            // Preserve the player's explicit Q/W/E preference when it identifies a mana
+            // potion that is currently in the inventory.
+            for (int slotIndex = 0; slotIndex < PotionSlotCount; slotIndex++)
             {
-                if (kvp.Key < 12) continue;
-
-                var def = ItemDatabase.GetItemDefinition(kvp.Value);
-                if (def != null && def.Group == group && def.Id == id)
+                if (TryResolvePotionItem(slotIndex, requireHealingPotion: false, requireManaPotion: true,
+                        out byte assignedItemSlot, out byte assignedGroup, out int assignedId))
                 {
-                    foundSlot = kvp.Key;
-                    break;
+                    return await SendPotionConsumeRequestAsync(
+                        service, assignedItemSlot, assignedGroup, assignedId);
                 }
             }
 
-            if (foundSlot == null) return false;
+            // Helper auto-MP does not require a Q/W/E assignment. Equipment occupies
+            // slots below 12; scan all actual inventory slots and use the first valid
+            // mana potion's absolute slot from CharacterState.
+            foreach (var item in _state.GetInventoryItems())
+            {
+                if (item.Key < 12)
+                    continue;
 
-            byte slot = foundSlot.Value;
-            var svc = MuGame.Network?.GetCharacterService();
-            if (svc == null)
+                var definition = ItemDatabase.GetItemDefinition(item.Value);
+                if (definition?.Group != 14 || !(definition.Id is 4 or 5 or 6 or 71))
+                    continue;
+
+                return await SendPotionConsumeRequestAsync(
+                    service, item.Key, (byte)definition.Group, definition.Id);
+            }
+
+            return false;
+        }
+
+        private async Task<bool> ConsumePotionInSlotForHelperAsync(
+            int slotIndex,
+            bool requireHealingPotion = false,
+            bool requireManaPotion = false)
+        {
+            if (!TryResolvePotionItem(slotIndex, requireHealingPotion, requireManaPotion, out byte itemSlot, out byte group, out int id))
                 return false;
 
-            // Play consumption sound only after a valid assigned inventory item was found.
-            var itemDef = ItemDatabase.GetItemDefinition(group, (short)id);
-            string itemName = itemDef?.Name?.ToLowerInvariant() ?? string.Empty;
-            if (itemName.Contains("apple"))
-                SoundController.Instance.PlayBuffer("Sound/pEatApple.wav");
-            else
-                SoundController.Instance.PlayBuffer("Sound/pDrink.wav");
+            var service = MuGame.Network?.GetCharacterService();
+            return service != null && await SendPotionConsumeRequestAsync(service, itemSlot, group, id);
+        }
 
-            _ = Task.Run(async () =>
-            {
-                await svc.SendConsumeItemRequestAsync(slot);
-                await Task.Delay(300);
-                MuGame.ScheduleOnMainThread(() => _state.RaiseInventoryChanged());
-            });
+        private bool ConsumePotionInSlot(int slotIndex, bool requireHealingPotion = false, bool requireManaPotion = false)
+        {
+            if (!TryResolvePotionItem(slotIndex, requireHealingPotion, requireManaPotion, out byte itemSlot, out byte group, out int id))
+                return false;
+
+            var service = MuGame.Network?.GetCharacterService();
+            if (service == null)
+                return false;
+
+            _ = SendPotionConsumeRequestAsync(service, itemSlot, group, id);
             return true;
+        }
+
+        private bool TryResolvePotionItem(
+            int slotIndex,
+            bool requireHealingPotion,
+            bool requireManaPotion,
+            out byte itemSlot,
+            out byte group,
+            out int id)
+        {
+            itemSlot = 0;
+            group = 0;
+            id = 0;
+            if (slotIndex < 0 || slotIndex >= PotionSlotCount || _potionAssignments[slotIndex] is not { } assignment)
+                return false;
+
+            (group, id) = assignment;
+            if (requireHealingPotion && (group != 14 || !(id is 0 or 1 or 2 or 3 or 70 or 94)))
+                return false;
+            if (requireManaPotion && (group != 14 || !(id is 4 or 5 or 6 or 71)))
+                return false;
+
+            foreach (var item in _state.GetInventoryItems())
+            {
+                if (item.Key < 12)
+                    continue;
+
+                var definition = ItemDatabase.GetItemDefinition(item.Value);
+                if (definition?.Group == group && definition.Id == id)
+                {
+                    itemSlot = item.Key;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private async Task<bool> SendPotionConsumeRequestAsync(
+            Client.Main.Networking.Services.CharacterService service,
+            byte itemSlot,
+            byte group,
+            int id)
+        {
+            if (!await service.SendConsumeItemRequestAsync(itemSlot))
+                return false;
+
+            string itemName = ItemDatabase.GetItemDefinition(group, (short)id)?.Name?.ToLowerInvariant() ?? string.Empty;
+            MuGame.ScheduleOnMainThread(() => SoundController.Instance.PlayBuffer(
+                itemName.Contains("apple") ? "Sound/pEatApple.wav" : "Sound/pDrink.wav"));
+            _ = RefreshInventoryAfterPotionUseAsync();
+            return true;
+        }
+
+        private async Task RefreshInventoryAfterPotionUseAsync()
+        {
+            await Task.Delay(300);
+            MuGame.ScheduleOnMainThread(() => _state.RaiseInventoryChanged());
         }
 
         private int CountPotionInInventory(byte group, int id)

@@ -6,6 +6,7 @@ using Client.Main.Controls;
 using Client.Main.Controls.UI.Common;
 using Client.Main.Controls.UI.Game.Common;
 using Client.Main.Controls.UI.Game.Hud;
+using Client.Main.Controls.UI.Game.Skills;
 using Client.Main.Controllers;
 using Client.Main.Content;
 using Client.Main.Core.Client;
@@ -118,8 +119,8 @@ namespace Client.Main.Controls.UI.Game.Helper
             "Interface/MacroUI/MacroUI_InputNumber.OZT",
             "Interface/MacroUI/MacroUI_InputString.OZT",
             "Interface/MacroUI/MacroUI_OptionButton.OZT",
-            "Interface/newui_skillbox.OZJ",
-            "Interface/newui_skillbox2.OZJ",
+            ClassicSkillSlotRenderer.NormalFramePath,
+            ClassicSkillSlotRenderer.ActiveFramePath,
             "Interface/InGameShop/ingame_Bt03.OZT",
             "Interface/newui_exit_00.OZT",
             "Interface/newui_chainfo_btn_level.tga"
@@ -340,6 +341,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         public void Close()
         {
             CommitExtraItemText();
+            _scene.CloseMuHelperPotionSettings();
             Visible = false;
             if (Scene?.FocusControl == this || IsFocusedDescendant(Scene?.FocusControl))
                 Scene.FocusControl = null;
@@ -395,6 +397,7 @@ namespace Client.Main.Controls.UI.Game.Helper
 
         public override void Dispose()
         {
+            _scene.CloseMuHelperPotionSettings();
             _controller.StateChanged -= OnControllerStateChanged;
             base.Dispose();
         }
@@ -839,11 +842,11 @@ namespace Client.Main.Controls.UI.Game.Helper
 
             // --- Basic Skill | Activation Skill 1 ---
             AddClassicSkillSlot(page, "Basic Skill", 10, 100,
-                () => _controller.Config.BasicSkillId, id => _controller.Config.BasicSkillId = id, 32, 38);
+                () => _controller.Config.BasicSkillId, id => _controller.Config.BasicSkillId = id, ClassicSkillSlotRenderer.CellWidth, ClassicSkillSlotRenderer.CellHeight);
 
             AddClassicLabel(page, "Activation Skill 1", 52, 88, 78, 12, 6.2f, ModernHudTheme.TextWhite);
             AddClassicSkillSlot(page, string.Empty, 54, 100,
-                () => _controller.Config.ActivationSkill1.SkillId, id => _controller.Config.ActivationSkill1.SkillId = id, 32, 38);
+                () => _controller.Config.ActivationSkill1.SkillId, id => _controller.Config.ActivationSkill1.SkillId = id, ClassicSkillSlotRenderer.CellWidth, ClassicSkillSlotRenderer.CellHeight);
 
             // Delay checkbox + number + "s" on one row; Con under Delay
             AddClassicToggle(page, "Delay", 92, 102, () => _controller.Config.ActivationSkill1.UseTimer,
@@ -860,7 +863,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             // --- Activation Skill 2 ---
             AddClassicLabel(page, "Activation Skill 2", 52, 148, 78, 12, 6.2f, ModernHudTheme.TextWhite);
             AddClassicSkillSlot(page, string.Empty, 54, 160,
-                () => _controller.Config.ActivationSkill2.SkillId, id => _controller.Config.ActivationSkill2.SkillId = id, 32, 38);
+                () => _controller.Config.ActivationSkill2.SkillId, id => _controller.Config.ActivationSkill2.SkillId = id, ClassicSkillSlotRenderer.CellWidth, ClassicSkillSlotRenderer.CellHeight);
 
             AddClassicToggle(page, "Combo", 10, 168, () => _controller.Config.UseCombo,
                 value => _controller.Config.UseCombo = value, out _);
@@ -878,7 +881,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             {
                 int slot = i;
                 AddClassicSkillSlot(page, string.Empty, 14 + i * 36, 248,
-                    () => _controller.Config.BuffSkillIds[slot], id => _controller.Config.BuffSkillIds[slot] = id, 32, 38);
+                    () => _controller.Config.BuffSkillIds[slot], id => _controller.Config.BuffSkillIds[slot] = id, ClassicSkillSlotRenderer.CellWidth, ClassicSkillSlotRenderer.CellHeight);
             }
         }
 
@@ -1325,7 +1328,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             if (_potionSettingsPage != null)
                 _potionSettingsPage.Visible = false;
 
-            _scene.OpenMuHelperPotionSettings();
+            _scene.ToggleMuHelperPotionSettings();
         }
 
         private void HidePotionSettings()
@@ -2408,7 +2411,9 @@ namespace Client.Main.Controls.UI.Game.Helper
             {
                 foreach (SkillSlotButton skillSlot in _classicHuntingControls.OfType<SkillSlotButton>())
                 {
-                    skillSlot.ControlSize = new Point(36, 36);
+                    skillSlot.ControlSize = new Point(
+                        ClassicSkillSlotRenderer.CellWidth,
+                        ClassicSkillSlotRenderer.CellHeight);
                     skillSlot.ViewSize = skillSlot.ControlSize;
                 }
             }
@@ -2808,29 +2813,47 @@ namespace Client.Main.Controls.UI.Game.Helper
                     return;
 
                 ushort skillId = _getSkillId();
+                var rect = DisplayRectangle;
+                bool classicSlot = UseClassicIconLayout || rect.Width <= 40;
+                if (classicSlot)
+                {
+                    Texture2D normalFrame = GetSkillFrame?.Invoke();
+                    Texture2D activeFrame = GetActiveSkillFrame?.Invoke();
+                    if (normalFrame == null && activeFrame == null)
+                        base.Draw(gameTime);
+
+                    Rectangle iconRect = ClassicSkillSlotRenderer.GetIconRectangle(rect);
+                    if (UseClassicIconLayout && !_loggedClassicGeometry)
+                    {
+                        _logger?.LogInformation(
+                            "MU Helper classic skill slot {Name}: skillId={SkillId}, display={DisplayWidth}x{DisplayHeight}, icon={IconWidth}x{IconHeight}, control={ControlWidth}x{ControlHeight}",
+                            Name, skillId, rect.Width, rect.Height, iconRect.Width, iconRect.Height, ControlSize.X, ControlSize.Y);
+                        _loggedClassicGeometry = true;
+                    }
+
+                    ClassicSkillSlotRenderer.Draw(
+                        GraphicsManager.Instance.Sprite,
+                        rect,
+                        skillId == 0 ? null : skillId,
+                        skillId != 0,
+                        normalFrame,
+                        activeFrame,
+                        Color.White * Alpha);
+                    return;
+                }
+
                 Texture2D skillFrame = skillId == 0 ? GetSkillFrame?.Invoke() : GetActiveSkillFrame?.Invoke();
                 if (skillFrame != null)
-                    GraphicsManager.Instance.Sprite.Draw(skillFrame, DisplayRectangle, Color.White * Alpha);
+                    GraphicsManager.Instance.Sprite.Draw(skillFrame, rect, Color.White * Alpha);
                 else
                     base.Draw(gameTime);
 
-                var rect = DisplayRectangle;
-                bool classicSlot = UseClassicIconLayout || rect.Width <= 40;
-                Rectangle iconRect = classicSlot
-                    ? new Rectangle(rect.X + 1, rect.Y + 1, Math.Max(1, rect.Width - 2), Math.Max(1, rect.Height - 2))
-                    : new Rectangle(rect.X + 5, rect.Y + 1, 14, 16);
-                if (UseClassicIconLayout && !_loggedClassicGeometry)
-                {
-                    _logger?.LogInformation(
-                        "MU Helper classic skill slot {Name}: skillId={SkillId}, display={DisplayWidth}x{DisplayHeight}, icon={IconWidth}x{IconHeight}, control={ControlWidth}x{ControlHeight}",
-                        Name, skillId, rect.Width, rect.Height, iconRect.Width, iconRect.Height, ControlSize.X, ControlSize.Y);
-                    _loggedClassicGeometry = true;
-                }
                 if (skillId == 0)
                     return;
 
-                if (!Client.Main.Controls.UI.Game.Skills.SkillIconRenderer.DrawSkillRect(
-                        GraphicsManager.Instance.Sprite, skillId, iconRect, Color.White * Alpha) || classicSlot)
+                Rectangle hybridIconRect = new(rect.X + 5, rect.Y + 1, 14, 16);
+                if (!SkillIconRenderer.DrawSkillRect(
+                        GraphicsManager.Instance.Sprite, skillId, hybridIconRect, Color.White * Alpha))
                     return;
 
                 SpriteFont font = GraphicsManager.GetUiFont(6.2f, out float scale);

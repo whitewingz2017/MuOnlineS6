@@ -1003,6 +1003,18 @@ namespace Client.Main.Scenes
             _muHelperWindow.BringToFront();
         }
 
+        internal bool IsMuHelperPotionSettingsOpen() => MuHelperPotionWindow?.Visible == true;
+
+        internal void CloseMuHelperPotionSettings() => MuHelperPotionWindow?.Close();
+
+        internal void ToggleMuHelperPotionSettings()
+        {
+            if (IsMuHelperPotionSettingsOpen())
+                CloseMuHelperPotionSettings();
+            else
+                OpenMuHelperPotionSettings();
+        }
+
         private async Task UpdateMapNameNextFrameAsync(string actionName)
         {
             await MuGame.YieldToNextFrameAsync(

@@ -955,12 +955,12 @@ namespace Client.Main.Networking.Services
         /// <summary>
         /// Sends a consume item request packet to the server (potions, jewels, etc.).
         /// </summary>
-        public async Task SendConsumeItemRequestAsync(byte itemSlot, byte targetSlot = 0)
+        public async Task<bool> SendConsumeItemRequestAsync(byte itemSlot, byte targetSlot = 0)
         {
             if (!_connectionManager.IsConnected)
             {
                 _logger.LogError("Not connected — cannot send consume item request.");
-                return;
+                return false;
             }
 
             _logger.LogInformation(
@@ -972,10 +972,12 @@ namespace Client.Main.Networking.Services
                 await _connectionManager.Connection.SendConsumeItemRequestAsync(itemSlot, targetSlot, default);
 
                 _logger.LogInformation("Consume item request sent: ItemSlot={ItemSlot}, TargetSlot={TargetSlot}.", itemSlot, targetSlot);
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error sending consume item request for slot {ItemSlot}.", itemSlot);
+                return false;
             }
         }
 

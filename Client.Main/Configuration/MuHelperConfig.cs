@@ -33,6 +33,8 @@ namespace Client.Main.Configuration
         public int HealPartyThreshold { get; set; } = 50;
         public bool UseHealPotion { get; set; }
         public int PotionThreshold { get; set; } = 50;
+        /// <summary>Client-local mana-potion threshold; the 257-byte server Helper blob has no MP-potion field.</summary>
+        public int ManaPotionThreshold { get; set; } = 50;
         /// <summary>Q/W/E healing-potion assignment to use; -1 selects the first assigned healing potion.</summary>
         public int PotionHotbarSlot { get; set; } = -1;
         public bool UseDrainLife { get; set; }
@@ -237,7 +239,9 @@ namespace Client.Main.Configuration
             HuntingRange = Math.Clamp(HuntingRange, 0, 6);
             MaxSecondsAway = Math.Clamp(MaxSecondsAway, 0, 999);
             PotionThreshold = Math.Clamp(PotionThreshold, 0, 100);
-            PotionHotbarSlot = Math.Clamp(PotionHotbarSlot, -1, 2);
+            ManaPotionThreshold = Math.Clamp(ManaPotionThreshold, 0, 100);
+            if (PotionHotbarSlot < -1 || PotionHotbarSlot >= 3)
+                PotionHotbarSlot = -1;
             HealThreshold = Math.Clamp(HealThreshold, 0, 100);
             HealPartyThreshold = Math.Clamp(HealPartyThreshold, 0, 100);
             BuffCastIntervalSeconds = Math.Clamp(BuffCastIntervalSeconds, 0, 3600);
@@ -282,6 +286,7 @@ namespace Client.Main.Configuration
                 HealPartyThreshold = HealPartyThreshold,
                 UseHealPotion = UseHealPotion,
                 PotionThreshold = PotionThreshold,
+                ManaPotionThreshold = ManaPotionThreshold,
                 PotionHotbarSlot = PotionHotbarSlot,
                 UseDrainLife = UseDrainLife,
                 UseDarkRaven = UseDarkRaven,

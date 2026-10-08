@@ -31,8 +31,8 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
         private const int ReferenceExpY = 41;
         private const int ReferenceSkillStartX = 222;
         private const int ReferenceSkillY = 2;
-        private const int ReferenceSkillWidth = 32;
-        private const int ReferenceSkillHeight = 38;
+        private const int ReferenceSkillWidth = ClassicSkillSlotRenderer.CellWidth;
+        private const int ReferenceSkillHeight = ClassicSkillSlotRenderer.CellHeight;
         private const int ReferenceCurrentSkillX = 385;
         private const int ReferenceCurrentSkillY = 2;
         private const int SkillListColumns = 15;
@@ -58,8 +58,8 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
         private const string AgGaugePath = "Interface/newui_menu_AG.OZJ";
         private const string ExpGaugePath = "Interface/newui_Exbar.OZJ";
         private const string MasterExpGaugePath = "Interface/Exbar_Master.OZJ";
-        private const string SkillFramePath = "Interface/newui_skillbox.OZJ";
-        private const string SkillFrameActivePath = "Interface/newui_skillbox2.OZJ";
+        private const string SkillFramePath = ClassicSkillSlotRenderer.NormalFramePath;
+        private const string SkillFrameActivePath = ClassicSkillSlotRenderer.ActiveFramePath;
         private static readonly string[] ButtonPaths =
         {
             "Interface/partCharge1/newui_menu_Bt01.OZJ",
@@ -298,21 +298,15 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
                 Rectangle slot = _skillRects[i];
                 bool active = i == activeSlot;
 
-                Texture2D frame = active ? _skillFrameActive : _skillFrame;
-                if (frame != null)
-                    sprite.Draw(frame, slot, new Rectangle(0, 0, frame.Width, frame.Height), Color.White);
-
                 SkillEntryState skill = i < skills.Count ? skills[i] : null;
-                if (skill != null)
-                {
-                    Rectangle iconRect = new(
-                        slot.X + ScaleValue(6),
-                        slot.Y + ScaleValue(6),
-                        ScaleValue(20),
-                        ScaleValue(28));
-
-                    DrawSkillIconRect(sprite, skill.SkillId, iconRect);
-                }
+                ClassicSkillSlotRenderer.Draw(
+                    sprite,
+                    slot,
+                    skill?.SkillId,
+                    active,
+                    _skillFrame,
+                    _skillFrameActive,
+                    Color.White);
 
                 // Hotkey number bottom-right
                 string label = (i + 1).ToString();
@@ -381,16 +375,14 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
             {
                 (Rectangle slot, SkillEntryState skill) = _skillListHits[i];
                 bool active = selectedSkill?.SkillId == skill.SkillId;
-                Texture2D frame = active ? _skillFrameActive : _skillFrame;
-                if (frame != null)
-                    sprite.Draw(frame, slot, new Rectangle(0, 0, frame.Width, frame.Height), Color.White);
-
-                Rectangle iconRect = new(
-                    slot.X + ScaleValue(6),
-                    slot.Y + ScaleValue(6),
-                    ScaleValue(20),
-                    ScaleValue(28));
-                DrawSkillIconRect(sprite, skill.SkillId, iconRect);
+                ClassicSkillSlotRenderer.Draw(
+                    sprite,
+                    slot,
+                    skill.SkillId,
+                    active,
+                    _skillFrame,
+                    _skillFrameActive,
+                    Color.White);
             }
         }
 

@@ -37,7 +37,8 @@ namespace Client.Main.Scenes
         private readonly GameSceneSkillController _skillController;
         private readonly ILogger _logger;
         private DateTime _nextActionAt;
-        private DateTime _nextPotionAt;
+        private long _nextPotionAtTicks;
+        private volatile bool _potionUseInFlight;
         private DateTime _nextPickupAt;
         private DateTime _nextRegroupAt;
         private DateTime _nextRepairAt;
@@ -77,7 +78,10 @@ namespace Client.Main.Scenes
             {
                 try
                 {
-                    Load(MuHelperConfig.FromHelperDataBytes(serverConfiguration));
+                    MuHelperConfig serverConfig = MuHelperConfig.FromHelperDataBytes(serverConfiguration);
+                    serverConfig.ManaPotionThreshold = MuGame.AppSettings?.MuHelper?.ManaPotionThreshold
+                        ?? serverConfig.ManaPotionThreshold;
+                    Load(serverConfig);
                 }
                 catch (Exception ex)
                 {
@@ -175,7 +179,7 @@ namespace Client.Main.Scenes
             _currentTarget = null;
             _awaySince = DateTime.UtcNow;
             _nextActionAt = DateTime.MinValue;
-            _nextPotionAt = DateTime.MinValue;
+            System.Threading.Interlocked.Exchange(ref _nextPotionAtTicks, 0);
             _nextPickupAt = DateTime.MinValue;
             _nextRegroupAt = DateTime.MinValue;
             _nextRepairAt = DateTime.MinValue;
@@ -235,7 +239,9 @@ namespace Client.Main.Scenes
         {
             try
             {
+                int manaPotionThreshold = Config.ManaPotionThreshold;
                 Config = MuHelperConfig.FromHelperDataBytes(helperData);
+                Config.ManaPotionThreshold = manaPotionThreshold;
                 Config.Normalize();
                 MuGame.PersistMuHelperConfig(Config);
                 StateChanged?.Invoke();
@@ -294,8 +300,7 @@ namespace Client.Main.Scenes
                 return;
             if (TryPartySupport(characterState, now))
                 return;
-            if (TryUsePotion(characterState, now))
-                return;
+            TryUsePotion(characterState, now);
             if (TryUseHealSkill(characterState, now))
                 return;
             if (TryPickupOrApproachItem(characterState, now))
@@ -378,21 +383,82 @@ namespace Client.Main.Scenes
             return true;
         }
 
-        private bool TryUsePotion(CharacterState state, DateTime now)
+        private void TryUsePotion(CharacterState state, DateTime now)
         {
-            if (!Config.UseHealPotion || now < _nextPotionAt || state.MaximumHealth == 0)
-                return false;
+            // Potion sending is asynchronous; it must not short-circuit the Helper's
+            // synchronous heal/attack/skill work pipeline while pending or in flight.
+            if (_potionUseInFlight)
+                return;
+            if (now.Ticks < System.Threading.Interlocked.Read(ref _nextPotionAtTicks))
+                return;
 
-            int hpPercent = (int)(state.CurrentHealth * 100L / state.MaximumHealth);
-            if (hpPercent > Config.PotionThreshold)
-                return false;
+            float hpPercent = state.MaximumHealth > 0
+                ? state.CurrentHealth * 100f / state.MaximumHealth
+                : -1f;
+            float mpPercent = state.MaximumMana > 0
+                ? state.CurrentMana * 100f / state.MaximumMana
+                : -1f;
+            int hpThreshold = Config.PotionThreshold;
+            int mpThreshold = Config.ManaPotionThreshold;
+            bool shouldTryHp = Config.UseHealPotion && state.MaximumHealth > 0 &&
+                               (long)state.CurrentHealth * 100 <= (long)state.MaximumHealth * hpThreshold;
+            bool shouldTryMp = mpThreshold > 0 && state.MaximumMana > 0 &&
+                               (long)state.CurrentMana * 100 <= (long)state.MaximumMana * mpThreshold;
+            if (!shouldTryHp && !shouldTryMp)
+                return;
 
-            if (_scene.ModernHud?.TryConsumeHealPotionForHelper(Config.PotionHotbarSlot) != true)
-                return false;
-
-            _nextPotionAt = now + PotionCooldown;
-            return true;
+            _potionUseInFlight = true;
+            _ = ConsumePotionForHelperAsync(shouldTryHp, hpPercent, hpThreshold, shouldTryMp, mpPercent, mpThreshold);
         }
+
+        private async Task ConsumePotionForHelperAsync(
+            bool shouldTryHp,
+            float hpPercent,
+            int hpThreshold,
+            bool shouldTryMp,
+            float mpPercent,
+            int mpThreshold)
+        {
+            try
+            {
+                if (shouldTryHp)
+                {
+                    bool consumed = _scene.ModernHud != null &&
+                                    await _scene.ModernHud.TryConsumeHealPotionForHelper(Config.PotionHotbarSlot);
+                    _logger?.LogInformation(
+                        "MU Helper HP potion attempt: current={CurrentPercent:F1}%, threshold={Threshold}%, consumeSent={ConsumeSent}",
+                        hpPercent, hpThreshold, consumed);
+                    if (consumed)
+                    {
+                        SetPotionCooldown();
+                        return;
+                    }
+                }
+
+                if (shouldTryMp)
+                {
+                    bool consumed = _scene.ModernHud != null &&
+                                    await _scene.ModernHud.TryConsumeManaPotionForHelper();
+                    _logger?.LogInformation(
+                        "MU Helper MP potion attempt: current={CurrentPercent:F1}%, threshold={Threshold}%, consumeSent={ConsumeSent}",
+                        mpPercent, mpThreshold, consumed);
+                    if (consumed)
+                        SetPotionCooldown();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "MU Helper potion consume attempt failed.");
+            }
+            finally
+            {
+                _potionUseInFlight = false;
+            }
+        }
+
+        private void SetPotionCooldown() => System.Threading.Interlocked.Exchange(
+            ref _nextPotionAtTicks,
+            (DateTime.UtcNow + PotionCooldown).Ticks);
 
         private bool TryUseHealSkill(CharacterState state, DateTime now)
         {

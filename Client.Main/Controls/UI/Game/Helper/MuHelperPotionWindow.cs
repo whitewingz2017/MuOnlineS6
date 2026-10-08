@@ -87,7 +87,6 @@ namespace Client.Main.Controls.UI.Game.Helper
             };
             Controls.Add(_mpLabel);
 
-            // MP row is visual only unless you add ManaThreshold to config later.
             BuildSegmentRow(_mpSegments, y: 140, isHp: false);
 
             _resetButton = CreateButton("Initialization", 12, WindowHeight - 36, 80, 24, ResetPotion);
@@ -188,7 +187,9 @@ namespace Client.Main.Controls.UI.Game.Helper
                 int threshold = (index + 1) * 10; // 10..100
                 var btn = new SegmentButton(() =>
                 {
-                    int current = isHp ? _controller.Config.PotionThreshold : 0;
+                    int current = isHp
+                        ? _controller.Config.PotionThreshold
+                        : _controller.Config.ManaPotionThreshold;
                     return current >= threshold;
                 })
                 {
@@ -206,8 +207,12 @@ namespace Client.Main.Controls.UI.Game.Helper
                     {
                         _controller.Config.PotionThreshold = threshold;
                         _controller.Config.UseHealPotion = threshold > 0;
-                        RefreshFromConfig();
                     }
+                    else
+                    {
+                        _controller.Config.ManaPotionThreshold = threshold;
+                    }
+                    RefreshFromConfig();
                 };
 
                 list.Add(btn);
@@ -230,6 +235,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         private void ResetPotion()
         {
             _controller.Config.PotionThreshold = 0;
+            _controller.Config.ManaPotionThreshold = 0;
             _controller.Config.HealThreshold = 0;
             _controller.Config.UseHealPotion = false;
             _controller.Config.Normalize();

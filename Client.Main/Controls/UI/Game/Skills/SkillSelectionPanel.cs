@@ -162,10 +162,15 @@ namespace Client.Main.Controls.UI.Game.Skills
                 rows = 1;
             }
 
-            _slotScale = CalculateSlotScale(rows);
+            bool classicLayout = SkillSlotControl.UseClassicPresentation;
+            _slotScale = classicLayout ? 1f : CalculateSlotScale(rows);
 
-            int slotWidth = Math.Max(1, (int)MathF.Round(SkillSlotControl.SLOT_WIDTH * _slotScale));
-            int slotHeight = Math.Max(1, (int)MathF.Round(SkillSlotControl.SLOT_HEIGHT * _slotScale));
+            int slotWidth = classicLayout
+                ? SkillSlotControl.CLASSIC_SLOT_WIDTH
+                : Math.Max(1, (int)MathF.Round(SkillSlotControl.SLOT_WIDTH * _slotScale));
+            int slotHeight = classicLayout
+                ? SkillSlotControl.CLASSIC_SLOT_HEIGHT
+                : Math.Max(1, (int)MathF.Round(SkillSlotControl.SLOT_HEIGHT * _slotScale));
 
             int gridSlotsWidth = (COLUMNS * slotWidth) + ((COLUMNS - 1) * SLOT_GAP);
             int gridSlotsHeight = (rows * slotHeight) + ((rows - 1) * SLOT_GAP);
@@ -206,6 +211,11 @@ namespace Client.Main.Controls.UI.Game.Skills
                     IsTooltipEnabled = false,
                     ShowFooter = false
                 };
+                if (classicLayout)
+                {
+                    slot.ControlSize = new Point(slotWidth, slotHeight);
+                    slot.ViewSize = slot.ControlSize;
+                }
 
                 slot.Click += (sender, args) => OnSkillSlotClicked(slot);
                 slot.HoverChanged += OnSkillSlotHover;
