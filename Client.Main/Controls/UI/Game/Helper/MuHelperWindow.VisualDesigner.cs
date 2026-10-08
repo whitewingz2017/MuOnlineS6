@@ -177,13 +177,18 @@ namespace Client.Main.Controls.UI.Game.Helper
             if (!string.IsNullOrWhiteSpace(VisualDesignerBindingWarning))
                 return;
 
+            // These saved descriptors use MuMain's 190x429 Classic logical coordinates.
+            // Applying them to Hybrid would replace its separately calculated wider layout.
+            if (!IsClassicPc)
+                return;
+
             foreach (VisualDesignerElement element in VisualDesignerElements)
             {
                 if (!_visualDesignerControls.TryGetValue(element.Id, out GameControl control))
                     continue;
 
                 control.Name = element.Name;
-                if (element.CanEditGeometry)
+                if (element.CanEditGeometry && !ReferenceEquals(control, this))
                 {
                     control.X = element.X;
                     control.Y = element.Y;

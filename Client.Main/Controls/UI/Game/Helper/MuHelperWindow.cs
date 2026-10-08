@@ -82,6 +82,9 @@ namespace Client.Main.Controls.UI.Game.Helper
             Hybrid
         }
 
+        private readonly record struct ClassicDockControlState(
+            int X, int Y, Point Offset, float Scale, float? FontSize, int? TextBoxPadding, int? TextBoxBorderThickness);
+
         private static readonly string[] FrameTexturePaths =
         {
             "Interface/newui_msgbox_back.OZJ",
@@ -157,6 +160,9 @@ namespace Client.Main.Controls.UI.Game.Helper
         private int _activeTab;
         private int _previousWheelValue;
         private bool _texturesLoaded;
+        private readonly Dictionary<GameControl, ClassicDockControlState> _classicDockControlStates = new();
+        private bool _classicDockScaleReady;
+        private float _appliedClassicDockScale = 1f;
 
         public MuHelperWindow(GameScene scene, MuHelperController controller, ILogger logger)
         {
@@ -275,6 +281,8 @@ namespace Client.Main.Controls.UI.Game.Helper
             SetActiveTab(0);
             RefreshValues();
             ApplyVisualDesignerLayout();
+            ApplyClassicDockScale();
+            _classicDockScaleReady = true;
         }
 
         public void ToggleVisibility()
@@ -288,6 +296,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         public void Open()
         {
             SyncPresentation();
+            RefreshClassicDockScaleIfNeeded();
             Visible = true;
             BringToFront();
             Scene.FocusControl = this;
@@ -316,6 +325,7 @@ namespace Client.Main.Controls.UI.Game.Helper
                 return;
 
             SyncPresentation();
+            RefreshClassicDockScaleIfNeeded();
             EnsureTexturesLoaded();
             base.Update(gameTime);
             RefreshValues();
@@ -350,7 +360,10 @@ namespace Client.Main.Controls.UI.Game.Helper
         protected override void OnScreenSizeChanged()
         {
             base.OnScreenSizeChanged();
-            Recenter();
+            if (_classicDockScaleReady)
+                ApplyClassicDockScale();
+            else
+                Recenter();
         }
 
         protected override void OnThemeChanged(UiThemeChangedEventArgs e)
@@ -396,7 +409,11 @@ namespace Client.Main.Controls.UI.Game.Helper
             // ((HelperActionButton)_startButton).SetTexture(IsClassicPc ? _helperTextures[6] : null);
             ((HelperActionButton)_saveButton).SetTexture(IsClassicPc ? _helperTextures[6] : null);
             ((HelperActionButton)_resetButton).SetTexture(IsClassicPc ? _helperTextures[6] : null);
-            ((HelperActionButton)_closeButton).SetTexture(IsClassicPc ? _helperTextures[7] : null);
+            if (_closeButton is HelperActionButton closeButton)
+            {
+                closeButton.SetTexture(IsClassicPc ? _helperTextures[7] : null);
+                closeButton.UseTopHalfTexture = IsClassicPc;
+            }
 
             foreach ((ButtonControl button, int textureIndex, bool flip) in _classicIconButtons)
             {
@@ -439,7 +456,7 @@ namespace Client.Main.Controls.UI.Game.Helper
                 var header = new Rectangle(rect.X + ScaleLogical(margin), rect.Y + ScaleLogical(44), rect.Width - ScaleLogical(margin * 2), ScaleLogical(3));
                 sprite.Draw(pixel, header, new Color(125, 99, 54, 230) * Alpha);
                 DrawPanel(sprite, pixel, new Rectangle(rect.X + ScaleLogical(margin), rect.Y + ScaleLogical(ContentTop - 8), rect.Width - ScaleLogical(margin * 2), ScaleLogical(ContentHeight + 16)));
-                DrawPanel(sprite, pixel, new Rectangle(rect.X + ScaleLogical(margin), rect.Y + ScaleLogical(FooterTop - 8), rect.Width + ScaleLogical(margin * 2), rect.Height - ScaleLogical(FooterTop) - ScaleLogical(8)));
+                DrawPanel(sprite, pixel, new Rectangle(rect.X + ScaleLogical(margin), rect.Y + ScaleLogical(FooterTop - 8), rect.Width - ScaleLogical(margin * 2), rect.Height - ScaleLogical(FooterTop) - ScaleLogical(8)));
                 return;
             }
             DrawTextureOrFill(sprite, pixel, _frameTextures[0], rect, new Color(8, 10, 16, 238));
@@ -459,7 +476,6 @@ namespace Client.Main.Controls.UI.Game.Helper
             DrawTextureOrFill(sprite, pixel, _frameTextures[2], new Rectangle(rect.X, sideTop, ScaleLogical(21), sideHeight), new Color(11, 14, 20, 245));
             DrawTextureOrFill(sprite, pixel, _frameTextures[3], new Rectangle(rect.Right - ScaleLogical(21), sideTop, ScaleLogical(21), sideHeight), new Color(11, 14, 20, 245));
             DrawTextureOrFill(sprite, pixel, _frameTextures[4], new Rectangle(rect.X, rect.Bottom - ScaleLogical(45), rect.Width, ScaleLogical(45)), new Color(16, 19, 26, 245));
-
             if (IsClassicPc)
             {
                 if (_showPotionSettings)
@@ -679,11 +695,11 @@ namespace Client.Main.Controls.UI.Game.Helper
 
         private void BuildClassicHuntingPage(UIControl page)
         {
-            AddClassicLabel(page, "Range", 8, 8, 34, 16, 8, ModernHudTheme.TextWhite);
-            AddClassicValueLabel(page, () => _controller.Config.HuntingRange.ToString(), 18, 25, 18, 18, 11, ModernHudTheme.TextGold);
-            AddClassicIconButton(page, 43, 8, 16, 15,
+            AddClassicLabel(page, "Range", 12, 8, 34, 16, 8, ModernHudTheme.TextWhite);
+            AddClassicValueLabel(page, () => _controller.Config.HuntingRange.ToString(), 10, 25, 18, 18, 11, ModernHudTheme.TextGold);
+            AddClassicIconButton(page, 65, 15, 16, 15,
                 () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange + 1, 0, 15), 8);
-            AddClassicIconButton(page, 43, 27, 16, 15,
+            AddClassicIconButton(page, 65, 43, 16, 15,
                 () => _controller.Config.HuntingRange = Math.Clamp(_controller.Config.HuntingRange - 1, 0, 15), 0, flip: true);
 
             AddClassicToggle(page, "Potion", 79, 10, () => _controller.Config.UseHealPotion,
@@ -1566,6 +1582,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             if (_extraItemsListLabel == null || _extraItemsPage == null)
                 return;
 
+            RestoreClassicDockScale();
             foreach (ButtonControl row in _extraItemRowButtons)
             {
                 _extraItemsPage.Controls.Remove(row);
@@ -1600,6 +1617,8 @@ namespace Client.Main.Controls.UI.Game.Helper
 
             _deleteExtraItemButton.Interactive = _selectedExtraItemIndex >= 0 &&
                                                   _selectedExtraItemIndex < items.Count;
+            if (_classicDockScaleReady)
+                ApplyClassicDockScale();
         }
 
         private void SelectExtraItem(int index)
@@ -1721,6 +1740,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             if (current == _presentation)
                 return;
 
+            RestoreClassicDockScale();
             _presentation = current;
             ControlSize = new Point(WindowWidth, WindowHeight);
             ViewSize = ControlSize;
@@ -1766,6 +1786,8 @@ namespace Client.Main.Controls.UI.Game.Helper
             ApplyLoadedHelperTextures();
             Recenter();
             ApplyVisualDesignerLayout();
+            if (_classicDockScaleReady)
+                ApplyClassicDockScale();
         }
 
         private void ApplyPresentationLayout()
@@ -2052,11 +2074,130 @@ namespace Client.Main.Controls.UI.Game.Helper
             Recenter();
         }
 
+        private float GetClassicDockScale()
+        {
+            if (!IsClassicPc)
+                return 1f;
+
+            Point actualSize = UiScaler.ActualSize;
+            if (actualSize.X <= 0 || actualSize.Y <= 0)
+                return 1f;
+
+            // MuMain's docked UI uses the 640x480 reference and a 2.25x ceiling.
+            float nativeScale = Math.Clamp(Math.Min(actualSize.X / 640f, actualSize.Y / 480f), 1f, 2.25f);
+            return nativeScale / Math.Max(UiScaler.Scale, 0.0001f);
+        }
+
+        private void RefreshClassicDockScaleIfNeeded()
+        {
+            if (_classicDockScaleReady && MathF.Abs(GetClassicDockScale() - _appliedClassicDockScale) > 0.001f)
+                ApplyClassicDockScale();
+        }
+
+        private void ApplyClassicDockScale()
+        {
+            RestoreClassicDockScale();
+            float scale = GetClassicDockScale();
+            if (MathF.Abs(scale - 1f) > 0.001f)
+                ApplyClassicDockScale(this, scale, isRoot: true);
+
+            _appliedClassicDockScale = scale;
+            Recenter();
+        }
+
+        private void ApplyClassicDockScale(GameControl control, float scale, bool isRoot = false)
+        {
+            float? fontSize = GetControlFontSize(control);
+            int? padding = control is TextBoxControl textBox ? textBox.Padding : null;
+            int? border = control is TextBoxControl borderTextBox ? borderTextBox.BorderThickness : null;
+            _classicDockControlStates[control] = new ClassicDockControlState(
+                control.X, control.Y, control.Offset, control.Scale, fontSize, padding, border);
+
+            if (!isRoot)
+            {
+                control.X = (int)MathF.Round(control.X * scale);
+                control.Y = (int)MathF.Round(control.Y * scale);
+                control.Offset = new Point(
+                    (int)MathF.Round(control.Offset.X * scale),
+                    (int)MathF.Round(control.Offset.Y * scale));
+            }
+
+            control.Scale *= scale;
+            if (fontSize.HasValue)
+                SetControlFontSize(control, fontSize.Value * scale);
+            if (control is TextBoxControl scaledTextBox)
+            {
+                scaledTextBox.Padding = Math.Max(1, (int)MathF.Round(scaledTextBox.Padding * scale));
+                scaledTextBox.BorderThickness = Math.Max(1, (int)MathF.Round(scaledTextBox.BorderThickness * scale));
+            }
+
+            foreach (GameControl child in control.Controls)
+                ApplyClassicDockScale(child, scale);
+        }
+
+        private void RestoreClassicDockScale()
+        {
+            foreach ((GameControl control, ClassicDockControlState state) in _classicDockControlStates)
+            {
+                control.X = state.X;
+                control.Y = state.Y;
+                control.Offset = state.Offset;
+                control.Scale = state.Scale;
+                if (state.FontSize.HasValue)
+                    SetControlFontSize(control, state.FontSize.Value);
+                if (control is TextBoxControl textBox)
+                {
+                    if (state.TextBoxPadding.HasValue)
+                        textBox.Padding = state.TextBoxPadding.Value;
+                    if (state.TextBoxBorderThickness.HasValue)
+                        textBox.BorderThickness = state.TextBoxBorderThickness.Value;
+                }
+            }
+            _classicDockControlStates.Clear();
+        }
+
+        private static float? GetControlFontSize(GameControl control) => control switch
+        {
+            LabelControl label => label.FontSize,
+            ButtonControl button => button.FontSize,
+            TextBoxControl textBox => textBox.FontSize,
+            _ => null
+        };
+
+        private static void SetControlFontSize(GameControl control, float fontSize)
+        {
+            switch (control)
+            {
+                case LabelControl label:
+                    label.FontSize = fontSize;
+                    break;
+                case ButtonControl button:
+                    button.FontSize = fontSize;
+                    break;
+                case TextBoxControl textBox:
+                    textBox.FontSize = fontSize;
+                    break;
+            }
+        }
+
         private void Recenter()
         {
             Point virtualSize = UiScaler.VirtualSize;
-            X = Math.Max(0, (virtualSize.X - WindowWidth) / 2);
-            Y = Math.Max(10, (virtualSize.Y - WindowHeight) / 2);
+            if (IsClassicPc && UiScaler.ScaleX > 0f && UiScaler.ScaleY > 0f)
+            {
+                Point actualSize = UiScaler.ActualSize;
+                float nativeDockScale = Math.Clamp(Math.Min(actualSize.X / 640f, actualSize.Y / 480f), 1f, 2.25f);
+                float nativeHudScale = Math.Clamp(Math.Min(actualSize.X / 640f, actualSize.Y / 480f), 1f, 2f);
+                float physicalX = actualSize.X - ClassicPcWidth * nativeDockScale;
+                float physicalY = actualSize.Y - MathF.Round(51f * nativeHudScale) - 432f * nativeDockScale;
+                X = Math.Max(0, (int)MathF.Round((physicalX - UiScaler.Offset.X) / UiScaler.ScaleX));
+                Y = Math.Max(0, (int)MathF.Round((physicalY - UiScaler.Offset.Y) / UiScaler.ScaleY));
+                return;
+            }
+
+            Point displaySize = DisplaySize;
+            X = Math.Max(0, (virtualSize.X - displaySize.X) / 2);
+            Y = Math.Max(10, (virtualSize.Y - displaySize.Y) / 2);
         }
 
         private bool IsFocusedDescendant(GameControl focused)
@@ -2073,6 +2214,7 @@ namespace Client.Main.Controls.UI.Game.Helper
         {
             public bool FlipTextureHorizontally { get; set; }
             public bool DrawRangeFallback { get; set; }
+            public bool UseTopHalfTexture { get; set; }
 
             public new void SetTexture(Texture2D texture) => Texture = texture;
 
@@ -2084,19 +2226,20 @@ namespace Client.Main.Controls.UI.Game.Helper
                 Texture2D texture = Texture;
                 if (texture != null)
                 {
+                    // Range and exit assets are two-state atlases; render only one state.
+                    Rectangle? source = UseTopHalfTexture
+                        ? new Rectangle(0, 0, Math.Min(36, texture.Width), Math.Min(29, texture.Height))
+                        : DrawRangeFallback && texture.Height >= 30
+                            ? new Rectangle(0, 0, Math.Min(16, texture.Width), 15)
+                            : null;
                     if (FlipTextureHorizontally)
                     {
-                        Rectangle rect = DisplayRectangle;
-                        for (int y = 0; y < rect.Height; y++)
-                        {
-                            GraphicsManager.Instance.Sprite.Draw(texture,
-                                new Rectangle(rect.Right - y - 1, rect.Y, 1, rect.Height),
-                                new Rectangle(y, 0, 1, texture.Height), Color.White * Alpha);
-                        }
+                        GraphicsManager.Instance.Sprite.Draw(texture, DisplayRectangle, source, Color.White * Alpha,
+                            0f, Vector2.Zero, SpriteEffects.FlipHorizontally, 0f);
                     }
                     else
                     {
-                        GraphicsManager.Instance.Sprite.Draw(texture, DisplayRectangle, Color.White * Alpha);
+                        GraphicsManager.Instance.Sprite.Draw(texture, DisplayRectangle, source, Color.White * Alpha);
                     }
                 }
                 else if (DrawRangeFallback)

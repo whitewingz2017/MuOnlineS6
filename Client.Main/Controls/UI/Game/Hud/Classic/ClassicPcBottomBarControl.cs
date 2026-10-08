@@ -23,7 +23,8 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
     /// </summary>
     internal sealed class ClassicPcBottomBarControl : UIControl
     {
-        private const float HudScale = 1.5f;
+        private float HudScale => Math.Clamp(
+            Math.Min(UiScaler.ActualSize.X / 640f, UiScaler.ActualSize.Y / 480f), 1f, 2f);
         private const int ReferenceWidth = 640;
         private const int ReferenceHeight = 51;
         private const int ReferenceExpY = 41;
@@ -659,7 +660,7 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
             ? 0f
             : MathHelper.Clamp(current / (float)maximum, 0f, 1f);
 
-        private static int ScaleValue(int value) => Math.Max(1, (int)MathF.Round(value * HudScale));
+        private int ScaleValue(int value) => Math.Max(1, (int)MathF.Round(value * HudScale));
 
         private void DrawValue(SpriteBatch sprite, string value, float x, float y, float size, Color? color = null)
         {
