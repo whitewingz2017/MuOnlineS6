@@ -3152,7 +3152,7 @@ namespace Client.Main.Objects.Player
 
         public PlayerAction GetArrowSkillAnimation(ushort skillId)
         {
-            if (skillId is not (46 or 235))
+            if (skillId is not (46 or 235 or 411 or 431))
                 return GetAttackAnimation(false);
 
             bool useCrossbow = ArrowProjectileEffect.UsesCrossbow(this);

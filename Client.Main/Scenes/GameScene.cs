@@ -104,6 +104,7 @@ namespace Client.Main.Scenes
         // the player clicks another target, clicks the ground, or the target becomes invalid.
         private MonsterObject _autoAttackTarget;
         private double _autoAttackTimer;
+        private double _heldNormalAttackTimer;
         private GameSceneUiPreloadController _uiPreloadController;
         private GameSceneWindowCloseController _windowCloseController;
         private Task _sceneShellInitializationTask;
@@ -886,14 +887,13 @@ namespace Client.Main.Scenes
             UpdatePassProfiler.AddGameSkillUpdate(skillUpdateStarted);
 
             long attackInputStarted = UpdatePassProfiler.Start();
-            // Handle classic MU-style persistent normal attack targeting.
-            // ONLY the initial LMB press selects an attack target.
-            // Releasing LMB does not cancel the attack.
+            _heldNormalAttackTimer -= gameTime.ElapsedGameTime.TotalMilliseconds;
+            // MuMain retries normal attacks while LMB is held over a monster.
+            // Auto Attack separately controls continuation after release.
             if (!IsMuHelperActive &&
                 !IsMouseInputConsumedThisFrame &&
                 !WorldHoverSystem.IsAltPressed() &&
-                MuGame.Instance.Mouse.LeftButton == ButtonState.Pressed &&
-                MuGame.Instance.PrevMouseState.LeftButton == ButtonState.Released)
+                MuGame.Instance.Mouse.LeftButton == ButtonState.Pressed)
             {
                 MonsterObject hoveredAttackMonster = WorldHoverSystem.FindBestLiveMonster(
                     World.VisibleObjects,
@@ -908,18 +908,28 @@ namespace Client.Main.Scenes
                 {
                     _skillController?.CancelPersistentTarget();
 
-                    // Auto Attack keeps this target selected; with the option off, the
-                    // click remains a normal one-shot attack.
+                    // Retain the target after release only when Auto Attack is enabled.
+                    // Otherwise the held-button input retries after each attack ends.
                     if (MuGame.AppSettings?.AutoAttackEnabled != false)
-                        SetAutoAttackTarget(hoveredAttackMonster);
+                    {
+                        if (_autoAttackTarget != hoveredAttackMonster)
+                            SetAutoAttackTarget(hoveredAttackMonster);
+                    }
                     else
                         ClearAutoAttackTarget();
 
-                    Hero.Attack(hoveredAttackMonster);
+                    // Use the existing auto-attack retry interval so held input does
+                    // not restart asynchronous approach pathfinding every frame.
+                    if (MuGame.Instance.PrevMouseState.LeftButton == ButtonState.Released ||
+                        _heldNormalAttackTimer <= 0)
+                    {
+                        _heldNormalAttackTimer = 75;
+                        Hero.Attack(hoveredAttackMonster);
+                    }
 
                     SetMouseInputConsumed();
                 }
-                else
+                else if (MuGame.Instance.PrevMouseState.LeftButton == ButtonState.Released)
                 {
                     // Clicking the ground/empty area cancels both combat modes.
                     _skillController?.CancelPersistentTarget();
@@ -927,7 +937,7 @@ namespace Client.Main.Scenes
                 }
             }
 
-            // Continue normal attacking after LMB is released.
+            // Auto Attack continues independently of the held-button input.
             UpdateAutoAttack(gameTime);
 
             // Handle attack clicks on duel opponent players (treat as monster during duel)

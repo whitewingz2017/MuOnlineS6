@@ -49,6 +49,7 @@ namespace Client.Main.Objects.Effects
         private readonly WalkableWorldControl _walkableWorld;
         private readonly ushort _targetId;
         private readonly Vector3? _fallbackTargetPosition;
+        private readonly float? _launchYaw;
         private readonly ArrowVolleyKind _volleyKind;
         private readonly ProjectileProfile _profile;
         private readonly float _visualPower;
@@ -188,12 +189,14 @@ namespace Client.Main.Objects.Effects
             WalkableWorldControl world,
             ushort targetId,
             Vector3? targetPosition,
-            ArrowVolleyKind volleyKind)
+            ArrowVolleyKind volleyKind,
+            float? launchYaw = null)
         {
             _shooter = shooter ?? throw new ArgumentNullException(nameof(shooter));
             _walkableWorld = world ?? throw new ArgumentNullException(nameof(world));
             _targetId = (ushort)(targetId & 0x7FFF);
             _fallbackTargetPosition = targetPosition;
+            _launchYaw = launchYaw;
             _volleyKind = volleyKind;
             _profile = SelectProfile(shooter, volleyKind);
             _visualPower = ResolveVisualPower(_profile.Style, volleyKind);
@@ -345,9 +348,9 @@ namespace Client.Main.Objects.Effects
         {
             return _volleyKind switch
             {
-                ArrowVolleyKind.TripleShot => TripleSpread,
-                ArrowVolleyKind.MultiShot when UsesFourProjectileMultiShot(_profile.Style)
+                ArrowVolleyKind.TripleShot or ArrowVolleyKind.MultiShot when UsesFourProjectileMultiShot(_profile.Style)
                     => QuadSpread,
+                ArrowVolleyKind.TripleShot => TripleSpread,
                 ArrowVolleyKind.MultiShot => TripleSpread,
                 _ => SingleSpread
             };
@@ -1002,7 +1005,8 @@ namespace Client.Main.Objects.Effects
             if (TryResolveTargetPosition(out Vector3 target))
                 return target;
 
-            Vector3 forward = new(MathF.Sin(_shooter.Angle.Z), -MathF.Cos(_shooter.Angle.Z), 0f);
+            float yaw = _launchYaw ?? _shooter.Angle.Z;
+            Vector3 forward = new(MathF.Sin(yaw), -MathF.Cos(yaw), 0f);
             return start + forward * 2100f;
         }
 
@@ -1033,6 +1037,9 @@ namespace Client.Main.Objects.Effects
 
         private float ResolveBaseYaw(Vector3 start, Vector3 target)
         {
+            if (_launchYaw.HasValue)
+                return _launchYaw.Value;
+
             // A normal attack inherits the shooter's yaw exactly. Skill animation packets do
             // not always carry a direction, so for skill volleys reconstruct the launch yaw
             // from the authoritative target point while still keeping the flight non-homing.
@@ -1755,15 +1762,16 @@ namespace Client.Main.Objects.Effects
             return true;
         }
 
-        public static bool IsArrowSkill(ushort skillId) => skillId is 24 or 25 or 46 or 51 or 52 or 235;
+        public static bool IsArrowSkill(ushort skillId) => skillId is 24 or 25 or 46 or 51 or 52 or 235
+            or 411 or 414 or 416 or 418 or 431;
 
         public static ArrowVolleyKind GetVolleyKind(ushort skillId) => skillId switch
         {
-            24 => ArrowVolleyKind.TripleShot,
+            24 or 414 or 418 => ArrowVolleyKind.TripleShot,
             46 => ArrowVolleyKind.DeepImpact,
             51 => ArrowVolleyKind.IceArrow,
-            52 => ArrowVolleyKind.Penetration,
-            235 => ArrowVolleyKind.MultiShot,
+            52 or 416 => ArrowVolleyKind.Penetration,
+            235 or 411 or 431 => ArrowVolleyKind.MultiShot,
             _ => ArrowVolleyKind.Normal
         };
 

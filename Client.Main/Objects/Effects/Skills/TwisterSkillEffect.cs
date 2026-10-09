@@ -22,7 +22,7 @@ namespace Client.Main.Objects.Effects.Skills
                 targetPosition = target.WorldPosition.Translation;
             }
 
-            return new ScrollOfTwisterEffect(context.Caster, center, targetPosition);
+            return new ScrollOfTwisterEffect(context.Caster, center, targetPosition, context.LaunchYaw);
         }
     }
 }

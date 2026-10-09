@@ -48,6 +48,7 @@ namespace Client.Main.Objects.Effects
 
         private readonly WalkerObject _caster;
         private readonly Vector3? _targetPosition;
+        private readonly float? _launchYaw;
         private Vector3 _center;
         private Vector3 _moveDirection;
 
@@ -92,11 +93,12 @@ namespace Client.Main.Objects.Effects
             public float Scale;
         }
 
-        public ScrollOfTwisterEffect(WalkerObject caster, Vector3 center, Vector3? targetPosition = null)
+        public ScrollOfTwisterEffect(WalkerObject caster, Vector3 center, Vector3? targetPosition = null, float? launchYaw = null)
         {
             _caster = caster ?? throw new ArgumentNullException(nameof(caster));
             _center = center;
             _targetPosition = targetPosition;
+            _launchYaw = launchYaw;
 
             IsTransparent = true;
             AffectedByTransparency = true;
@@ -627,6 +629,9 @@ namespace Client.Main.Objects.Effects
 
         private Vector3 ResolveMoveDirection()
         {
+            if (_launchYaw.HasValue)
+                return new Vector3(MathF.Sin(_launchYaw.Value), -MathF.Cos(_launchYaw.Value), 0f);
+
             if (_targetPosition.HasValue)
             {
                 Vector3 delta = _targetPosition.Value - _center;

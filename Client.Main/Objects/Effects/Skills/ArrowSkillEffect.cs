@@ -10,6 +10,11 @@ namespace Client.Main.Objects.Effects.Skills
     [SkillVisualEffect(51)]  // Ice Arrow
     [SkillVisualEffect(52)]  // Penetration
     [SkillVisualEffect(235)] // Multi-Shot
+    [SkillVisualEffect(411)] // Multi-Shot Strengthener
+    [SkillVisualEffect(414)] // Triple Shot Strengthener
+    [SkillVisualEffect(416)] // Penetration Strengthener
+    [SkillVisualEffect(418)] // Triple Shot Mastery
+    [SkillVisualEffect(431)] // Multi-Shot Mastery
     public sealed class ArrowSkillEffect : ISkillVisualEffect
     {
         public WorldObject? CreateEffect(SkillEffectContext context)
@@ -21,8 +26,9 @@ namespace Client.Main.Objects.Effects.Skills
                 shooter,
                 context.World,
                 context.TargetId,
-                context.TargetPosition,
-                ArrowProjectileSpawner.GetVolleyKind(context.SkillId));
+                context.LaunchYaw.HasValue ? null : context.TargetPosition,
+                ArrowProjectileSpawner.GetVolleyKind(context.SkillId),
+                context.LaunchYaw);
         }
     }
 }

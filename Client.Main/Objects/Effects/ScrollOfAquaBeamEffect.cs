@@ -30,6 +30,7 @@ namespace Client.Main.Objects.Effects
 
         private readonly WalkerObject _caster;
         private readonly Vector3? _targetPosition;
+        private readonly float? _launchYaw;
 
         private Vector3 _startPosition;
         private Vector3 _directionStep;
@@ -45,10 +46,11 @@ namespace Client.Main.Objects.Effects
         private TerrainControl? _lightTerrain;
         private bool _lightAdded;
 
-        public ScrollOfAquaBeamEffect(WalkerObject caster, Vector3? targetPosition = null)
+        public ScrollOfAquaBeamEffect(WalkerObject caster, Vector3? targetPosition = null, float? launchYaw = null)
         {
             _caster = caster ?? throw new ArgumentNullException(nameof(caster));
             _targetPosition = targetPosition;
+            _launchYaw = launchYaw;
 
             IsTransparent = true;
             AffectedByTransparency = true;
@@ -161,6 +163,9 @@ namespace Client.Main.Objects.Effects
 
         private Vector3 GetForwardDirection(Vector3 casterPos)
         {
+            if (_launchYaw.HasValue)
+                return new Vector3(MathF.Sin(_launchYaw.Value), -MathF.Cos(_launchYaw.Value), 0f);
+
             Vector3 forward;
 
             if (_targetPosition.HasValue)

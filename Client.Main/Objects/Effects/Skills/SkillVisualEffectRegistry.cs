@@ -17,6 +17,19 @@ namespace Client.Main.Objects.Effects.Skills
         private static readonly Dictionary<ushort, ISkillVisualEffect> _effects = new();
         private static readonly ILogger? _logger;
         private static bool _initialized;
+        private static readonly Dictionary<ushort, ushort> _masterReplacements = ServerMasterSkills.All
+            .Where(s => s.Replaced != 0).ToDictionary(s => s.Number, s => s.Replaced);
+
+        public static ushort GetBaseSkillId(ushort skillId)
+        {
+            for (int depth = 0; depth < ServerMasterSkills.All.Count; depth++)
+            {
+                if (!_masterReplacements.TryGetValue(skillId, out var replaced) || replaced == skillId)
+                    break;
+                skillId = replaced;
+            }
+            return skillId;
+        }
 
         static SkillVisualEffectRegistry()
         {
@@ -34,6 +47,20 @@ namespace Client.Main.Objects.Effects.Skills
 
             _initialized = true;
             DiscoverEffects();
+            // Season 6 master IDs replace base skills; legacy numeric aliases can
+            // otherwise select an unrelated visual (e.g. Fire Scream 518 -> Earthquake).
+            foreach (var entry in ServerMasterSkills.All)
+            {
+                if (entry.Replaced == 0)
+                {
+                    _effects.Remove(entry.Number);
+                    continue;
+                }
+                if (_effects.TryGetValue(GetBaseSkillId(entry.Number), out var factory))
+                    _effects[entry.Number] = factory;
+                else
+                    _effects.Remove(entry.Number);
+            }
         }
 
         /// <summary>

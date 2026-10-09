@@ -28,6 +28,9 @@ namespace Client.Main.Objects.Effects.Skills
         /// </summary>
         public Vector3? TargetPosition { get; init; }
 
+        /// <summary>Optional authoritative launch bearing for directional area projectiles.</summary>
+        public float? LaunchYaw { get; init; }
+
         /// <summary>
         /// The world control where the effect will be spawned.
         /// </summary>

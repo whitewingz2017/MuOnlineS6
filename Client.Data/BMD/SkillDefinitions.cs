@@ -40,7 +40,7 @@ namespace Client.Data.BMD
             { 21, SkillType.Target },  // Uppercut
             { 22, SkillType.Target },    // Cyclone
             { 23, SkillType.Target },  // Slash
-            { 24, SkillType.Target },  // Triple Shot
+            { 24, SkillType.Area },    // Triple Shot
             { 26, SkillType.Target },  // Heal
 
             // ID 27-52: Elf/Summoner Skills
@@ -69,11 +69,11 @@ namespace Client.Data.BMD
             { 363, SkillType.Self },   // Swell Life Mastery
             { 49, SkillType.Target },  // Fire Breath
             { 51, SkillType.Target },  // Ice Arrow
-            { 52, SkillType.Target },  // Penetration
+            { 52, SkillType.Area },    // Penetration
 
             // ID 55-79: Dark Lord/Mixed Skills
             { 55, SkillType.Area },    // Fire Slash
-            { 56, SkillType.Target },  // Power Slash
+            { 56, SkillType.Area },    // Power Slash
             { 57, SkillType.Area },    // Spiral Slash
             { 60, SkillType.Self },    // Force
             { 61, SkillType.Target },  // Fire Burst
@@ -82,7 +82,7 @@ namespace Client.Data.BMD
             { 62, SkillType.Area },    // Earthshake
             { 63, SkillType.Self },    // Summon
             { 64, SkillType.Self },    // Increase Critical Damage
-            { 65, SkillType.Target },  // Electric Spike
+            { 65, SkillType.Area },    // Electric Spike
             { 66, SkillType.Target },  // Force Wave
             { 67, SkillType.Area },    // Stun
             { 68, SkillType.Self },    // Cancel Stun
@@ -107,7 +107,7 @@ namespace Client.Data.BMD
             { 211, SkillType.Self },   // Spell of Restriction
             { 212, SkillType.Self },   // Spell of Pursuit
             { 213, SkillType.Target }, // Shield-Burn
-            { 214, SkillType.Target }, // Drain Life
+            { 214, SkillType.Area },   // Drain Life (explicit area target)
             { 215, SkillType.Area },   // Chain Lightning
             { 217, SkillType.Self },   // Damage Reflection
             { 218, SkillType.Self },   // Berserker
@@ -115,7 +115,7 @@ namespace Client.Data.BMD
             { 221, SkillType.Target }, // Weakness
             { 222, SkillType.Target }, // Innovation
             { 223, SkillType.Area },   // Explosion
-            { 224, SkillType.Target }, // Requiem
+            { 224, SkillType.Area },   // Requiem
             { 225, SkillType.Area },   // Pollution
 
             // ID 230-270: Dark Lord/Rage Fighter Skills
@@ -125,20 +125,50 @@ namespace Client.Data.BMD
             { 233, SkillType.Self },   // Expansion of Wizardry
             { 234, SkillType.Self },   // Recovery
             { 235, SkillType.Area },   // Multi-Shot
-            { 236, SkillType.Target }, // Flame Strike
+            { 236, SkillType.Area },   // Flame Strike
             { 237, SkillType.Area },   // Gigantic Storm
             { 238, SkillType.Area },   // Chaotic Diseier
             { 260, SkillType.Target }, // Killing Blow
             { 261, SkillType.Target }, // Beast Uppercut
             { 262, SkillType.Target }, // Chain Drive
             { 263, SkillType.Target }, // Dark Side
-            { 264, SkillType.Target }, // Dragon Roar
+            { 264, SkillType.Area },   // Dragon Roar (explicit area target)
             { 265, SkillType.Area },   // Dragon Slasher
             { 266, SkillType.Self },   // Ignore Defense
             { 267, SkillType.Self },   // Increase Health
             { 268, SkillType.Self },   // Increase Block
             { 269, SkillType.Target }, // Charge
-            { 270, SkillType.Target }, // Phoenix Shot
+            { 270, SkillType.Area },   // Phoenix Shot (explicit area target)
+
+            // Season 6 master skills inherit their replaced skill's server packet type.
+            { 330, SkillType.Area },   // Twisting Slash Strengthener
+            { 331, SkillType.Area },   // Rageful Blow Strengthener
+            { 332, SkillType.Area },   // Twisting Slash Mastery
+            { 333, SkillType.Area },   // Rageful Blow Mastery
+            { 378, SkillType.Area },   // Flame Strengthener
+            { 381, SkillType.Area },   // Inferno Strengthener
+            { 382, SkillType.Area },   // Cometfall Strengthener
+            { 385, SkillType.Area },   // Evil Spirit Strengthener
+            { 387, SkillType.Area },   // Decay Strengthener
+            { 388, SkillType.Area },   // Hellfire Strengthener
+            { 411, SkillType.Area },   // Multi-Shot Strengthener
+            { 414, SkillType.Area },   // Triple Shot Strengthener
+            { 416, SkillType.Area },   // Penetration Strengthener
+            { 418, SkillType.Area },   // Triple Shot Mastery
+            { 431, SkillType.Area },   // Multi-Shot Mastery
+            { 455, SkillType.Area },   // Chain Lightning Strengthener
+            { 456, SkillType.Area },   // Lightning Shock Strengthener
+            { 458, SkillType.Area },   // Drain Life Strengthener
+            { 481, SkillType.Area },   // Twisting Slash Strengthener (Duel Master)
+            { 482, SkillType.Area },   // Power Slash Strengthener
+            { 483, SkillType.Area },   // Flame Strengthener (Duel Master)
+            { 484, SkillType.Area },   // Cometfall Strengthener (Duel Master)
+            { 486, SkillType.Area },   // Inferno Strengthener (Duel Master)
+            { 487, SkillType.Area },   // Evil Spirit Strengthener (Duel Master)
+            { 490, SkillType.Area },   // Fire Slash Strengthener
+            { 512, SkillType.Area },   // Earthshake Strengthener
+            { 523, SkillType.Area },   // Chaotic Diseier Strengthener
+            { 560, SkillType.Area },   // Dragon Roar Strengthener
 
             // Ice Storm master variants (Ice Up I-V)
             { 302, SkillType.Area },   // Ice Up

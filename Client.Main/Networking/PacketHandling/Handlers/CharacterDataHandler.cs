@@ -334,13 +334,35 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             {
                 // Defaults
                 byte x = 0, y = 0, mapNumber = 0, direction = 0;
-                ushort currentHp = 0, currentMana = 0, currentAbility = 0;
-                uint experience = 0, money = 0;
+                uint currentHp = 0, currentMana = 0, currentAbility = 0;
+                uint currentShield = _characterState.MaximumShield;
+                ulong experience = 0;
+                uint money = 0;
                 ushort mapId = 0;
 
                 // Parse based on version
-                if ((_targetVersion == TargetProtocolVersion.Season6 || _targetVersion == TargetProtocolVersion.Version097)
-                    && packet.Length >= RespawnAfterDeath095.Length)
+                if (_targetVersion == TargetProtocolVersion.Season6
+                    && packet.Length >= RespawnAfterDeathExtended.Length)
+                {
+                    var respawn = new RespawnAfterDeathExtended(packet);
+                    x = respawn.PositionX; y = respawn.PositionY;
+                    mapNumber = respawn.MapNumber; direction = respawn.Direction;
+                    currentHp = respawn.CurrentHealth; currentMana = respawn.CurrentMana;
+                    currentShield = respawn.CurrentShield; currentAbility = respawn.CurrentAbility;
+                    experience = respawn.Experience; money = respawn.Money;
+                }
+                else if (_targetVersion == TargetProtocolVersion.Season6
+                         && packet.Length >= RespawnAfterDeath.Length)
+                {
+                    var respawn = new RespawnAfterDeath(packet);
+                    x = respawn.PositionX; y = respawn.PositionY;
+                    mapNumber = respawn.MapNumber; direction = respawn.Direction;
+                    currentHp = respawn.CurrentHealth; currentMana = respawn.CurrentMana;
+                    currentShield = respawn.CurrentShield; currentAbility = respawn.CurrentAbility;
+                    experience = respawn.Experience; money = respawn.Money;
+                }
+                else if (_targetVersion == TargetProtocolVersion.Version097
+                         && packet.Length >= RespawnAfterDeath095.Length)
                 {
                     var respawn = new RespawnAfterDeath095(packet);
                     x = respawn.PositionX;
@@ -386,7 +408,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 _characterState.UpdatePosition(x, y);
                 _characterState.UpdateMap(mapId);
                 _characterState.UpdateDirection(direction);
-                _characterState.UpdateCurrentHealthShield(currentHp, _characterState.MaximumShield);
+                _characterState.UpdateCurrentHealthShield(currentHp, currentShield);
                 _characterState.UpdateCurrentManaAbility(currentMana, currentAbility);
                 _characterState.Experience = experience;
                 _characterState.UpdateInventoryZen(money);
@@ -1409,6 +1431,10 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                             {
                                 SpawnRemoteCombatSkill(remoteWorld, playerId, skillId, targetId, null);
                             }
+                            else
+                            {
+                                SpawnRemoteRegisteredSkill(remoteWorld, playerId, skillId, targetId, null, null);
+                            }
                         }
 
                         _logger.LogDebug("Other player {PlayerId} used targeted skill {SkillId} on {TargetId}",
@@ -1457,6 +1483,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 ushort skillId = areaSkill.SkillId;
                 byte targetX = areaSkill.PointX;
                 byte targetY = areaSkill.PointY;
+                float? areaLaunchYaw = Core.Utilities.SkillCastRules.UsesCasterAreaPosition(skillId)
+                    ? areaSkill.Rotation / 256f * MathHelper.TwoPi
+                    : null;
 
                 _logger.LogDebug("AreaSkillAnimation: Player={PlayerId}, Skill={SkillId}, Target=({X},{Y})",
                     playerId, skillId, targetX, targetY);
@@ -1470,6 +1499,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     if (playerId == _characterState.Id)
                     {
                         activeScene.NotifyLocalSkillAnimation(skillId);
+                        if (areaLaunchYaw.HasValue)
+                            activeScene.Hero.SetFacingAngleZ(areaLaunchYaw.Value, immediate: true);
 
                         // Get animation from SkillDatabase
                         int animationId = ArrowProjectileSpawner.IsArrowSkill(skillId)
@@ -1514,7 +1545,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                                 Caster = activeScene.Hero,
                                 TargetId = 0,
                                 SkillId = skillId,
-                                TargetPosition = targetPosition,
+                                TargetPosition = areaLaunchYaw.HasValue ? null : targetPosition,
+                                LaunchYaw = areaLaunchYaw,
                                 World = world
                             };
 
@@ -1555,7 +1587,17 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                                 playerId,
                                 0,
                                 skillId,
-                                new Vector3(worldX, worldY, worldZ));
+                                new Vector3(worldX, worldY, worldZ),
+                                areaLaunchYaw);
+                        }
+                        else if (skillId is not (48 or 356 or 360 or 363 or 44 or 47 or 76 or 232 or 337) &&
+                            activeScene.World is WalkableWorldControl otherSkillWorld)
+                        {
+                            float x = (targetX + 0.5f) * Constants.TERRAIN_SCALE;
+                            float y = (targetY + 0.5f) * Constants.TERRAIN_SCALE;
+                            SpawnRemoteRegisteredSkill(otherSkillWorld, playerId, skillId, 0,
+                                areaLaunchYaw.HasValue ? null : new Vector3(x, y, otherSkillWorld.Terrain.RequestTerrainHeight(x, y)),
+                                areaLaunchYaw);
                         }
 
                         _logger.LogDebug("Other player {PlayerId} used skill {SkillId}", playerId, skillId);
@@ -1570,6 +1612,36 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             return Task.CompletedTask;
         }
 
+
+        private static void SpawnRemoteRegisteredSkill(WalkableWorldControl world, ushort rawPlayerId,
+            ushort skillId, ushort rawTargetId, Vector3? targetPosition, float? launchYaw)
+        {
+            if (!Objects.Effects.Skills.SkillVisualEffectRegistry.HasEffect(skillId) ||
+                !world.TryGetWalkerById((ushort)(rawPlayerId & 0x7FFF), out var caster) || caster is not PlayerObject player)
+                return;
+            ushort targetId = (ushort)(rawTargetId & 0x7FFF);
+            if (launchYaw.HasValue)
+                player.SetFacingAngleZ(launchYaw.Value, immediate: true);
+            else if (targetId != 0 && world.TryGetWalkerById(targetId, out var target))
+            {
+                targetPosition = target.WorldPosition.Translation;
+                player.FaceTowards(target.Location, immediate: true);
+            }
+            ushort baseSkillId = Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId);
+            player.PlayAction((ushort)player.GetSkillAction(baseSkillId, isInSafeZone: false), fromServer: true);
+            player.TriggerVehicleSkillAnimation();
+            var context = new Objects.Effects.Skills.SkillEffectContext
+            {
+                Caster = player, TargetId = targetId, SkillId = skillId,
+                TargetPosition = targetPosition, LaunchYaw = launchYaw, World = world
+            };
+            if (Objects.Effects.Skills.SkillVisualEffectRegistry.TrySpawn(skillId, context, out var effect) && effect != null)
+            {
+                world.Objects.Add(effect);
+                MuGame.TaskScheduler?.QueueTask(async () => await effect.Load(),
+                    Controllers.TaskScheduler.Priority.High, $"SkillEffect.Load.{effect.GetType().Name}");
+            }
+        }
 
         private static void SpawnRemoteCombatSkill(WalkableWorldControl world, ushort rawPlayerId,
             ushort skillId, ushort rawTargetId, Vector3? targetPosition)
@@ -1625,12 +1697,16 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             ushort rawPlayerId,
             ushort rawTargetId,
             ushort skillId,
-            Vector3? targetPosition)
+            Vector3? targetPosition,
+            float? launchYaw = null)
         {
             ushort playerId = (ushort)(rawPlayerId & 0x7FFF);
             ushort targetId = (ushort)(rawTargetId & 0x7FFF);
             if (!world.TryGetWalkerById(playerId, out WalkerObject caster) || caster is not PlayerObject remotePlayer)
                 return;
+
+            if (launchYaw.HasValue)
+                remotePlayer.SetFacingAngleZ(launchYaw.Value, immediate: true);
 
             int animationId = (int)remotePlayer.GetArrowSkillAnimation(skillId);
             if (animationId > 0)
@@ -1642,6 +1718,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 TargetId = targetId,
                 SkillId = skillId,
                 TargetPosition = targetPosition,
+                LaunchYaw = launchYaw,
                 World = world
             };
 

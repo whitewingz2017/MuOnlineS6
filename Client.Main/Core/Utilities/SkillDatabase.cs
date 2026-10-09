@@ -72,7 +72,7 @@ namespace Client.Main.Core.Utilities
         /// Returns -1 if no specific animation.
         /// </summary>
         public static int GetSkillAnimation(int skillId) =>
-            SkillDefinitions.GetSkillAnimation(skillId);
+            SkillDefinitions.GetSkillAnimation(Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId((ushort)skillId));
 
         /// <summary>
         /// Checks if skill is area type.

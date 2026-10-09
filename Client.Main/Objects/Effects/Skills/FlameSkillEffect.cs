@@ -38,7 +38,8 @@ namespace Client.Main.Objects.Effects.Skills
             }
 
             bool isTargeted = context.TargetId != 0;
-            bool dealsDamage = context.Caster.IsMainWalker;
+            // Master casts use the server's automatic hits, not base-skill hit packets.
+            bool dealsDamage = context.Caster.IsMainWalker && context.SkillId == 5;
             return new ScrollOfFlameEffect(center, isTargeted, dealsDamage, context.Caster.Angle.Z);
         }
     }

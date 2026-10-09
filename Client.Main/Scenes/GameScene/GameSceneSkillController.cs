@@ -908,6 +908,9 @@ namespace Client.Main.Scenes
             if (hero.IsDead)
                 return false;
 
+            if (SkillCastRules.RequiresExplicitAreaTarget(skill.SkillId) && extraTargetId == 0)
+                return false;
+
             Vector2 targetTile = hero.Location;
             if (targetLocationOverride.HasValue)
                 targetTile = targetLocationOverride.Value;

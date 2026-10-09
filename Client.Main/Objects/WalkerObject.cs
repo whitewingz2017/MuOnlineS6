@@ -869,7 +869,7 @@ namespace Client.Main.Objects
         /// Sets a continuous facing angle (Z, in radians) without changing <see cref="Direction"/>.
         /// Useful for MU-like stand rotation behaviors which are not limited to 8 directions.
         /// </summary>
-        protected void SetFacingAngleZ(float angleZ, bool immediate = false)
+        protected internal void SetFacingAngleZ(float angleZ, bool immediate = false)
         {
             angleZ = MathHelper.WrapAngle(angleZ);
             _targetAngle = new Vector3(_targetAngle.X, _targetAngle.Y, angleZ);
