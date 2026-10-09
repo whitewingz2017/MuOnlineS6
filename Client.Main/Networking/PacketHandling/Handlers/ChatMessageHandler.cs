@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.Network.Packets.ServerToClient;
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -158,6 +159,60 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             return Task.CompletedTask;
         }
 
+        [PacketHandler(0x02, PacketRouter.NoSubCode)]  // Legacy whisper: C1 xx 02 [10-byte sender] [message]
+        public Task HandleLegacyWhisperAsync(Memory<byte> packet)
+        {
+            try
+            {
+                ReadOnlySpan<byte> span = packet.Span;
+                if (span.Length < 13)
+                    return Task.CompletedTask;
+
+                string sender = DecodeFixedText(span.Slice(3, 10));
+                string message = DecodeFixedText(span[13..]);
+                var scene = MuGame.Instance?.ActiveScene as GameScene;
+                if (scene == null || string.IsNullOrWhiteSpace(sender) || string.IsNullOrEmpty(message))
+                    return Task.CompletedTask;
+
+                _logger.LogInformation(
+                    "Received legacy whisper (0x02): From={Sender}, Message='{Message}'",
+                    sender, message);
+                MuGame.ScheduleOnMainThread(() =>
+                {
+                    if (scene.ChatInput?.IsWhisperLocked == true)
+                        return;
+
+                    ProcessChatOnMainThread(new ChatDispatch(
+                        scene,
+                        sender,
+                        message,
+                        ChatMessage.ChatMessageType.Whisper));
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing legacy whisper (0x02).");
+            }
+
+            return Task.CompletedTask;
+        }
+
+        [PacketHandler(0x0C, PacketRouter.NoSubCode)]  // Legacy whisper result: C1 xx 0C [result]
+        public Task HandleLegacyWhisperResultAsync(Memory<byte> packet)
+        {
+            if (packet.Length <= 3 || packet.Span[3] != 0)
+                return Task.CompletedTask;
+
+            var scene = MuGame.Instance?.ActiveScene as GameScene;
+            if (scene?.ChatLog != null)
+            {
+                MuGame.ScheduleOnMainThread(() =>
+                    scene.ChatLog.AddMessage("System", "Whisper target is not online.", Client.Main.Models.MessageType.Error));
+            }
+
+            return Task.CompletedTask;
+        }
+
         [PacketHandler(0x00, PacketRouter.NoSubCode)]  // ChatMessage (0x00)
         public Task HandleChatMessageAsync(Memory<byte> packet)
         {
@@ -202,6 +257,11 @@ namespace Client.Main.Networking.PacketHandling.Handlers
         private void ProcessChatOnMainThread(ChatDispatch dispatch)
         {
             var scene = dispatch.Scene;
+            if (dispatch.Type == ChatMessage.ChatMessageType.Whisper &&
+                scene?.ChatInput?.IsWhisperLocked == true)
+            {
+                return;
+            }
             if (scene == null)
             {
                 _logger.LogWarning("ChatLogWindow not found for ChatMessage from {Sender}.", dispatch.Sender);
@@ -296,6 +356,15 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     }
                 }
             }
+        }
+
+        private static string DecodeFixedText(ReadOnlySpan<byte> bytes)
+        {
+            int length = bytes.IndexOf((byte)0);
+            if (length < 0)
+                length = bytes.Length;
+
+            return Encoding.UTF8.GetString(bytes[..length]).Trim();
         }
 
         // ───────────────────────── Static API ──────────────────────────

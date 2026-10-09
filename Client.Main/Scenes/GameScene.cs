@@ -123,6 +123,7 @@ namespace Client.Main.Scenes
         // Performance optimization fields - track object IDs for O(1) lookups
         // ───────────────────────── Properties ─────────────────────────
         public HeroObject Hero => _hero;
+        internal ChatInputBoxControl ChatInput => _chatInput;
         public ChatLogWindow ChatLog => _chatLog;
         public InventoryControl InventoryControl => _inventoryControl;
         public TradeControl TradeControl => TradeControl.Instance;

@@ -44,6 +44,12 @@ namespace Client.Main.Scenes
                     try
                     {
                         await MuGame.Network.SendWhisperMessageAsync(e.Receiver, e.Message);
+                        string sender = MuGame.Network.GetCharacterState()?.Name;
+                        if (!string.IsNullOrWhiteSpace(sender))
+                        {
+                            MuGame.ScheduleOnMainThread(() =>
+                                _chatLog?.AddMessage(sender, e.Message, MessageType.Whisper));
+                        }
                     }
                     catch (Exception ex)
                     {
