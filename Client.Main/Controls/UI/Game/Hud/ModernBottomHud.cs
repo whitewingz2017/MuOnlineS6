@@ -245,6 +245,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             }
 
             RestoreQuickSlotsIfNeeded();
+            ClearUnavailablePlasmaStorm();
 
             float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
             _totalTime = gameTime.TotalGameTime.TotalSeconds;
@@ -823,6 +824,37 @@ namespace Client.Main.Controls.UI.Game.Hud
 
             EnsureActiveSkillSelection(learnedSkills.Values.FirstOrDefault());
             _quickSlotsRestored = true;
+        }
+
+        private void ClearUnavailablePlasmaStorm()
+        {
+            if (_state.IsFenrirEquipped)
+                return;
+            bool changed = false;
+            if (_selectedSkillOverride?.SkillId == 76)
+            {
+                _selectedSkillOverride = null;
+                changed = true;
+            }
+            for (int i = PotionSlotCount; i < SlotCount; i++)
+                if (_slotSkills[i]?.SkillId == 76)
+                {
+                    _slotSkills[i] = null;
+                    changed = true;
+                }
+            foreach (var set in _imprintSets)
+                for (int i = 0; i < set.Length; i++)
+                    if (set[i] == 76)
+                    {
+                        set[i] = null;
+                        changed = true;
+                    }
+            if (changed)
+            {
+                SyncHotbarSkills();
+                EnsureActiveSkillSelection(null);
+                PersistQuickSlots();
+            }
         }
 
         private void EnsureActiveSkillSelection(SkillEntryState? fallbackSkill)

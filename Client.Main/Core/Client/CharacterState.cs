@@ -1611,6 +1611,11 @@ namespace Client.Main.Core.Client
 
         public bool IsDarkRavenEquipped => _darkRavenEquipped;
 
+        public bool IsFenrirEquipped =>
+            _inventoryItems.TryGetValue(8, out var pet) &&
+            ItemDataParser.TryGetGroupAndNumber(pet, out byte group, out short number) &&
+            group == 13 && number == 37;
+
         /// <summary>
         /// Clears the character's skill list.
         /// </summary>
@@ -1651,7 +1656,8 @@ namespace Client.Main.Core.Client
         public IEnumerable<SkillEntryState> GetSkills()
         {
             foreach (var skill in _skillList.Values.OrderBy(s => s.SkillId))
-                yield return skill;
+                if (skill.SkillId != 76 || IsFenrirEquipped)
+                    yield return skill;
 
             if (!_darkRavenEquipped)
                 yield break;

@@ -967,6 +967,8 @@ namespace Client.Main.Scenes
 
         private bool TryBeginSkillCast(Core.Client.SkillEntryState skill, PlayerObject hero)
         {
+            if (skill.SkillId == 76 && MuGame.Network?.GetCharacterState()?.IsFenrirEquipped != true)
+                return false;
             if (hero.IsAttackOrSkillAnimationPlaying())
                 return false;
 

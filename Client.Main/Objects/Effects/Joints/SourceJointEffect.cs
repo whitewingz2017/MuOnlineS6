@@ -27,6 +27,7 @@ namespace Client.Main.Objects.Effects.Joints
         private readonly Vector3[][] _rings = new Vector3[MaxRingCapacity][];
         private int _ringHead;
         private int _ringCount;
+        private VertexPositionColorTexture[]? _fenrirVertices;
 
         public JointFamily Family { get; set; }
         public int SubType { get; set; }
@@ -146,8 +147,32 @@ namespace Client.Main.Objects.Effects.Joints
         {
             var joint = ThunderHoming(origin, targetProvider, scale, 20f);
             joint.SubType = 76;
+            joint._startPosition = origin;
+            joint._fenrirPosition = origin;
+            joint._angle = new Vector3(MuGame.Random.Next(360), 0f, MuGame.Random.Next(360));
+            joint._fenrirVertices = new VertexPositionColorTexture[(MaxRingCapacity - 1) * 12];
             joint.LightTint = tint;
             joint.JointTexturePath = flash ? "Effect/Flashing.jpg" : "Effect/JointThunder01.jpg";
+            return joint;
+        }
+
+        /// <summary>MuMain BITMAP_FLARE_FORCE subtype 11-13 around Fenrir.</summary>
+        public static SourceJointEffect FenrirFlare(Vector3 origin, int fenrirType)
+        {
+            int wait = MuGame.Random.Next(2, 5);
+            var joint = new SourceJointEffect
+            {
+                Family = JointFamily.Thunder, SubType = 77, ScaleValue = 60f,
+                MaxTails = 30, LifeTimeFrames = 20f + wait, Velocity = -3f,
+                JointTexturePath = "Effect/JointThunder01.jpg",
+                LightTint = fenrirType == 1 ? new Vector3(1f, 0.6f, 0.6f) :
+                    fenrirType == 2 ? new Vector3(0.7f, 0.7f, 1f) : new Vector3(0.7f, 1f, 0.7f),
+                _angle = new Vector3(MuGame.Random.Next(360), 0f, MuGame.Random.Next(360)),
+                _startPosition = origin + Vector3.UnitZ * 150f,
+                _flareWait = wait,
+                _fenrirVertices = new VertexPositionColorTexture[(MaxRingCapacity - 1) * 12]
+            };
+            joint.Position = joint._startPosition + SourceJointMath.MuMainRotate(new Vector3(0f, 0f, 80f), new Vector3(80f, -180f, 0f));
             return joint;
         }
 
@@ -171,22 +196,42 @@ namespace Client.Main.Objects.Effects.Joints
             };
         }
 
-        private Func<Vector3>? _originProvider;
         private Vector3 _angle = new(0f, 0f, 0f);
         private float _ageFrames;
+        private float _boltRefreshFrames;
+        private Vector3 _fenrirPosition;
+        private Func<Vector3>? _originProvider;
+        private float _flareWait;
+        private float _flareRadius = 80f;
+        private float _flareOrbit = -180f;
+        private int _flareMultiUse = 1;
 
-        public override async Task Load()
+        public override async Task LoadContent()
         {
-            await base.Load();
-            if (Status != GameControlStatus.Ready)
-                return;
+            await base.LoadContent();
 
             _texture = await TextureLoader.Instance.PrepareAndGetTexture(JointTexturePath);
             if (Family == JointFamily.Spirit && SubType == 2)
                 _fortitudeFlare = await TextureLoader.Instance.PrepareAndGetTexture("Effect/flare01.jpg");
 
             // Initial tail ring: cross of +-Scale*0.5 around the position (CreateJoint).
-            PushRing(Position);
+            if (SubType is 76 or 77)
+                PushFenrirTail(Position, _angle);
+            else
+                PushRing(Position);
+        }
+
+        private void PushFenrirTail(Vector3 center, Vector3 angle)
+        {
+            SourceJointMath.MuMainAngleBasis(angle, out var right, out _, out var up);
+            float half = ScaleValue * 0.5f;
+            var ring = _rings[_ringHead];
+            ring[0] = center - right * half;
+            ring[1] = center + right * half;
+            ring[2] = center - up * half;
+            ring[3] = center + up * half;
+            _ringHead = (_ringHead + 1) % MaxRingCapacity;
+            _ringCount = Math.Min(_ringCount + 1, MaxTails);
         }
 
         private void PushRing(Vector3 center)
@@ -245,7 +290,7 @@ namespace Client.Main.Objects.Effects.Joints
                 Position += SourceJointMath.Rotate(local, _angle) * f;
             }
 
-            if (LifeTimeFrames > 0 || Family != JointFamily.Spirit)
+            if (SubType is not (76 or 77) && (LifeTimeFrames > 0 || Family != JointFamily.Spirit))
                 PushRing(Position);
 
             LifeTimeFrames -= f;
@@ -300,22 +345,57 @@ namespace Client.Main.Objects.Effects.Joints
 
         private void MoveThunderHoming(float f)
         {
+            if (SubType == 77)
+            {
+                _boltRefreshFrames += f;
+                while (_boltRefreshFrames >= 1f)
+                {
+                    _boltRefreshFrames -= 1f;
+                    if (_ringCount < MaxTails)
+                    {
+                        if (_flareWait > 0f)
+                            _flareWait -= 1f;
+                        else
+                        {
+                            for (int i = 1; i < _flareMultiUse; i++)
+                            {
+                                PushFenrirTail(Position, _angle);
+                                _startPosition += SourceJointMath.MuMainRotate(new Vector3(0f, Velocity, 0f), _angle);
+                                _flareOrbit -= 20f;
+                                Position = _startPosition + SourceJointMath.MuMainRotate(
+                                    new Vector3(0f, 0f, _flareRadius), new Vector3(0f, _flareOrbit, _angle.Z));
+                                Velocity -= 2f;
+                                _flareRadius -= 2.5f;
+                            }
+                            _flareMultiUse += 2;
+                        }
+                    }
+                    if (LifeTimeFrames < 10f)
+                        LightTint /= 1.3f;
+                }
+                return;
+            }
             if (SubType == 76)
             {
-                for (int i = 0; i < MaxTails; i++)
+                // Run MuMain's MoveJoint at its source tick rate. High render FPS must
+                // not insert extra stationary tails after arriving at the target.
+                _boltRefreshFrames += f;
+                while (_boltRefreshFrames >= 1f)
                 {
-                    Vector3 position = Position;
-                    Vector3 angle = _angle;
-                    SourceJointMath.MoveHumming(ref position, ref angle, TargetPosition, 50f, 1f);
-                    Position = position;
-                    _angle = angle;
-                    PushRing(Position);
-                    if (Vector3.DistanceSquared(Position, TargetPosition) < 75f * 75f)
-                        break;
-                    Vector3 jitter = new Vector3(MuGame.Random.Next(-512, 512) / ScaleValue, 0f,
-                        MuGame.Random.Next(-512, 512) / ScaleValue);
-                    Position += SourceJointMath.Rotate(new Vector3(0f, -Velocity, 0f), _angle + jitter);
+                    _boltRefreshFrames -= 1f;
+                    for (int j = 0; j < MaxTails; j++)
+                    {
+                        float distance = SourceJointMath.MuMainMoveHumming(ref _fenrirPosition, ref _angle, TargetPosition, 50f, 1f);
+                        Vector3 jitter = new Vector3(MuGame.Random.Next(-512, 512) / ScaleValue, 0f,
+                            MuGame.Random.Next(-512, 512) / ScaleValue);
+                        Vector3 tailAngle = _angle + jitter;
+                        PushFenrirTail(_fenrirPosition, tailAngle);
+                        if (distance < Velocity * 1.5f)
+                            break;
+                        _fenrirPosition += SourceJointMath.MuMainRotate(new Vector3(0f, -Velocity, 0f), tailAngle);
+                    }
                 }
+                Position = _fenrirPosition;
                 return;
             }
             if (TargetProvider != null)
@@ -352,8 +432,102 @@ namespace Client.Main.Objects.Effects.Joints
                 _collision = true; // arrival flash point (fire particle in C++)
         }
 
+        public override void Draw(GameTime gameTime)
+        {
+            if (SubType is not (76 or 77) || Hidden || Status != GameControlStatus.Ready || _texture == null || _fenrirVertices == null)
+                return;
+            int count = BuildFenrirVertices((float)((long)gameTime.TotalGameTime.TotalMilliseconds % 1000L) * 0.001f, SourceJointMath.FrameFactor);
+            if (count == 0)
+                return;
+            var gd = GraphicsDevice;
+            var effect = GraphicsManager.Instance.AlphaTestEffect3D;
+            var blend = gd.BlendState;
+            var depth = gd.DepthStencilState;
+            var raster = gd.RasterizerState;
+            var sampler = gd.SamplerStates[0];
+            var world = effect.World;
+            var view = effect.View;
+            var projection = effect.Projection;
+            var texture = effect.Texture;
+            var diffuse = effect.DiffuseColor;
+            float alpha = effect.Alpha;
+            bool vertexColor = effect.VertexColorEnabled;
+            try
+            {
+                gd.BlendState = Blendings.OneOneAdditive;
+                gd.DepthStencilState = DepthStencilState.DepthRead;
+                gd.RasterizerState = RasterizerState.CullNone;
+                gd.SamplerStates[0] = SamplerState.LinearWrap;
+                effect.World = Matrix.Identity;
+                effect.View = Camera.Instance.View;
+                effect.Projection = Camera.Instance.Projection;
+                effect.Texture = _texture;
+                effect.DiffuseColor = LightTint;
+                effect.Alpha = 1f;
+                effect.VertexColorEnabled = true;
+                foreach (var pass in effect.CurrentTechnique.Passes)
+                {
+                    pass.Apply();
+                    gd.DrawUserPrimitives(PrimitiveType.TriangleList, _fenrirVertices, 0, count / 3);
+                }
+            }
+            finally
+            {
+                gd.BlendState = blend;
+                gd.DepthStencilState = depth;
+                gd.RasterizerState = raster;
+                gd.SamplerStates[0] = sampler;
+                effect.World = world;
+                effect.View = view;
+                effect.Projection = projection;
+                effect.Texture = texture;
+                effect.DiffuseColor = diffuse;
+                effect.Alpha = alpha;
+                effect.VertexColorEnabled = vertexColor;
+            }
+        }
+
+        // MuMain RenderJoints: two crossed faces, newest-to-oldest tails, tiled U
+        // coordinates (NumTails-j)/16, doubled and scrolled for bTileMapping.
+        private int BuildFenrirVertices(float scroll, float frameFactor)
+        {
+            int count = 0;
+            int tails = _ringCount - 1;
+            float uvScale = MathF.Pow(2f, frameFactor);
+            for (int j = 0; j < tails; j++)
+            {
+                var current = _rings[(_ringHead - 1 - j + MaxRingCapacity) % MaxRingCapacity];
+                var next = _rings[(_ringHead - 2 - j + MaxRingCapacity) % MaxRingCapacity];
+                var center = (current[0] + current[1]) * 0.5f;
+                var nextCenter = (next[0] + next[1]) * 0.5f;
+                if (Vector3.DistanceSquared(center, nextCenter) > 60f * 60f)
+                    continue;
+                float u1 = SubType == 77 ? (tails - j) / (float)((MaxTails - 1) / 2) - scroll : ((tails - j) / 16f - scroll) * uvScale;
+                float u2 = SubType == 77 ? (tails - j - 1) / (float)((MaxTails - 1) / 2) - scroll : ((tails - j - 1) / 16f - scroll) * uvScale;
+                float intensity = SubType == 77 ? MathHelper.Clamp((tails - 1 - j) / (float)MaxTails * 2f, 0f, 1f) : 1f;
+                AddFenrirQuad(ref count, current[2], current[3], next[3], next[2], u1, u2, 1f, 0f, intensity);
+                AddFenrirQuad(ref count, current[0], current[1], next[1], next[0], u1, u2, 0f, 1f, intensity);
+            }
+            return count;
+        }
+
+        private void AddFenrirQuad(ref int count, Vector3 a, Vector3 b, Vector3 c, Vector3 d,
+            float u1, float u2, float v1, float v2, float intensity)
+        {
+            var vertices = _fenrirVertices!;
+            var color = new Color(intensity, intensity, intensity, 1f);
+            var va = new VertexPositionColorTexture(a, color, new Vector2(u1, v1));
+            var vb = new VertexPositionColorTexture(b, color, new Vector2(u1, v2));
+            var vc = new VertexPositionColorTexture(c, color, new Vector2(u2, v2));
+            var vd = new VertexPositionColorTexture(d, color, new Vector2(u2, v1));
+            vertices[count++] = va; vertices[count++] = vb; vertices[count++] = vc;
+            vertices[count++] = va; vertices[count++] = vc; vertices[count++] = vd;
+        }
+
         public override void DrawAfter(GameTime gameTime)
         {
+            if (SubType is 76 or 77)
+                return;
             if (Hidden || Status != GameControlStatus.Ready || _texture == null || _ringCount < 2)
                 return;
 

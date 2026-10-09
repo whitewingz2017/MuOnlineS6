@@ -88,7 +88,7 @@ namespace Client.Main.Controls.UI.Game.Skills
             }
         }
 
-        private void OnSkillSelectedFromPanel(SkillEntryState skill)
+        private void OnSkillSelectedFromPanel(SkillEntryState? skill)
         {
             SelectedSkill = skill;
 
@@ -135,6 +135,8 @@ namespace Client.Main.Controls.UI.Game.Skills
         public override void Update(GameTime gameTime)
         {
             base.Update(gameTime);
+            if (SelectedSkill?.SkillId == 76 && !_characterState.IsFenrirEquipped)
+                OnSkillSelectedFromPanel(null);
 
             // Hover effect on hint only
             bool panelVisible = _selectionPanel?.Visible ?? false;

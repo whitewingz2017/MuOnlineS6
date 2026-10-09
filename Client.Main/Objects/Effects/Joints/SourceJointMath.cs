@@ -101,5 +101,42 @@ namespace Client.Main.Objects.Effects.Joints
             AngleBasis(angleDeg, out var right, out var forward, out var up);
             return local.X * right + local.Y * forward + local.Z * up;
         }
+
+        /// <summary>MuMain ZzzMathLib.cpp AngleMatrix columns, consumed by VectorRotate.</summary>
+        public static void MuMainAngleBasis(Vector3 angleDeg, out Vector3 right, out Vector3 forward, out Vector3 up)
+        {
+            float sy = MathF.Sin(MathHelper.ToRadians(angleDeg.Z)), cy = MathF.Cos(MathHelper.ToRadians(angleDeg.Z));
+            float sp = MathF.Sin(MathHelper.ToRadians(angleDeg.Y)), cp = MathF.Cos(MathHelper.ToRadians(angleDeg.Y));
+            float sr = MathF.Sin(MathHelper.ToRadians(angleDeg.X)), cr = MathF.Cos(MathHelper.ToRadians(angleDeg.X));
+            right = new Vector3(cp * cy, cp * sy, -sp);
+            forward = new Vector3(sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, sr * cp);
+            up = new Vector3(cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp);
+        }
+
+        public static Vector3 MuMainRotate(Vector3 local, Vector3 angleDeg)
+        {
+            MuMainAngleBasis(angleDeg, out var right, out var forward, out var up);
+            return local.X * right + local.Y * forward + local.Z * up;
+        }
+
+        /// <summary>MuMain AngleMath.cpp and ZzzAI.cpp MoveHumming.</summary>
+        public static float MuMainMoveHumming(ref Vector3 position, ref Vector3 angle, Vector3 target, float turn, float factor)
+        {
+            static float Normalize(float value) => (value % 360f + 360f) % 360f;
+            static float Step(float current, float targetAngle, float maxDelta)
+            {
+                float delta = Normalize(targetAngle) - Normalize(current);
+                if (delta > 180f) delta -= 360f;
+                else if (delta < -180f) delta += 360f;
+                return Normalize(current + Math.Clamp(delta, -maxDelta, maxDelta));
+            }
+            Vector3 range = target - position;
+            float distance = MathF.Sqrt(range.X * range.X + range.Y * range.Y);
+            float yaw = Normalize(MathHelper.ToDegrees(MathF.Atan2(range.X, -range.Y)));
+            float pitch = 360f - Normalize(MathHelper.ToDegrees(MathF.Atan2(range.Z, distance)));
+            angle.Z = Step(angle.Z, yaw, turn * factor);
+            angle.X = Step(angle.X, pitch, turn * factor);
+            return range.Length();
+        }
     }
 }
