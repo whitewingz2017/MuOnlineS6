@@ -1541,6 +1541,18 @@ namespace Client.Main.Objects.Player
 
         public PlayerAction GetSkillAction(ushort skillId, bool isInSafeZone)
         {
+            if (skillId == 47)
+                return _isRiding && !isInSafeZone && IsFenrirVehicle(_currentVehicleIndex)
+                    ? PlayerAction.PlayerFenrirAttackSpear : PlayerAction.PlayerAttackSkillSpear;
+
+            if (skillId == 76)
+            {
+                bool right = Weapon2.Model != null && !Weapon2.Hidden;
+                bool left = Weapon1.Model != null && !Weapon1.Hidden;
+                int offset = right && left ? 1 : right ? 2 : left ? 3 : 0;
+                return (PlayerAction)((IsRageFighterClass(CharacterClass) ? 262 : 102) + offset);
+            }
+
             // Fire Burst (61/508/514) and Fire Scream (78/518) use the Dark Lord strike
             // family rather than the generic magic cast. SourceMain5.2 sets
             // PLAYER_ATTACK_STRIKE / PLAYER_ATTACK_RIDE_STRIKE /

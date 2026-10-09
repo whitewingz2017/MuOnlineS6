@@ -140,6 +140,17 @@ namespace Client.Main.Objects.Effects.Joints
             };
         }
 
+        /// <summary>Fenrir's long, jagged thunder/flash ribbons, generated up to the target each tick.</summary>
+        public static SourceJointEffect FenrirThunder(Vector3 origin, Func<Vector3> targetProvider,
+            float scale, Vector3 tint, bool flash)
+        {
+            var joint = ThunderHoming(origin, targetProvider, scale, 20f);
+            joint.SubType = 76;
+            joint.LightTint = tint;
+            joint.JointTexturePath = flash ? "Effect/Flashing.jpg" : "Effect/JointThunder01.jpg";
+            return joint;
+        }
+
         /// <summary>BITMAP_JOINT_LASER+1 swarm beam: per-frame humming at speed 25
         /// with jittered tails (BeamKnight/Devil energy bolts).</summary>
         public static SourceJointEffect LaserSwarm(Vector3 origin, Func<Vector3> targetProvider, float scale, bool redTint)
@@ -289,6 +300,24 @@ namespace Client.Main.Objects.Effects.Joints
 
         private void MoveThunderHoming(float f)
         {
+            if (SubType == 76)
+            {
+                for (int i = 0; i < MaxTails; i++)
+                {
+                    Vector3 position = Position;
+                    Vector3 angle = _angle;
+                    SourceJointMath.MoveHumming(ref position, ref angle, TargetPosition, 50f, 1f);
+                    Position = position;
+                    _angle = angle;
+                    PushRing(Position);
+                    if (Vector3.DistanceSquared(Position, TargetPosition) < 75f * 75f)
+                        break;
+                    Vector3 jitter = new Vector3(MuGame.Random.Next(-512, 512) / ScaleValue, 0f,
+                        MuGame.Random.Next(-512, 512) / ScaleValue);
+                    Position += SourceJointMath.Rotate(new Vector3(0f, -Velocity, 0f), _angle + jitter);
+                }
+                return;
+            }
             if (TargetProvider != null)
             {
                 Vector3 posT2 = Position;

@@ -1295,7 +1295,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
 
                         int animationId = ArrowProjectileSpawner.IsArrowSkill(skillId)
                             ? (int)activeScene.Hero.GetArrowSkillAnimation(skillId)
-                            : Core.Utilities.SkillDatabase.GetSkillAnimation(skillId);
+                            : skillId is 44 or 47 or 76 or 232 or 337
+                                ? (int)activeScene.Hero.GetSkillAction(skillId, isInSafeZone: false)
+                                : Core.Utilities.SkillDatabase.GetSkillAnimation(skillId);
                         string soundPath = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
 
                         // Play skill sound if available
@@ -1403,6 +1405,10 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                             {
                                 SpawnRemoteFortitudeSkill(remoteWorld, playerId, skillId);
                             }
+                            else if (skillId is 44 or 47 or 76 or 232 or 337)
+                            {
+                                SpawnRemoteCombatSkill(remoteWorld, playerId, skillId, targetId, null);
+                            }
                         }
 
                         _logger.LogDebug("Other player {PlayerId} used targeted skill {SkillId} on {TargetId}",
@@ -1468,7 +1474,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         // Get animation from SkillDatabase
                         int animationId = ArrowProjectileSpawner.IsArrowSkill(skillId)
                             ? (int)activeScene.Hero.GetArrowSkillAnimation(skillId)
-                            : Core.Utilities.SkillDatabase.GetSkillAnimation(skillId);
+                            : skillId is 44 or 47 or 76 or 232 or 337
+                                ? (int)activeScene.Hero.GetSkillAction(skillId, isInSafeZone: false)
+                                : Core.Utilities.SkillDatabase.GetSkillAnimation(skillId);
                         string soundPath = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
 
                         // Play skill sound if available
@@ -1529,6 +1537,13 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     {
                         if (skillId is 48 or 356 or 360 or 363 && activeScene.World is WalkableWorldControl fortitudeWorld)
                             SpawnRemoteFortitudeSkill(fortitudeWorld, playerId, skillId);
+                        if (skillId is 44 or 47 or 76 or 232 or 337 && activeScene.World is WalkableWorldControl combatWorld)
+                        {
+                            float x = (targetX + 0.5f) * Constants.TERRAIN_SCALE;
+                            float y = (targetY + 0.5f) * Constants.TERRAIN_SCALE;
+                            SpawnRemoteCombatSkill(combatWorld, playerId, skillId, 0,
+                                new Vector3(x, y, combatWorld.Terrain.RequestTerrainHeight(x, y)));
+                        }
                         if (ArrowProjectileSpawner.IsArrowSkill(skillId) &&
                             activeScene.World is WalkableWorldControl remoteWorld)
                         {
@@ -1555,6 +1570,36 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             return Task.CompletedTask;
         }
 
+
+        private static void SpawnRemoteCombatSkill(WalkableWorldControl world, ushort rawPlayerId,
+            ushort skillId, ushort rawTargetId, Vector3? targetPosition)
+        {
+            if (!world.TryGetWalkerById((ushort)(rawPlayerId & 0x7FFF), out var caster) || caster is not PlayerObject player)
+                return;
+            ushort targetId = (ushort)(rawTargetId & 0x7FFF);
+            if (targetId != 0 && world.TryGetWalkerById(targetId, out var target))
+            {
+                targetPosition = target.WorldPosition.Translation;
+                player.FaceTowards(target.Location, immediate: true);
+            }
+            else if (targetPosition.HasValue && skillId != 76)
+                player.FaceTowards(new Vector2(targetPosition.Value.X, targetPosition.Value.Y) / Constants.TERRAIN_SCALE, immediate: true);
+            player.PlayAction((ushort)player.GetSkillAction(skillId, isInSafeZone: false), fromServer: true);
+            player.TriggerVehicleSkillAnimation();
+            string sound = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
+            if (!string.IsNullOrEmpty(sound))
+                SoundController.Instance.PlayBuffer(sound);
+            var context = new Objects.Effects.Skills.SkillEffectContext
+            {
+                Caster = player, TargetId = targetId, SkillId = skillId,
+                TargetPosition = targetPosition, World = world
+            };
+            if (Objects.Effects.Skills.SkillVisualEffectRegistry.TrySpawn(skillId, context, out var effect) && effect != null)
+            {
+                world.Objects.Add(effect);
+                _ = effect.Load();
+            }
+        }
 
         private static void SpawnRemoteFortitudeSkill(WalkableWorldControl world, ushort rawPlayerId, ushort skillId)
         {

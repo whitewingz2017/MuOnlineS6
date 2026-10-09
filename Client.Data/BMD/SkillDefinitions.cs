@@ -121,6 +121,7 @@ namespace Client.Data.BMD
             // ID 230-270: Dark Lord/Rage Fighter Skills
             { 230, SkillType.Area },   // Lightning Shock
             { 232, SkillType.Area },   // Strike of Destruction
+            { 337, SkillType.Area },   // Strike of Destruction Strength
             { 233, SkillType.Self },   // Expansion of Wizardry
             { 234, SkillType.Self },   // Recovery
             { 235, SkillType.Area },   // Multi-Shot
@@ -217,6 +218,8 @@ namespace Client.Data.BMD
             Add(22, 63);    // Cyclone → PlayerAttackSkillSword4
             Add(19, 62);    // Falling Slash → PlayerAttackSkillWheel
             Add(43, 71);    // Death Stab → PlayerAttackDeathstab
+            Add(44, 137);   // Crescent Moon Slash → PlayerAttackRush
+            Add(47, 70);    // Impale → PlayerAttackSkillSpear (Fenrir resolved by PlayerObject)
             Add(41, 65);    // Twisting Slash → PlayerAttackSkillWheel
             Add(42, 66);    // Rageful Blow → PlayerAttackSkillFuryStrike
 
@@ -242,6 +245,7 @@ namespace Client.Data.BMD
             // riding/Fenrir variants), which PlayerObject.GetSkillAction resolves.
             Add(236, 184);  // Flame Strike → PlayerSkillFlamestrike
             Add(232, 176);  // Strike of Destruction → PlayerSkillBlowOfDestruction
+            Add(337, 176);  // Strike of Destruction Strength
             Add(64, 71);    // Increase Critical Damage → PlayerSkillVitality
             Add(65, 71);    // Electric Spike → PlayerSkillVitality
             Add(56, 146);   // Power Slash → PlayerAttackTwoHandSwordTwo
@@ -345,6 +349,8 @@ namespace Client.Data.BMD
             map[51] = "Sound/eIceArrow.wav";             // Ice Arrow (ID 51)
             map[49] = "Sound/sKnightSkill1.wav";         // Fire Breath (ID 49)
             map[47] = "Sound/eRidingSpear.wav";          // Impale (ID 47)
+            map[44] = "Sound/BattleCastle/sCHaveyBlow.wav";
+            map[76] = "Sound/pWskill.wav";
             map[48] = "Sound/eSwellLife.wav";            // Greater Fortitude (ID 48)
             map[356] = map[48];
             map[360] = map[48];
@@ -379,6 +385,7 @@ namespace Client.Data.BMD
             map[238] = "Sound/caotic.wav";               // Chaotic Diseier (ID 238)
             map[233] = "Sound/SwellofMagicPower.wav";    // Swell of Magicpower (ID 233)
             map[232] = "Sound/BLOW_OF_DESTRUCTION.wav";  // Destruction (ID 232)
+            map[337] = map[232];
             map[235] = "Sound/multi_shot.wav";           // Multi-Shot (ID 235)
             map[234] = "Sound/recover.wav";              // Recovery (ID 234)
 
