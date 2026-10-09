@@ -291,16 +291,7 @@ namespace Client.Main.Objects
             if (IsMainWalker)
                 HandleMouseInput();
 
-            BeforeUpdatePosition(gameTime);
-            UpdatePosition(gameTime);
-
-            // Animation handled centrally to preserve cross-action blending
-
-            if (_currentPath != null && _currentPath.Count > 0 && !IsMoving)
-            {
-                var next = _currentPath.Dequeue();
-                MoveTowards(next, gameTime);
-            }
+            UpdateMovement(gameTime);
 
             if (CurrentAction != _previousActionForSound)
             {
@@ -309,6 +300,33 @@ namespace Client.Main.Objects
                     // Monster-specific sound methods are called in PlayAction
                 }
                 _previousActionForSound = CurrentAction;
+            }
+        }
+
+        // Network interpolation must continue while the root is culled. Otherwise
+        // its old world position remains both the spatial-grid key and culling bound,
+        // so walking back into view can never make it eligible for a full Update.
+        internal void UpdateMovementWhileCulled(GameTime gameTime)
+        {
+            if (!Visible || World is not WalkableWorldControl || IsMainWalker)
+                return;
+
+            if (_pendingTerrainSnap && World.Terrain?.Status == GameControlStatus.Ready)
+                SnapToTerrainHeight(updateCamera: false);
+
+            if (_movementIntent || IsMoving || (_currentPath?.Count ?? 0) > 0)
+                UpdateMovement(gameTime);
+        }
+
+        private void UpdateMovement(GameTime gameTime)
+        {
+            BeforeUpdatePosition(gameTime);
+            UpdatePosition(gameTime);
+
+            if (_currentPath != null && _currentPath.Count > 0 && !IsMoving)
+            {
+                var next = _currentPath.Dequeue();
+                MoveTowards(next, gameTime);
             }
         }
 

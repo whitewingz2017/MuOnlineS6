@@ -74,10 +74,22 @@ namespace Client.Main.Scenes
             if (list.Count == 0)
                 return;
 
+            var scopeManager = MuGame.Network?.GetScopeManager();
+            if (scopeManager == null)
+                return;
+
             var loadTasks = new List<Task>(list.Count);
             ushort heroId = MuGame.Network.GetCharacterState().Id;
-            foreach (var scopeObject in list)
+            foreach (var pendingScopeObject in list)
             {
+                var scopeObject = scopeManager.GetScopeObjectByMaskedId(pendingScopeObject.Id) as PlayerScopeObject;
+                if (scopeObject == null)
+                    continue;
+
+                int spawnGeneration = ScopeHandler.GetPlayerSpawnGeneration(scopeObject.Id);
+                if (!ScopeHandler.IsCurrentPlayerSpawnGeneration(scopeObject.Id, spawnGeneration))
+                    continue;
+
                 if (scopeObject.Id == heroId || _activePlayerIds.Contains(scopeObject.Id))
                     continue;
 
@@ -117,13 +129,26 @@ namespace Client.Main.Scenes
                             {
                                 if (!ReferenceEquals(_scene.World, world) ||
                                     world.Status != GameControlStatus.Ready ||
-                                    _activePlayerIds.Contains(scopeObject.Id))
+                                    world.MapId != MuGame.Network.GetCharacterState().MapId ||
+                                    !scopeManager.ScopeContains(scopeObject.Id) ||
+                                    !ScopeHandler.IsCurrentPlayerSpawnGeneration(scopeObject.Id, spawnGeneration) ||
+                                    _activePlayerIds.Contains(scopeObject.Id) ||
+                                    world.FindPlayerById(scopeObject.Id) != null)
                                 {
                                     remote.Dispose();
                                     publishCompletion.TrySetResult(false);
                                     return;
                                 }
 
+                                var latestScope = scopeManager.GetScopeObjectByMaskedId(scopeObject.Id) as PlayerScopeObject;
+                                if (latestScope == null || latestScope.MapId != world.MapId)
+                                {
+                                    remote.Dispose();
+                                    publishCompletion.TrySetResult(false);
+                                    return;
+                                }
+
+                                remote.Location = new Vector2(latestScope.PositionX, latestScope.PositionY);
                                 remote.SnapToTerrainHeight(updateCamera: false);
                                 remote.PrepareRenderResourcesForFirstFrame();
                                 world.Objects.Add(remote);
@@ -154,6 +179,9 @@ namespace Client.Main.Scenes
 
                         if (ReferenceEquals(_scene.World, world) &&
                             world.Status == GameControlStatus.Ready &&
+                            world.MapId == MuGame.Network.GetCharacterState().MapId &&
+                            scopeManager.ScopeContains(scopeObject.Id) &&
+                            ScopeHandler.IsCurrentPlayerSpawnGeneration(scopeObject.Id, spawnGeneration) &&
                             world.FindWalkerById(scopeObject.Id) == remote)
                         {
                             bool activated = world.ActivateObjectForRendering(

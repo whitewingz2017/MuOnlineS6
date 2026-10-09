@@ -216,32 +216,45 @@ namespace Client.Main.Core.Client
         /// <param name="x">The X-coordinate of the player's position.</param>
         /// <param name="y">The Y-coordinate of the player's position.</param>
         /// <param name="name">The name of the player.</param>
-        public void AddOrUpdatePlayerInScope(ushort maskedId, ushort rawId, byte x, byte y, string name)
+        public bool AddOrUpdatePlayerInScope(
+            ushort maskedId,
+            ushort rawId,
+            byte x,
+            byte y,
+            string name,
+            CharacterClassNumber cls = CharacterClassNumber.DarkWizard,
+            ReadOnlyMemory<byte> appearanceData = default)
         {
             bool isSelf = maskedId == _characterState.Id;
             if (!isSelf && ShouldIgnoreRemoteUpdateDuringTransition())
-                return;
+                return false;
 
             if (_objectsInScope.TryGetValue(maskedId, out var existing) && existing is PlayerScopeObject existingPlayer)
             {
-                // Fast-path: mutate existing to avoid allocations
+                // Fast-path: mutate the authoritative scope record in place. The network
+                // position must remain current even when the corresponding world object is
+                // currently outside the camera culling result.
+                existingPlayer.RawId = rawId;
                 existingPlayer.PositionX = x;
                 existingPlayer.PositionY = y;
                 existingPlayer.Name = name;
+                existingPlayer.Class = cls;
+                if (!appearanceData.IsEmpty)
+                    existingPlayer.AppearanceData = appearanceData;
                 StampCurrentWorld(existingPlayer);
             }
             else
             {
-                // Replace mismatched type or missing entry
+                // Replace mismatched type or missing entry.
                 if (existing != null)
-                {
                     ReturnScopeObject(existing);
-                }
-                var player = RentPlayer(maskedId, rawId, x, y, name);
+
+                var player = RentPlayer(maskedId, rawId, x, y, name, cls, appearanceData);
                 StampCurrentWorld(player);
                 _objectsInScope[maskedId] = player;
             }
             _logger.LogTrace("Scope Add/Update: Player {Name} ({Id:X4}, Raw: {RawId:X4}) at [{X},{Y}]", name, maskedId, rawId, x, y);
+            return true;
         }
 
         /// <summary>
@@ -391,18 +404,25 @@ namespace Client.Main.Core.Client
         }
 
         // ---------- Pools ----------
-        private PlayerScopeObject RentPlayer(ushort maskedId, ushort rawId, byte x, byte y, string name)
+        private PlayerScopeObject RentPlayer(
+            ushort maskedId,
+            ushort rawId,
+            byte x,
+            byte y,
+            string name,
+            CharacterClassNumber cls,
+            ReadOnlyMemory<byte> appearanceData)
         {
             lock (_poolLock)
             {
                 if (_playerPool.Count > 0)
                 {
                     var obj = _playerPool.Pop();
-                    obj.Reset(maskedId, rawId, x, y, name, CharacterClassNumber.DarkWizard, default);
+                    obj.Reset(maskedId, rawId, x, y, name, cls, appearanceData);
                     return obj;
                 }
             }
-            return new PlayerScopeObject(maskedId, rawId, x, y, name);
+            return new PlayerScopeObject(maskedId, rawId, x, y, name, cls, appearanceData);
         }
 
         private NpcScopeObject RentNpc(ushort maskedId, ushort rawId, byte x, byte y, ushort typeNumber, string name)

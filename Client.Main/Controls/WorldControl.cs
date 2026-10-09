@@ -527,6 +527,7 @@ namespace Client.Main.Controls
             }
 
             UpdateVisibleObjects(time);
+            UpdateCulledPlayerMovement(time);
             FlushSpatialUpdates();
             UpdatePassProfiler.AddWorldVisibility(visibilityStarted);
 
@@ -550,6 +551,7 @@ namespace Client.Main.Controls
                 RefreshDirtyVisibleObjects();
             }
             UpdatePassProfiler.AddWorldCull(cullStarted);
+            TraceRemotePlayerVisibility(time);
 
             long hoverStarted = UpdatePassProfiler.Start();
             WorldHoverSystem.UpdateHover(_visibleObjects, Scene);
@@ -2560,6 +2562,38 @@ namespace Client.Main.Controls
                 capacity <<= 1;
 
             _dirtyVisibilityResultScratch = new byte[capacity];
+        }
+
+        private void UpdateCulledPlayerMovement(GameTime time)
+        {
+            // Keep simulation independent of camera visibility, without evaluating
+            // off-screen bones, equipment, lighting or draw resources. Visible players
+            // already advanced through UpdateVisibleObjects and must not move twice.
+            for (int i = 0; i < _players.Count; i++)
+            {
+                var player = _players[i];
+                if (player.Visible && !_visibleObjectIndices.ContainsKey(player))
+                    player.UpdateMovementWhileCulled(time);
+            }
+        }
+
+        private double _nextRemotePlayerVisibilityTraceMs;
+
+        private void TraceRemotePlayerVisibility(GameTime time)
+        {
+            if (!Diagnostics.RemotePlayerVisibilityDiagnostics.Enabled ||
+                time.TotalGameTime.TotalMilliseconds < _nextRemotePlayerVisibilityTraceMs)
+                return;
+
+            _nextRemotePlayerVisibilityTraceMs = time.TotalGameTime.TotalMilliseconds + 1000;
+            for (int i = 0; i < _players.Count; i++)
+            {
+                var player = _players[i];
+                if (!player.IsMainWalker)
+                    Diagnostics.RemotePlayerVisibilityDiagnostics.TracePlayer(_logger,
+                        _renderFaults.ContainsKey(player) ? "RenderFault" : "WorldSnapshot",
+                        player, IsObjectVisibleInSnapshot(player));
+            }
         }
 
         private void UpdateVisibleObjects(GameTime time)

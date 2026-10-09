@@ -859,7 +859,10 @@ namespace Client.Main.Scenes
 
             long scopeStarted = UpdatePassProfiler.Start();
             if (World is WalkableWorldControl walkableWorld)
+            {
                 ScopeHandler.PumpNpcSpawnQueue(walkableWorld);
+                ScopeHandler.PumpPendingPlayerSpawns(walkableWorld);
+            }
             UpdatePassProfiler.AddGameScopePump(scopeStarted);
 
             if (World == null || World.Status != GameControlStatus.Ready)

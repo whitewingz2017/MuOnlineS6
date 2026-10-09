@@ -53,6 +53,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
         private static readonly ConcurrentQueue<NpcSpawnRequest> _npcSpawnQueue = new();
         private static readonly ConcurrentQueue<PlayerSpawnRequest> _playerSpawnQueue = new();
         private static readonly ConcurrentDictionary<ushort, int> _npcSpawnGenerations = new();
+        private static readonly ConcurrentDictionary<ushort, int> _playerSpawnGenerations = new();
+        private static readonly object _playerLifecycleLock = new();
         private static readonly ConcurrentDictionary<ushort, ScheduledNpcSpawn> _scheduledNpcSpawnGenerations = new();
         private static readonly object _npcSpawnScheduleLock = new();
         private static int _npcSpawnsInFlight;
@@ -145,6 +147,42 @@ namespace Client.Main.Networking.PacketHandling.Handlers
         private static void InvalidateNpcSpawnGeneration(ushort maskedId)
         {
             _npcSpawnGenerations.AddOrUpdate(maskedId, 1, static (_, previous) => unchecked(previous + 1));
+        }
+
+        private static int BumpPlayerSpawnGeneration(ushort maskedId)
+        {
+            return _playerSpawnGenerations.AddOrUpdate(maskedId, 1, static (_, previous) => unchecked(previous + 1));
+        }
+
+        internal static int GetPlayerSpawnGeneration(ushort maskedId)
+        {
+            return _playerSpawnGenerations.TryGetValue(maskedId, out int generation) ? generation : 0;
+        }
+
+        internal static bool IsCurrentPlayerSpawnGeneration(ushort maskedId, int generation)
+        {
+            return generation != 0 &&
+                   _playerSpawnGenerations.TryGetValue(maskedId, out int currentGeneration) &&
+                   currentGeneration == generation;
+        }
+
+        private bool IsCurrentPlayerScope(ushort maskedId)
+        {
+            return _scopeManager.GetScopeObjectByMaskedId(maskedId) is PlayerScopeObject;
+        }
+
+        private static void RemovePendingPlayer(ushort maskedId)
+        {
+            lock (_pendingPlayers)
+            {
+                for (int i = _pendingPlayers.Count - 1; i >= 0; i--)
+                {
+                    if (_pendingPlayers[i].Id == maskedId)
+                        _pendingPlayers.RemoveAt(i);
+                }
+
+                _pendingPlayerIds.Remove(maskedId);
+            }
         }
 
         private void QueueNpcSpawn(
@@ -313,6 +351,29 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             }
         }
 
+        internal static void PumpPendingPlayerSpawns(WalkableWorldControl world)
+        {
+            var handler = _activeInstance;
+            if (handler == null || world?.Status != GameControlStatus.Ready ||
+                MuGame.Instance?.ActiveScene?.World != world || world.MapId != handler._characterState.MapId)
+                return;
+
+            // ImportPendingRemotePlayersAsync takes one snapshot during loading.
+            // A background upsert can decide to buffer before readiness, then append
+            // after that snapshot. Keep consuming late entries once the scene is live.
+            foreach (var pending in TakePendingPlayers())
+            {
+                var latest = handler._scopeManager.GetScopeObjectByMaskedId(pending.Id) as PlayerScopeObject;
+                int generation = GetPlayerSpawnGeneration(pending.Id);
+                if (latest == null || latest.Id == handler._characterState.Id || latest.MapId != world.MapId ||
+                    !IsCurrentPlayerSpawnGeneration(latest.Id, generation))
+                    continue;
+
+                handler.SpawnRemotePlayerIntoWorld(world, latest.Id, latest.RawId,
+                    latest.PositionX, latest.PositionY, latest.Name, latest.Class, latest.AppearanceData, generation);
+            }
+        }
+
         /// <summary>
         /// Retrieves and clears pending NPC and monster spawns.
         /// </summary>
@@ -373,6 +434,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
         [PacketHandler(0x12, PacketRouter.NoSubCode)] // AddCharacterToScope
         public Task HandleAddCharacterToScopeAsync(Memory<byte> packet)
         {
+            if (Diagnostics.RemotePlayerVisibilityDiagnostics.Enabled)
+                Diagnostics.RemotePlayerVisibilityDiagnostics.Trace(_logger, "Packet0x12", 0xFFFF, $"Length={packet.Length}");
             try
             {
                 ParseAndAddCharactersToScope(packet);
@@ -536,31 +599,92 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             ReadOnlySpan<byte> appearance)
         {
             ushort maskedId = (ushort)(rawId & 0x7FFF);
+            var appearanceBytes = appearance.ToArray();
+            int spawnGeneration;
 
-            // Always update the manager, even for the local player.
-            _scopeManager.AddOrUpdatePlayerInScope(maskedId, rawId, x, y, name);
-
-            if (maskedId == _characterState.Id)
+            // Serialize scope acceptance and lifecycle generation changes. The queued main
+            // thread callbacks still validate the generation, while this lock prevents a
+            // rejected transition packet from advancing the generation by itself.
+            lock (_playerLifecycleLock)
             {
-                return;
+                // Always update the manager, including the authoritative appearance data.
+                bool scopeUpdateAccepted = _scopeManager.AddOrUpdatePlayerInScope(
+                    maskedId,
+                    rawId,
+                    x,
+                    y,
+                    name,
+                    cls,
+                    appearanceBytes);
+
+                if (!scopeUpdateAccepted)
+                {
+                    Diagnostics.RemotePlayerVisibilityDiagnostics.Trace(_logger, "RejectedScope", maskedId, "World transition is rejecting remote updates.");
+                    return;
+                }
+
+                spawnGeneration = BumpPlayerSpawnGeneration(maskedId);
             }
 
-            var appearanceBytes = appearance.ToArray();
+            if (maskedId == _characterState.Id)
+                return;
+
+            if (Diagnostics.RemotePlayerVisibilityDiagnostics.Enabled)
+                Diagnostics.RemotePlayerVisibilityDiagnostics.Trace(_logger, "AcceptedScope", maskedId, $"Class={cls} Tile=({x},{y}) Map={_characterState.MapId} Generation={spawnGeneration}");
 
             // Spawn remote players immediately if the world is ready, otherwise buffer for later.
             if (MuGame.Instance.ActiveScene?.World is WalkableWorldControl w
                 && w.Status == GameControlStatus.Ready
                 && w.MapId == _characterState.MapId)
             {
-                SpawnRemotePlayerIntoWorld(w, maskedId, rawId, x, y, name, cls, appearanceBytes);
+                SpawnRemotePlayerIntoWorld(
+                    w,
+                    maskedId,
+                    rawId,
+                    x,
+                    y,
+                    name,
+                    cls,
+                    appearanceBytes,
+                    spawnGeneration);
                 return;
             }
 
             lock (_pendingPlayers)
             {
-                if (_pendingPlayerIds.Add(maskedId))
+                Diagnostics.RemotePlayerVisibilityDiagnostics.Trace(_logger, "BufferedScope", maskedId, "World not ready; waiting for the player spawn pump.");
+                PlayerScopeObject pending = null;
+                for (int i = 0; i < _pendingPlayers.Count; i++)
                 {
-                    _pendingPlayers.Add(new PlayerScopeObject(maskedId, rawId, x, y, name, cls, appearanceBytes));
+                    if (_pendingPlayers[i].Id == maskedId)
+                    {
+                        pending = _pendingPlayers[i];
+                        break;
+                    }
+                }
+
+                if (pending == null)
+                {
+                    _pendingPlayerIds.Add(maskedId);
+                    _pendingPlayers.Add(new PlayerScopeObject(
+                        maskedId,
+                        rawId,
+                        x,
+                        y,
+                        name,
+                        cls,
+                        appearanceBytes));
+                }
+                else
+                {
+                    // Do not keep the original out-of-camera coordinates while the scene is
+                    // still loading. Coalesce repeated scope packets to the latest state.
+                    pending.RawId = rawId;
+                    pending.PositionX = x;
+                    pending.PositionY = y;
+                    pending.Name = name;
+                    pending.Class = cls;
+                    pending.AppearanceData = appearanceBytes;
                 }
             }
         }
@@ -691,10 +815,25 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 byte y,
                 string name,
                 CharacterClassNumber cls,
-                ReadOnlyMemory<byte> appearanceData)
+                ReadOnlyMemory<byte> appearanceData,
+                int spawnGeneration)
         {
-            _logger.LogDebug("[Spawn] Received request for {Name} ({MaskedId:X4}).", name, maskedId);
-            _playerSpawnQueue.Enqueue(new PlayerSpawnRequest(world, maskedId, rawId, x, y, name, cls, appearanceData));
+            _logger.LogDebug(
+                "[Spawn] Received request for {Name} ({MaskedId:X4}), generation {Generation}.",
+                name,
+                maskedId,
+                spawnGeneration);
+            _playerSpawnQueue.Enqueue(new PlayerSpawnRequest(
+                world,
+                maskedId,
+                rawId,
+                x,
+                y,
+                name,
+                cls,
+                appearanceData,
+                world.MapId,
+                spawnGeneration));
             TryStartPlayerSpawnWorker();
         }
 
@@ -722,7 +861,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                             request.Y,
                             request.Name,
                             request.Class,
-                            request.AppearanceData);
+                            request.AppearanceData,
+                            request.MapId,
+                            request.SpawnGeneration);
                     }
                     catch (Exception ex)
                     {
@@ -746,13 +887,24 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 byte y,
                 string name,
                 CharacterClassNumber cls,
-                ReadOnlyMemory<byte> appearanceData)
+                ReadOnlyMemory<byte> appearanceData,
+                ushort mapId,
+                int spawnGeneration)
         {
-            _logger.LogDebug("[Spawn] Starting creation for {Name} ({MaskedId:X4}).", name, maskedId);
+            _logger.LogDebug(
+                "[Spawn] Starting creation for {Name} ({MaskedId:X4}), generation {Generation}.",
+                name,
+                maskedId,
+                spawnGeneration);
 
-            if (MuGame.Instance.ActiveScene?.World != world || world.Status != GameControlStatus.Ready)
+            if (!IsCurrentPlayerSpawnGeneration(maskedId, spawnGeneration) ||
+                !IsCurrentPlayerScope(maskedId) ||
+                MuGame.Instance.ActiveScene?.World != world ||
+                world.Status != GameControlStatus.Ready ||
+                world.MapId != mapId ||
+                _characterState.MapId != mapId)
             {
-                _logger.LogWarning("[Spawn] World changed or not ready. Aborting spawn for {Name}.", name);
+                _logger.LogDebug("[Spawn] Dropping stale or out-of-scope request for {MaskedId:X4}.", maskedId);
                 return;
             }
 
@@ -765,15 +917,16 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 World = world
             };
             _logger.LogDebug("[Spawn] PlayerObject created for {Name}.", name);
+            Diagnostics.RemotePlayerVisibilityDiagnostics.Trace(_logger, "Created", maskedId, "Loading appearance and player assets.");
 
             var preloadTask = p.PreloadAppearanceModelsAsync();
 
-            // Load assets in background
             try
             {
                 var loadTask = p.Load();
                 await Task.WhenAll(preloadTask, loadTask);
                 _logger.LogDebug("[Spawn] Assets preloaded and Load() completed for {Name}.", name);
+                Diagnostics.RemotePlayerVisibilityDiagnostics.TracePlayer(_logger, "Loaded", p, inSnapshot: false);
             }
             catch (Exception ex)
             {
@@ -782,37 +935,66 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 return;
             }
 
-            // Add to world on main thread
+            // A remote player may have left and re-entered scope while its assets were loading.
+            // Only the newest scope generation is allowed to publish an object.
+            if (!IsCurrentPlayerSpawnGeneration(maskedId, spawnGeneration) ||
+                !IsCurrentPlayerScope(maskedId))
+            {
+                MuGame.ScheduleOnMainThread(() => p.Dispose());
+                return;
+            }
+
             MuGame.ScheduleOnMainThread(() =>
             {
-                // Double-check world is still valid
-                if (MuGame.Instance.ActiveScene?.World != world || world.Status != GameControlStatus.Ready)
+                lock (_playerLifecycleLock)
                 {
-                    _logger.LogWarning("[Spawn] World changed or not ready during spawn. Aborting spawn for {Name}.", name);
+                    if (!IsCurrentPlayerSpawnGeneration(maskedId, spawnGeneration) ||
+                    !IsCurrentPlayerScope(maskedId) ||
+                    MuGame.Instance.ActiveScene?.World != world ||
+                    world.Status != GameControlStatus.Ready ||
+                    world.MapId != mapId ||
+                    _characterState.MapId != mapId)
+                {
+                    _logger.LogDebug("[Spawn] Request {MaskedId:X4} became stale before publication.", maskedId);
                     p.Dispose();
                     return;
                 }
 
+                var latestScope = _scopeManager.GetScopeObjectByMaskedId(maskedId) as PlayerScopeObject;
+                byte latestX = latestScope?.PositionX ?? x;
+                byte latestY = latestScope?.PositionY ?? y;
+
+                // A duplicate scope packet must not replace a live player object. Updating the
+                // existing walker preserves equipment, animation state, effects, and buffs.
+                if (world.FindPlayerById(maskedId) is PlayerObject existingPlayer)
+                {
+                    existingPlayer.Location = new Vector2(latestX, latestY);
+                    existingPlayer.MoveTargetPosition = existingPlayer.TargetPosition;
+                    existingPlayer.Position = existingPlayer.MoveTargetPosition;
+                    existingPlayer.Hidden = false;
+                    world.ActivateObjectForRendering(existingPlayer, forceFullVisibilityRebuild: true);
+                    p.Dispose();
+                    _logger.LogTrace("[Spawn] Refreshed existing player {MaskedId:X4} at ({X},{Y}).", maskedId, latestX, latestY);
+                    return;
+                }
+
+                // IDs are shared by all walkers. Remove only a stale non-player object; never
+                // enqueue an unconditional remove that could race a newer player insertion.
                 if (world.WalkerObjectsById.TryGetValue(maskedId, out WalkerObject existingWalker))
                 {
-                    _logger.LogWarning("[Spawn] Stale object for {Name} found. Removing before adding new.", name);
-                    WorldMutationQueue.RemoveAndDispose(world, existingWalker);
+                    _logger.LogWarning("[Spawn] Removing stale non-player object {Type} for {MaskedId:X4}.", existingWalker.GetType().Name, maskedId);
+                    world.RemoveObject(existingWalker);
+                    if (existingWalker.Status != GameControlStatus.Disposed)
+                        existingWalker.Dispose();
                 }
 
-                if (world.FindPlayerById(maskedId) != null)
-                {
-                    _logger.LogWarning("[Spawn] PlayerObject for {Name} already exists. Aborting.", name);
-                    p.Dispose();
-                    return;
-                }
-
+                p.Location = new Vector2(latestX, latestY);
                 world.Objects.Add(p);
-                _logger.LogDebug("[Spawn] Added {Name} to world.Objects.", name);
+                _logger.LogDebug("[Spawn] Added {Name} to world.Objects at ({X},{Y}).", name, latestX, latestY);
 
                 ElfBuffEffectManager.Instance?.EnsureBuffsForPlayer(maskedId);
 
-                // Set final position
-                if (p.World != null && p.World.Terrain != null)
+                if (p.World?.Terrain != null)
                 {
                     p.MoveTargetPosition = p.TargetPosition;
                     p.Position = p.TargetPosition;
@@ -825,11 +1007,15 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     p.Position = p.MoveTargetPosition;
                 }
 
+                world.ActivateObjectForRendering(p, forceFullVisibilityRebuild: true);
+                Diagnostics.RemotePlayerVisibilityDiagnostics.TracePlayer(_logger, "Published", p, world.IsObjectVisibleInSnapshot(p));
+
                 if ((rawId & 0x8000) != 0)
                     CharacterSpawnEffect.Start(p);
 
-                _logger.LogDebug("[Spawn] Successfully spawned {Name} ({MaskedId:X4}) into world.", name, maskedId);
-            });
+                    _logger.LogDebug("[Spawn] Successfully spawned {Name} ({MaskedId:X4}) into world.", name, maskedId);
+                }
+            }, MainThreadDispatcher.WorkPriority.High, $"ScopeHandler.PublishPlayer.{maskedId:X4}");
         }
 
         [PacketHandler(0x13, PacketRouter.NoSubCode)] // AddNpcToScope
@@ -1314,7 +1500,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 byte y,
                 string name,
                 CharacterClassNumber @class,
-                ReadOnlyMemory<byte> appearanceData)
+                ReadOnlyMemory<byte> appearanceData,
+                ushort mapId,
+                int spawnGeneration)
             {
                 World = world;
                 MaskedId = maskedId;
@@ -1324,6 +1512,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 Name = name;
                 Class = @class;
                 AppearanceData = appearanceData;
+                MapId = mapId;
+                SpawnGeneration = spawnGeneration;
             }
 
             public WalkableWorldControl World { get; }
@@ -1334,6 +1524,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             public string Name { get; }
             public CharacterClassNumber Class { get; }
             public ReadOnlyMemory<byte> AppearanceData { get; }
+            public ushort MapId { get; }
+            public int SpawnGeneration { get; }
         }
 
         [PacketHandler(0x25, PacketRouter.NoSubCode)]
@@ -2053,7 +2245,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             var outPkt = new MapObjectOutOfScope(packet);
             int count = outPkt.ObjectCount;
             ushort selfId = (ushort)(_characterState.Id & 0x7FFF);
-            var objectsToRemove = new List<ushort>(count);
+            var objectsToRemove = new List<(ushort MaskedId, int PlayerRemovalGeneration)>(count);
 
             for (int i = 0; i < count; i++)
             {
@@ -2065,11 +2257,18 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     continue;
                 }
 
-                objectsToRemove.Add(masked);
+                int playerRemovalGeneration;
+                lock (_playerLifecycleLock)
+                {
+                    playerRemovalGeneration = BumpPlayerSpawnGeneration(masked);
+                    RemovePendingPlayer(masked);
+                    _scopeManager.RemoveObjectFromScope(masked);
+                }
+
+                objectsToRemove.Add((masked, playerRemovalGeneration));
                 _buffManager.ProcessMagicEffectStatus(masked, (byte)BuffEffectId.SwellLife, false);
                 _buffManager.ProcessMagicEffectStatus(masked, (byte)BuffEffectId.SwellLifeProficiency, false);
                 InvalidateNpcSpawnGeneration(masked);
-                _scopeManager.RemoveObjectFromScope(masked);
             }
 
             // Remove objects on main thread in one batched action.
@@ -2078,8 +2277,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 if (!TryGetActiveWalkableWorld(out var world)) return;
                 var localWalker = world.Walker;
 
-                foreach (var masked in objectsToRemove)
+                foreach (var removal in objectsToRemove)
                 {
+                    ushort masked = removal.MaskedId;
                     if (localWalker != null && localWalker.NetworkId == masked)
                     {
                         _logger.LogWarning("Skipping OutOfScope removal for local walker ID {Id:X4}.", masked);
@@ -2087,16 +2287,29 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     }
 
                     // ---- 1) Player --------------------------------------------------
+                    // Out-of-scope packets are processed asynchronously. Do not let an old
+                    // removal callback delete a player that has already re-entered scope.
                     var player = world.FindPlayerById(masked);
                     if (player != null)
                     {
-                        if (localWalker != null && ReferenceEquals(player, localWalker))
+                        lock (_playerLifecycleLock)
                         {
-                            _logger.LogWarning("Skipping OutOfScope disposal for local player object ID {Id:X4}.", masked);
-                            continue;
-                        }
+                            if (!IsCurrentPlayerSpawnGeneration(masked, removal.PlayerRemovalGeneration) ||
+                                IsCurrentPlayerScope(masked))
+                            {
+                                continue;
+                            }
 
-                        WorldMutationQueue.RemoveAndDispose(world, player);
+                            if (localWalker != null && ReferenceEquals(player, localWalker))
+                            {
+                                _logger.LogWarning("Skipping OutOfScope disposal for local player object ID {Id:X4}.", masked);
+                                continue;
+                            }
+
+                            // The lifecycle lock makes the generation/scope check and removal
+                            // one operation relative to a re-entry packet.
+                            WorldMutationQueue.RemoveAndDispose(world, player);
+                        }
                         continue;
                     }
 
@@ -2326,8 +2539,11 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     // CRITICAL: Don't remove local player from scope - let respawn handle it
                     // _scopeManager.RemoveObjectFromScope(killed); // REMOVED THIS LINE
                 }
-                else
+                int deathGeneration = 0;
+                if (killed != _characterState.Id)
                 {
+                    deathGeneration = BumpPlayerSpawnGeneration(killed);
+                    RemovePendingPlayer(killed);
                     _logger.LogInformation("💀 {Killed} died. Killed by {Killer}", killedName, killerName);
                     _scopeManager.RemoveObjectFromScope(killed);
                 }
@@ -2385,11 +2601,17 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                             {
                                 MuGame.ScheduleOnMainThread(() =>
                                 {
-                                if (world.Objects.Contains(walker))
-                                {
-                                    WorldMutationQueue.RemoveAndDispose(world, walker);
-                                    _logger.LogDebug("💀 Removed dead remote player {Name} after animation",
-                                        remotePlayer.Name);
+                                    // The death animation callback may outlive a scope re-entry.
+                                    // Remove only the exact object that died and only while its
+                                    // death generation is still current.
+                                    if (IsCurrentPlayerSpawnGeneration(killed, deathGeneration) &&
+                                        _scopeManager.GetScopeObjectByMaskedId(killed) is not PlayerScopeObject &&
+                                        world.FindPlayerById(killed) == remotePlayer &&
+                                        world.Objects.Contains(remotePlayer))
+                                    {
+                                        WorldMutationQueue.RemoveAndDispose(world, remotePlayer);
+                                        _logger.LogDebug("💀 Removed dead remote player {Name} after animation",
+                                            remotePlayer.Name);
                                     }
                                 });
                             });
