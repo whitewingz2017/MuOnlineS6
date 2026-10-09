@@ -216,7 +216,11 @@ namespace Client.Main.Objects
                 return;
             }
 
-            _animTime += delta * (action.PlaySpeed == 0 ? 1.0f : action.PlaySpeed) * AnimationSpeed;
+            float actionSpeed = action.PlaySpeed == 0 ? 1.0f : action.PlaySpeed;
+            // Greater Fortitude slows down after frame six in both reference clients.
+            if (this is Player.PlayerObject && currentActionIndex == (int)PlayerAction.PlayerSkillVitality && _animTime > 6.0)
+                actionSpeed *= 0.5f;
+            _animTime += delta * actionSpeed * AnimationSpeed;
             double framePos;
 
             if (isDeathAction || HoldOnLastFrame)

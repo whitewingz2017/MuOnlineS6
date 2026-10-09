@@ -230,6 +230,11 @@ namespace Client.Main.Controllers
             if (act == null) return false; // Handle null actions gracefully
 
             duration = CalcDuration(act);
+            if (_owner is PlayerObject && idx == (ushort)PlayerAction.PlayerSkillVitality)
+            {
+                float frames = Math.Max(act.NumAnimationKeys, 1);
+                duration *= (frames + Math.Max(frames - 6f, 0f)) / frames;
+            }
             return true;
         }
 

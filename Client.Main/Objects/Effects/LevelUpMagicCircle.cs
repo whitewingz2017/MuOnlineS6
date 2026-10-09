@@ -14,12 +14,19 @@ namespace Client.Main.Objects.Effects
         private const float LifetimeFrames = 20f;
         private const float _lifeTotal = LifetimeFrames / SourceFrameRate;
         private float _life = _lifeTotal;
+        private readonly bool _fortitude;
+        private readonly float _fortitudeScale;
 
         public override string TexturePath => "Effect/Magic_Ground2.jpg";
 
-        public LevelUpMagicCircle(Vector3 startPos)
+        public LevelUpMagicCircle(Vector3 startPos, bool fortitude = false, float rotation = 0f)
         {
+            _fortitude = fortitude;
+            _fortitudeScale = fortitude ? MuGame.Random.Next(50, 100) / 100f * 4f : 0f;
+            if (fortitude)
+                _life = 40f / SourceFrameRate;
             Position = startPos;
+            Angle = new Vector3(0f, 0f, rotation);
             IsTransparent = true;
             BlendState = Blendings.OneOneAdditive;
             Scale = 0f;
@@ -39,7 +46,13 @@ namespace Client.Main.Objects.Effects
                 return;
             }
 
-            float lifeFrames = MathHelper.Clamp(_life * SourceFrameRate, 0f, LifetimeFrames);
+            float lifeFrames = MathHelper.Clamp(_life * SourceFrameRate, 0f, _fortitude ? 40f : LifetimeFrames);
+            if (_fortitude)
+            {
+                Scale = _fortitudeScale;
+                Alpha = lifeFrames < 5f ? lifeFrames / 5f : MathF.Sin((60f - lifeFrames) * 0.05f) + 0.5f;
+                return;
+            }
             Scale = (LifetimeFrames - lifeFrames) * 0.15f;
             Alpha = lifeFrames < 5f ? lifeFrames / 5f : 1f;
 
@@ -80,7 +93,7 @@ namespace Client.Main.Objects.Effects
                 effect.Projection = Camera.Instance.Projection;
                 effect.Texture = SpriteTexture;
                 effect.VertexColorEnabled = false;
-                effect.DiffuseColor = new Vector3(0.4f, 0.6f, 1f);
+                effect.DiffuseColor = _fortitude ? new Vector3(1f, 0.5f, 0.1f) : new Vector3(0.4f, 0.6f, 1f);
                 effect.Alpha = this.Alpha;
 
                 foreach (var pass in effect.CurrentTechnique.Passes)

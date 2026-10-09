@@ -37,6 +37,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
         private readonly ILogger<ScopeHandler> _logger;
         private readonly ScopeManager _scopeManager;
         private readonly CharacterState _characterState;
+        private readonly BuffManager _buffManager;
         private readonly NetworkManager _networkManager;
         private readonly PartyManager _partyManager;
         private readonly TargetProtocolVersion _targetVersion;
@@ -70,11 +71,13 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             NetworkManager networkManager,
             PartyManager partyManager,
             TargetProtocolVersion targetVersion,
-            MuOnlineSettings settings)
+            MuOnlineSettings settings,
+            BuffManager buffManager)
         {
             _logger = loggerFactory.CreateLogger<ScopeHandler>();
             _scopeManager = scopeManager;
             _characterState = characterState;
+            _buffManager = buffManager;
             _networkManager = networkManager;
             _partyManager = partyManager;
             _targetVersion = targetVersion;
@@ -451,6 +454,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 {
                     var c = scope[i];
                     ushort raw = c.Id;
+                    _buffManager.ProcessMagicEffectStatus(raw, (byte)BuffEffectId.SwellLife, false);
+                    _buffManager.ProcessMagicEffectStatus(raw, (byte)BuffEffectId.SwellLifeProficiency, false);
 
                     if (c.EffectCount > 0)
                     {
@@ -458,6 +463,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         {
                             byte effectId = c[e].Id;
                             _characterState.ActivateBuff(effectId, raw);
+                            _buffManager.ProcessMagicEffectStatus(raw, effectId, true);
                             ElfBuffEffectManager.Instance?.HandleBuff(effectId, raw, true);
                         }
                     }
@@ -491,6 +497,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
 
                 var character = new AddCharacterToScopeExtended(packet);
                 ushort raw = character.Id;
+                _buffManager.ProcessMagicEffectStatus(raw, (byte)BuffEffectId.SwellLife, false);
+                _buffManager.ProcessMagicEffectStatus(raw, (byte)BuffEffectId.SwellLifeProficiency, false);
                 var appearanceAndEffects = character.AppearanceAndEffects;
                 var appearance = appearanceAndEffects.Slice(2, 25);
 
@@ -498,6 +506,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 {
                     byte effectId = appearanceAndEffects[28 + i];
                     _characterState.ActivateBuff(effectId, raw);
+                    _buffManager.ProcessMagicEffectStatus(raw, effectId, true);
                     ElfBuffEffectManager.Instance?.HandleBuff(effectId, raw, true);
                 }
 
@@ -2057,6 +2066,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 }
 
                 objectsToRemove.Add(masked);
+                _buffManager.ProcessMagicEffectStatus(masked, (byte)BuffEffectId.SwellLife, false);
+                _buffManager.ProcessMagicEffectStatus(masked, (byte)BuffEffectId.SwellLifeProficiency, false);
                 InvalidateNpcSpawnGeneration(masked);
                 _scopeManager.RemoveObjectFromScope(masked);
             }
@@ -2299,6 +2310,10 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 var death = new ObjectGotKilled(packet);
                 ushort killed = death.KilledId;
                 ushort killer = death.KillerId;
+                _buffManager.ProcessMagicEffectStatus(killed, (byte)BuffEffectId.SwellLife, false);
+                _buffManager.ProcessMagicEffectStatus(killed, (byte)BuffEffectId.SwellLifeProficiency, false);
+                _characterState.DeactivateBuff((byte)BuffEffectId.SwellLife, killed);
+                _characterState.DeactivateBuff((byte)BuffEffectId.SwellLifeProficiency, killed);
 
                 string killerName = _scopeManager.TryGetScopeObjectName(killer, out var kn) ? (kn ?? "Unknown") : "Unknown";
                 string killedName = _scopeManager.TryGetScopeObjectName(killed, out var kd) ? (kd ?? "Unknown") : "Unknown";

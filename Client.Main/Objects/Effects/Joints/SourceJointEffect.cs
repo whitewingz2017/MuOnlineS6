@@ -23,6 +23,7 @@ namespace Client.Main.Objects.Effects.Joints
         private const int MaxRingCapacity = 50;
 
         private Texture2D? _texture;
+        private Texture2D? _fortitudeFlare;
         private readonly Vector3[][] _rings = new Vector3[MaxRingCapacity][];
         private int _ringHead;
         private int _ringCount;
@@ -60,6 +61,23 @@ namespace Client.Main.Objects.Effects.Joints
         }
 
         // ---- factories mirroring CreateJoint call sites -----------------------
+
+        /// <summary>Greater Fortitude's accelerating JOINT_SPIRIT sub2.</summary>
+        public static SourceJointEffect FortitudeSpirit(Vector3 origin, float yawDeg) => new()
+        {
+            Family = JointFamily.Spirit,
+            SubType = 2,
+            Position = origin,
+            TargetPosition = origin,
+            Velocity = 50f,
+            LifeTimeFrames = 20f,
+            ScaleValue = 60f,
+            MaxTails = 3,
+            LightTint = new Vector3(1f, 0.5f, 0.1f),
+            JointTexturePath = "Effect/JointSpirit01.jpg",
+            _angle = new Vector3(-10f, 0f, yawDeg),
+            _startPosition = origin
+        };
 
         /// <summary>BITMAP_JOINT_SPIRIT sub1 with NULL target: radial burst streaks
         /// (Phantom Knight 36x, scale 60, Velocity 70, LifeTime 49).</summary>
@@ -153,6 +171,8 @@ namespace Client.Main.Objects.Effects.Joints
                 return;
 
             _texture = await TextureLoader.Instance.PrepareAndGetTexture(JointTexturePath);
+            if (Family == JointFamily.Spirit && SubType == 2)
+                _fortitudeFlare = await TextureLoader.Instance.PrepareAndGetTexture("Effect/flare01.jpg");
 
             // Initial tail ring: cross of +-Scale*0.5 around the position (CreateJoint).
             PushRing(Position);
@@ -168,7 +188,7 @@ namespace Client.Main.Objects.Effects.Joints
             ring[2] = center + up * h;
             ring[3] = center - up * h;
             _ringHead = (_ringHead + 1) % MaxRingCapacity;
-            if (_ringCount < MaxRingCapacity)
+            if (_ringCount < (SubType == 2 && Family == JointFamily.Spirit ? MaxTails : MaxRingCapacity))
                 _ringCount++;
         }
 
@@ -227,6 +247,14 @@ namespace Client.Main.Objects.Effects.Joints
 
         private void MoveSpirit(float f)
         {
+            if (SubType == 2)
+            {
+                if (LifeTimeFrames < 10f)
+                    LightTint *= MathF.Pow(1f / 1.2f, f);
+                Velocity += 5f * f;
+                Position += SourceJointMath.Rotate(new Vector3(0f, -Velocity, 0f), _angle) * f;
+                return;
+            }
             if (SubType == 3 && TargetProvider != null)
             {
                 // sub3: MoveHumming(10) toward target + wobble, terrain clamps.
@@ -341,6 +369,14 @@ namespace Client.Main.Objects.Effects.Joints
             }
 
             // Head sprite + SPIRIT sub1 twinkle.
+            if (Family == JointFamily.Spirit && SubType == 2 && _fortitudeFlare != null &&
+                TryProject(Position, viewport, camera, out var fortitudeHead))
+            {
+                float scale = (4f + (20f - LifeTimeFrames) / 5f) * ScreenScale(Position);
+                spriteBatch.Draw(_fortitudeFlare, fortitudeHead, null, new Color(LightTint), 0f,
+                    new Vector2(_fortitudeFlare.Width * 0.5f, _fortitudeFlare.Height * 0.5f),
+                    scale, SpriteEffects.None, 0.45f);
+            }
             if (Family == JointFamily.Spirit && SubType == 1)
             {
                 if (TryProject(Position, viewport, camera, out var sp))

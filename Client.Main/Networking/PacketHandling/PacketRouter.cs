@@ -43,6 +43,7 @@ namespace Client.Main.Networking.PacketHandling
         private readonly BloodCastleHandler _bloodCastleHandler;
         private readonly PetHandler _petHandler;
         private readonly BuffManager _buffManager;
+        private readonly Effects.GreaterFortitudeBuffController _fortitudeBuffs;
 
         private readonly Dictionary<(byte MainCode, byte SubCode), Func<Memory<byte>, Task>> _packetHandlers
             = new();
@@ -52,7 +53,11 @@ namespace Client.Main.Networking.PacketHandling
         // ───────────────────────── Properties ─────────────────────────
         public TargetProtocolVersion TargetVersion { get; }
 
-        public void UpdateBuffs() => _buffManager.Update();
+        public void UpdateBuffs()
+        {
+            _buffManager.Update();
+            _fortitudeBuffs.Update();
+        }
 
         // ───────────────────────── Constructors ─────────────────────────
         public PacketRouter(
@@ -73,11 +78,12 @@ namespace Client.Main.Networking.PacketHandling
 
             // Instantiate BuffManager (shared across handlers)
             _buffManager = new BuffManager(loggerFactory);
+            _fortitudeBuffs = new Effects.GreaterFortitudeBuffController(_buffManager);
 
             // Instantiate handlers
             _characterDataHandler = new CharacterDataHandler(loggerFactory, characterState, networkManager, targetVersion, _buffManager);
             _inventoryHandler = new InventoryHandler(loggerFactory, characterState, networkManager, targetVersion);
-            _scopeHandler = new ScopeHandler(loggerFactory, scopeManager, characterState, networkManager, partyManager, targetVersion, settings);
+            _scopeHandler = new ScopeHandler(loggerFactory, scopeManager, characterState, networkManager, partyManager, targetVersion, settings, _buffManager);
             _chatMessageHandler = new ChatMessageHandler(loggerFactory);
             _connectServerHandler = new ConnectServerHandler(loggerFactory, networkManager);
             _miscGamePacketHandler = new MiscGamePacketHandler(loggerFactory, networkManager, characterService, characterState, scopeManager, targetVersion);
@@ -140,6 +146,7 @@ namespace Client.Main.Networking.PacketHandling
         public Task OnDisconnected()
         {
             _logger.LogWarning("Disconnected from {Server}.", _isConnectServerRouting ? "Connect Server" : "Game Server");
+            MuGame.ScheduleOnMainThread(_fortitudeBuffs.Clear);
             // TODO: Reset client state as needed, e.g. _networkManager.SetInGameStatus(false);
             return Task.CompletedTask;
         }

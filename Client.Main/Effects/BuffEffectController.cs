@@ -10,7 +10,7 @@ using Microsoft.Xna.Framework;
 namespace Client.Main.Effects
 {
     /// <summary>
-    /// Applies visual buff effects (Swell scale, auras) to player/monster objects
+    /// Applies attached buff effects and auras to player/monster objects
     /// by subscribing to BuffManager state changes.
     /// </summary>
     public class BuffEffectController
@@ -18,14 +18,8 @@ namespace Client.Main.Effects
         private readonly BuffManager _buffManager;
         private readonly ILogger<BuffEffectController> _logger;
 
-        /// <summary>Active swell scale factors per entity (playerId → scale multiplier).</summary>
-        private readonly Dictionary<ushort, float> _swellScales = new();
-
         /// <summary>Attached buff visual effects per entity ((playerId, effectId) → visuals).</summary>
         private readonly Dictionary<(ushort PlayerId, BuffEffectId EffectId), List<WorldObject>> _buffVisuals = new();
-
-        /// <summary>The scale multiplier applied to swelled entities.</summary>
-        private const float SwellScaleFactor = 1.25f;
 
         public BuffEffectController(BuffManager buffManager, ILoggerFactory loggerFactory)
         {
@@ -53,7 +47,8 @@ namespace Client.Main.Effects
             switch (effectId)
             {
                 case BuffEffectId.SwellLife:
-                    ApplySwell(scene, maskedId, isActive);
+                case BuffEffectId.SwellLifeProficiency:
+                    // GreaterFortitudeBuffController owns the persistent bone particles.
                     break;
 
                 case BuffEffectId.ManaShield:
@@ -95,32 +90,6 @@ namespace Client.Main.Effects
                 default:
                     _logger?.LogTrace("No visual effect mapped for buff {EffectId}", effectId);
                     break;
-            }
-        }
-
-        /// <summary>
-        /// Applies Swell (scale increase) to the entity.
-        /// Matches SourceMain swell behavior: entity visibly grows.
-        /// </summary>
-        private void ApplySwell(Scenes.GameScene scene, ushort playerId, bool isActive)
-        {
-            if (scene.World is not Controls.WalkableWorldControl walkableWorld) return;
-            if (!walkableWorld.WalkerObjectsById.TryGetValue(playerId, out var walker)) return;
-
-            if (isActive)
-            {
-                _swellScales[playerId] = SwellScaleFactor;
-                walker.Scale *= SwellScaleFactor;
-                _logger?.LogDebug("Swell applied to player {PlayerId}", playerId);
-            }
-            else
-            {
-                if (_swellScales.TryGetValue(playerId, out float factor))
-                {
-                    walker.Scale /= factor;
-                    _swellScales.Remove(playerId);
-                }
-                _logger?.LogDebug("Swell removed from player {PlayerId}", playerId);
             }
         }
 
@@ -177,20 +146,10 @@ namespace Client.Main.Effects
         }
 
         /// <summary>
-        /// Gets the current swell scale factor for a player, or 1.0 if not swelled.
-        /// </summary>
-        public float GetSwellScale(ushort playerId)
-        {
-            return _swellScales.TryGetValue(playerId, out float factor) ? factor : 1.0f;
-        }
-
-        /// <summary>
         /// Clears all visual effects (e.g., on map change).
         /// </summary>
         public void ClearAll()
         {
-            _swellScales.Clear();
-
             foreach (var visuals in _buffVisuals.Values)
             {
                 foreach (var visual in visuals)

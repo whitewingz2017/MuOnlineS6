@@ -114,7 +114,12 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 // Map skill ID to effect ID and deactivate
                 // For now, we'll use the lower byte of skill ID as effect ID
                 // This mapping may need to be adjusted based on actual game data
-                byte effectId = (byte)(skillId & 0xFF);
+                byte effectId = skillId switch
+                {
+                    48 or 356 => (byte)BuffEffectId.SwellLife,
+                    360 or 363 => (byte)BuffEffectId.SwellLifeProficiency,
+                    _ => (byte)(skillId & 0xFF)
+                };
                 _characterState.DeactivateBuff(effectId, targetId);
                 _buffManager.ProcessMagicEffectStatus(targetId, effectId, false);
                 HandleElfBuffVisual(effectId, targetId, false);
@@ -1294,7 +1299,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         string soundPath = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
 
                         // Play skill sound if available
-                        if (!string.IsNullOrEmpty(soundPath))
+                        if (!string.IsNullOrEmpty(soundPath) && skillId is not (48 or 356 or 360 or 363))
                         {
                             SoundController.Instance.PlayBuffer(soundPath);
                         }
@@ -1394,6 +1399,10 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                             {
                                 SpawnRemoteArrowSkill(remoteWorld, playerId, targetId, skillId, targetPosition: null);
                             }
+                            else if (skillId is 48 or 356 or 360 or 363)
+                            {
+                                SpawnRemoteFortitudeSkill(remoteWorld, playerId, skillId);
+                            }
                         }
 
                         _logger.LogDebug("Other player {PlayerId} used targeted skill {SkillId} on {TargetId}",
@@ -1463,7 +1472,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         string soundPath = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
 
                         // Play skill sound if available
-                        if (!string.IsNullOrEmpty(soundPath))
+                        if (!string.IsNullOrEmpty(soundPath) && skillId is not (48 or 356 or 360 or 363))
                         {
                             SoundController.Instance.PlayBuffer(soundPath);
                         }
@@ -1518,6 +1527,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     }
                     else
                     {
+                        if (skillId is 48 or 356 or 360 or 363 && activeScene.World is WalkableWorldControl fortitudeWorld)
+                            SpawnRemoteFortitudeSkill(fortitudeWorld, playerId, skillId);
                         if (ArrowProjectileSpawner.IsArrowSkill(skillId) &&
                             activeScene.World is WalkableWorldControl remoteWorld)
                         {
@@ -1544,6 +1555,25 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             return Task.CompletedTask;
         }
 
+
+        private static void SpawnRemoteFortitudeSkill(WalkableWorldControl world, ushort rawPlayerId, ushort skillId)
+        {
+            ushort playerId = (ushort)(rawPlayerId & 0x7FFF);
+            if (!world.TryGetWalkerById(playerId, out var caster) || caster is not PlayerObject player)
+                return;
+            player.PlayAction((ushort)PlayerAction.PlayerSkillVitality, fromServer: true);
+            var context = new Objects.Effects.Skills.SkillEffectContext
+            {
+                Caster = player,
+                SkillId = skillId,
+                World = world
+            };
+            if (Objects.Effects.Skills.SkillVisualEffectRegistry.TrySpawn(skillId, context, out var effect) && effect != null)
+            {
+                world.Objects.Add(effect);
+                _ = effect.Load();
+            }
+        }
 
         private void SpawnRemoteArrowSkill(
             WalkableWorldControl world,

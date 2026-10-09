@@ -230,6 +230,9 @@ namespace Client.Main.Core.Client
         /// </summary>
         public ushort MasterSkillToBaseSkillIndex(ushort masterSkillId)
         {
+            if (masterSkillId is 356 or 360 or 363)
+                return 48;
+
             var def = SkillDatabase.GetSkillDefinition(masterSkillId);
             if (def == null) return masterSkillId;
 

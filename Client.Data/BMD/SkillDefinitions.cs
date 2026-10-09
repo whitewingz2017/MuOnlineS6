@@ -64,6 +64,9 @@ namespace Client.Data.BMD
             { 46, SkillType.Target },  // Deep Impact
             { 47, SkillType.Target },  // Impale
             { 48, SkillType.Self },    // Swell Life
+            { 356, SkillType.Self },   // Swell Life Strength
+            { 360, SkillType.Self },   // Swell Life Proficiency
+            { 363, SkillType.Self },   // Swell Life Mastery
             { 49, SkillType.Target },  // Fire Breath
             { 51, SkillType.Target },  // Ice Arrow
             { 52, SkillType.Target },  // Penetration
@@ -263,7 +266,10 @@ namespace Client.Data.BMD
             Add(264, 252);  // Dragon Roar → PlayerSkillDragonkick
             Add(265, 253);  // Dragon Slasher → PlayerSkillDragonlore
             Add(270, 254);  // Phoenix Shot → PlayerSkillPhoenixShot
-            Add(48, 255);   // Swell Life → PlayerSkillAttUpOurforces
+            Add(48, 67);    // Swell Life → PlayerSkillVitality
+            Add(356, 67);
+            Add(360, 67);
+            Add(363, 67);
 
             // SPECIAL SKILLS
             Add(67, 140);   // Stun → PlayerAttackStun
@@ -340,6 +346,9 @@ namespace Client.Data.BMD
             map[49] = "Sound/sKnightSkill1.wav";         // Fire Breath (ID 49)
             map[47] = "Sound/eRidingSpear.wav";          // Impale (ID 47)
             map[48] = "Sound/eSwellLife.wav";            // Greater Fortitude (ID 48)
+            map[356] = map[48];
+            map[360] = map[48];
+            map[363] = map[48];
             map[56] = "Sound/eRaidShoot.wav";            // Raid (ID 56)
 
             // DARK LORD SKILLS

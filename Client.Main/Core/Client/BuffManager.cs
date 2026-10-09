@@ -14,11 +14,12 @@ namespace Client.Main.Core.Client
         GreaterDefense = 1,
         ManaShield = 2,
         ElfSoldier = 3,
-        SwellLife = 4,
+        SwellLife = 8,
+        SwellLifeProficiency = 135,
         CriticalDamage = 5,
         HealOverTime = 6,
 
-        Poison = 8,
+        Poison = 55,
         Ice = 9,
         Slow = 10,
         Weaken = 11,
@@ -87,6 +88,7 @@ namespace Client.Main.Core.Client
 
         public void ProcessMagicEffectStatus(ushort playerId, byte effectId, bool isActive)
         {
+            playerId = (ushort)(playerId & 0x7FFF);
             var typedEffectId = (BuffEffectId)effectId;
             var key = (playerId, typedEffectId);
 
@@ -172,10 +174,11 @@ namespace Client.Main.Core.Client
         }
 
         public bool HasBuff(ushort playerId, BuffEffectId effectId) =>
-            _states.TryGetValue((playerId, effectId), out var state) && state.IsActive;
+            _states.TryGetValue(((ushort)(playerId & 0x7FFF), effectId), out var state) && state.IsActive;
 
         public BuffRuntimeState? GetBuffState(ushort playerId, BuffEffectId effectId)
         {
+            playerId = (ushort)(playerId & 0x7FFF);
             if (!_states.TryGetValue((playerId, effectId), out var state) || !state.IsActive)
                 return null;
 
@@ -187,6 +190,7 @@ namespace Client.Main.Core.Client
 
         public IEnumerable<BuffEffectId> GetActiveBuffs(ushort playerId)
         {
+            playerId = (ushort)(playerId & 0x7FFF);
             foreach (var kv in _states)
             {
                 if (kv.Key.PlayerId == playerId && kv.Value.IsActive)
@@ -196,6 +200,7 @@ namespace Client.Main.Core.Client
 
         public void ClearPlayerBuffs(ushort playerId)
         {
+            playerId = (ushort)(playerId & 0x7FFF);
             List<BuffEffectId>? changed = null;
 
             foreach (var kv in _states)

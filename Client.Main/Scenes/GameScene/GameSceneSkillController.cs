@@ -179,6 +179,16 @@ namespace Client.Main.Scenes
                 return;
             }
 
+            // Party buffs have no attack target and cast once per click.
+            if (skill.SkillId is 48 or 356 or 360 or 363)
+            {
+                ClearPersistentSkill();
+                if (rightJustPressed)
+                    UseSelfSkill(skill, hero);
+                _scene.SetMouseInputConsumed();
+                return;
+            }
+
             // Lock target on RMB click
             if (rightJustPressed)
             {

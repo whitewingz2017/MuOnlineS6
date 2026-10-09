@@ -21,7 +21,9 @@ namespace Client.Main.Core.Client
             [BuffEffectId.GreaterDefense] = Create(BuffEffectId.GreaterDefense, "Greater Defense", "Defense increased", TimeSpan.FromMinutes(3)),
             [BuffEffectId.ManaShield] = Create(BuffEffectId.ManaShield, "Mana Shield", "Damage absorbed by mana", TimeSpan.FromMinutes(3)),
             [BuffEffectId.ElfSoldier] = Create(BuffEffectId.ElfSoldier, "Elf Guardian", "Attack and defense increased", TimeSpan.FromMinutes(3)),
-            [BuffEffectId.SwellLife] = Create(BuffEffectId.SwellLife, "Swell Life", "Maximum HP increased", TimeSpan.FromMinutes(3)),
+            // The server sends no duration for these skills; removal is authoritative.
+            [BuffEffectId.SwellLife] = Create(BuffEffectId.SwellLife, "Greater Fortitude", "Maximum HP increased", null),
+            [BuffEffectId.SwellLifeProficiency] = Create(BuffEffectId.SwellLifeProficiency, "Greater Fortitude Proficiency", "Maximum HP and mana increased", null),
             [BuffEffectId.CriticalDamage] = Create(BuffEffectId.CriticalDamage, "Critical Damage", "Critical damage increased", TimeSpan.FromMinutes(3)),
             [BuffEffectId.HealOverTime] = Create(BuffEffectId.HealOverTime, "Heal", "Recovering health", TimeSpan.FromSeconds(30)),
             [BuffEffectId.Poison] = Create(BuffEffectId.Poison, "Poison", "Taking poison damage", TimeSpan.FromSeconds(20), isDebuff: true),

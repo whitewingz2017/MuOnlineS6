@@ -287,7 +287,13 @@ namespace Client.Main
             SHADOW_NORMAL_BIAS = 0.008f;
 
             // DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
-            DataPath = @"C:\OpenMU\Data";
+            #if WINDOWS_DX
+                // PC development/client data location
+                DataPath = @"C:\OpenMU\Data";
+            #else
+                // Android and other platforms use the application's Data directory
+                DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+            #endif
         }
 
 #if DEBUG
