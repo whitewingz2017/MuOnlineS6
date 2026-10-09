@@ -29,12 +29,6 @@ namespace Client.Main.Scenes
         private const ushort DarkRavenCommandFirstSkillId = 120;
         private const ushort DarkRavenCommandLastSkillId = 123;
 
-        // Slack added on top of the skill's own range before the client lets a cast through.
-        // This mirrors the server: OpenMU's TargetedSkillDefaultPlugin validates with
-        // `player.IsInRange(target.Position, skill.Range + 2)`. Keeping the two in sync stops
-        // the client from refusing casts the server would have happily accepted.
-        private const float SkillRangeTolerance = 1f;
-
         private readonly GameScene _scene;
         private readonly ModernBottomHud _hud;
         private readonly ILogger _logger;
@@ -44,7 +38,7 @@ namespace Client.Main.Scenes
         private ushort _pendingSkillTargetId;
         private Vector2 _pendingSkillTargetLocation;
         private bool _pendingSkillHasLocation;
-        private uint _pendingSkillRange;
+        private double _nextSkillApproachMs;
         private bool _pendingSkillIsArea;
         private bool _pendingSkillTargetIsPlayer;
         // A single RMB click locks a targeted skill onto the selected monster/player.
@@ -179,8 +173,29 @@ namespace Client.Main.Scenes
                 return;
             }
 
-            // Party buffs have no attack target and cast once per click.
-            if (skill.SkillId is 48 or 356 or 360 or 363)
+            // Elf buffs, healing and Soul Barrier can target another player or self.
+            if (SkillCastRules.IsFriendlyTargetSkill(skill.SkillId))
+            {
+                ClearPersistentSkill();
+                if (rightJustPressed)
+                {
+                    var friendly = _scene.MouseHoverObject as PlayerObject;
+                    if (friendly == null || friendly == hero)
+                        UseSelfSkill(skill, hero);
+                    else if (!friendly.IsDead && friendly.World == hero.World)
+                    {
+                        if (IsInSkillRange(friendly.Location, skill.SkillId))
+                            UseSkillOnPlayerTarget(skill, friendly);
+                        else
+                            QueueSkillCast(skill, friendly, SkillDatabase.GetSkillRange(skill.SkillId), isAreaSkill: false);
+                    }
+                }
+                _scene.SetMouseInputConsumed();
+                return;
+            }
+
+            // Self skills have no target-distance gate.
+            if (SkillDatabase.IsSelfSkill(skill.SkillId))
             {
                 ClearPersistentSkill();
                 if (rightJustPressed)
@@ -217,7 +232,7 @@ namespace Client.Main.Scenes
             if (skill.SkillId == TeleportSkillId)
             {
                 var mouseTile = new Vector2(walkableForSkills.MouseTileX, walkableForSkills.MouseTileY);
-                if (IsInSkillRange(mouseTile, allowedRange))
+                if (IsInSkillRange(mouseTile, skill.SkillId, hasTarget: false))
                     UseAreaSkill(skill, 0, mouseTile);
                 else
                     _logger?.LogDebug("Teleport target out of range. Target=({X},{Y}) Range={Range}",
@@ -230,7 +245,7 @@ namespace Client.Main.Scenes
             var hoveredTarget = GetHoveredSkillTarget();
             if (IsAreaSkill(skill.SkillId))
             {
-                if (skill.SkillId == HellFireSkillId || skill.SkillId == InfernoSkillId || skill.SkillId == EvilSpiritSkillId)
+                if (SkillCastRules.IgnoresTargetRange(skill.SkillId, hoveredTarget != null))
                 {
                     UseAreaSkill(skill);
                     _scene.SetMouseInputConsumed();
@@ -241,12 +256,12 @@ namespace Client.Main.Scenes
                 var mouseTile = new Vector2(walkableForSkills.MouseTileX, walkableForSkills.MouseTileY);
                 if (skillTarget == null)
                 {
-                    if (IsInSkillRange(mouseTile, allowedRange))
+                    if (IsInSkillRange(mouseTile, skill.SkillId, hasTarget: false))
                         UseAreaSkill(skill, 0, mouseTile);
                     else
                         QueueAreaSkillCast(skill, mouseTile, allowedRange);
                 }
-                else if (IsInSkillRange(skillTarget.Location, allowedRange))
+                else if (IsInSkillRange(skillTarget.Location, skill.SkillId))
                 {
                     UseAreaSkill(skill, skillTarget.NetworkId);
                 }
@@ -259,14 +274,14 @@ namespace Client.Main.Scenes
             {
                 if (hoveredTarget is MonsterObject targetMonster)
                 {
-                    if (IsInSkillRange(targetMonster.Location, allowedRange))
+                    if (IsInSkillRange(targetMonster.Location, skill.SkillId))
                         UseSkillOnTarget(skill, targetMonster);
                     else
                         QueueSkillCast(skill, targetMonster, allowedRange, isAreaSkill: false);
                 }
                 else if (hoveredTarget is PlayerObject targetPlayer)
                 {
-                    if (IsInSkillRange(targetPlayer.Location, allowedRange))
+                    if (IsInSkillRange(targetPlayer.Location, skill.SkillId))
                         UseSkillOnPlayerTarget(skill, targetPlayer);
                     else
                         QueueSkillCast(skill, targetPlayer, allowedRange, isAreaSkill: false);
@@ -346,7 +361,7 @@ namespace Client.Main.Scenes
                 return;
             }
 
-            if (hero.IsAttackOrSkillAnimationPlaying())
+            if (!CanStartCast(hero))
                 return;
 
             if (!TryConsumeSkillDelay(NovaSkillId))
@@ -482,9 +497,7 @@ namespace Client.Main.Scenes
                 return false;
             }
 
-            if (skill.SkillId == HellFireSkillId ||
-                skill.SkillId == InfernoSkillId ||
-                skill.SkillId == EvilSpiritSkillId)
+            if (SkillCastRules.IgnoresTargetRange(skill.SkillId, hasTarget: true))
             {
                 return false;
             }
@@ -537,7 +550,7 @@ namespace Client.Main.Scenes
             }
 
             uint allowedRange = SkillDatabase.GetSkillRange(skill.SkillId);
-            if (!IsInSkillRange(target.Location, allowedRange))
+            if (!IsInSkillRange(target.Location, skill.SkillId))
             {
                 QueueSkillCast(skill, target, allowedRange, IsAreaSkill(skill.SkillId));
                 return;
@@ -605,32 +618,53 @@ namespace Client.Main.Scenes
                    skillId <= DarkRavenCommandLastSkillId;
         }
 
-        private bool IsInSkillRange(Vector2 targetLocation, uint allowedRange)
+        private float GetCastRange(ushort skillId, bool hasTarget)
+        {
+            var state = MuGame.Network?.GetCharacterState();
+            ushort map = _scene.World?.MapId ?? 0;
+            return SkillCastRules.GetRange(skillId, SkillDatabase.GetSkillRange(skillId),
+                state?.IsDarkHorseEquipped == true, map is >= 11 and <= 17 or 52, hasTarget);
+        }
+
+        private bool IsInSkillRange(Vector2 targetLocation, ushort skillId, bool hasTarget = true)
         {
             var hero = _scene.Hero;
             if (hero == null)
                 return false;
 
-            if (allowedRange == 0)
+            if (SkillCastRules.IgnoresTargetRange(skillId, hasTarget))
                 return true;
 
-            // Tile distance must use the Chebyshev metric, not Euclidean. The server
-            // (LocateableExtensions.IsInRange) clamps each axis independently, so a target
-            // 2 tiles diagonally away is "distance 2" to the server but 2.83 to Vector2.Distance
-            // -- which silently rejected perfectly legal casts, worst of all on the short-range
-            // melee skills (Cyclone/Slash/Lunge/Uppercut all have Distance = 2 in skill_eng.bmd).
-            float dx = Math.Abs(hero.Location.X - targetLocation.X);
-            float dy = Math.Abs(hero.Location.Y - targetLocation.Y);
-
-            return Math.Max(dx, dy) <= allowedRange + SkillRangeTolerance;
+            return SkillCastRules.IsInRange(hero.Position, targetLocation, GetCastRange(skillId, hasTarget));
         }
+
+        private static bool CanStartCast(PlayerObject hero) =>
+            !hero.IsMoving && !hero.MovementIntent &&
+            SkillCastRules.CanStartCast((Models.PlayerAction)hero.CurrentAction);
 
         private void QueueSkillCast(Core.Client.SkillEntryState skill, WalkerObject target, uint allowedRange, bool isAreaSkill)
         {
-            // RMB is reserved for skill input. An out-of-range target must not
-            // turn a skill click into character movement; the player can move
-            // with LMB and press RMB again when within skill range.
-            ClearPendingSkill();
+            var hero = _scene.Hero;
+            if (hero == null || target == null || hero.IsDead ||
+                SkillCastRules.BlocksWalking((Models.PlayerAction)hero.CurrentAction))
+                return;
+
+            _pendingSkill = skill;
+            _pendingSkillTargetId = target.NetworkId;
+            _pendingSkillTargetIsPlayer = target is PlayerObject;
+            _pendingSkillIsArea = isAreaSkill;
+            _pendingSkillHasLocation = false;
+            ApproachSkillTarget(target.Location, skill.SkillId);
+        }
+
+        private void ApproachSkillTarget(Vector2 location, ushort skillId)
+        {
+            var hero = _scene.Hero;
+            if (hero == null || hero.IsMoving || hero.MovementIntent || GetNowMs() < _nextSkillApproachMs)
+                return;
+
+            _nextSkillApproachMs = GetNowMs() + 250;
+            hero.MoveTo(location, stopWithinRange: GetCastRange(skillId, hasTarget: true));
         }
 
         private void UpdatePendingSkill()
@@ -642,7 +676,7 @@ namespace Client.Main.Scenes
                 return;
             }
 
-            if (_pendingSkill.SkillId == HellFireSkillId || _pendingSkill.SkillId == InfernoSkillId || _pendingSkill.SkillId == EvilSpiritSkillId)
+            if (MuGame.Instance.Mouse.LeftButton == ButtonState.Pressed)
             {
                 ClearPendingSkill();
                 return;
@@ -682,7 +716,7 @@ namespace Client.Main.Scenes
 
             if (_pendingSkillHasLocation)
             {
-                if (IsInSkillRange(_pendingSkillTargetLocation, _pendingSkillRange))
+                if (IsInSkillRange(_pendingSkillTargetLocation, _pendingSkill.SkillId, hasTarget: false))
                 {
                     bool sent = UseAreaSkill(_pendingSkill, 0, _pendingSkillTargetLocation);
                     if (sent)
@@ -704,13 +738,14 @@ namespace Client.Main.Scenes
 
             if (_pendingSkillTargetIsPlayer)
             {
-                if (walker is not PlayerObject targetPlayer || targetPlayer.IsDead || !_isDuelAttackTarget(targetPlayer))
+                if (walker is not PlayerObject targetPlayer || targetPlayer.IsDead ||
+                    (!SkillCastRules.IsFriendlyTargetSkill(_pendingSkill.SkillId) && !_isDuelAttackTarget(targetPlayer)))
                 {
                     ClearPendingSkill();
                     return;
                 }
 
-                if (IsInSkillRange(targetPlayer.Location, _pendingSkillRange))
+                if (IsInSkillRange(targetPlayer.Location, _pendingSkill.SkillId))
                 {
                     bool sent = _pendingSkillIsArea
                         ? UseAreaSkill(_pendingSkill, targetPlayer.NetworkId)
@@ -720,8 +755,7 @@ namespace Client.Main.Scenes
                 }
                 else
                 {
-                    // Never move from RMB skill input when the target is out of range.
-                    ClearPendingSkill();
+                    ApproachSkillTarget(targetPlayer.Location, _pendingSkill.SkillId);
                 }
                 return;
             }
@@ -732,7 +766,7 @@ namespace Client.Main.Scenes
                 return;
             }
 
-            if (IsInSkillRange(targetMonster.Location, _pendingSkillRange))
+            if (IsInSkillRange(targetMonster.Location, _pendingSkill.SkillId))
             {
                 bool sent = _pendingSkillIsArea
                     ? UseAreaSkill(_pendingSkill, targetMonster.NetworkId)
@@ -742,8 +776,7 @@ namespace Client.Main.Scenes
             }
             else
             {
-                // Never move from RMB skill input when the target is out of range.
-                ClearPendingSkill();
+                ApproachSkillTarget(targetMonster.Location, _pendingSkill.SkillId);
             }
         }
 
@@ -753,7 +786,6 @@ namespace Client.Main.Scenes
             _pendingSkillTargetId = 0;
             _pendingSkillTargetLocation = Vector2.Zero;
             _pendingSkillHasLocation = false;
-            _pendingSkillRange = 0;
             _pendingSkillIsArea = false;
             _pendingSkillTargetIsPlayer = false;
         }
@@ -765,6 +797,9 @@ namespace Client.Main.Scenes
                 return false;
 
             if (hero.IsDead)
+                return false;
+
+            if (!IsInSkillRange(target.Location, skill.SkillId))
                 return false;
 
             if (!TryBeginSkillCast(skill, hero))
@@ -792,6 +827,15 @@ namespace Client.Main.Scenes
             var hero = _scene.Hero;
             if (skill == null || hero == null || hero.IsDead)
                 return false;
+
+            if (IsDarkRavenCommandSkill(skill.SkillId))
+            {
+                TryUseDarkRavenCommand(skill.SkillId, hero, rightJustPressed: true);
+                return hero.EquippedHelper?.Kind == FlyingHelperKind.DarkRaven;
+            }
+
+            if (SkillCastRules.IsFriendlyTargetSkill(skill.SkillId))
+                return UseSelfSkill(skill, hero);
 
             if (SkillDatabase.IsSelfSkill(skill.SkillId))
                 return UseSelfSkill(skill, hero);
@@ -834,7 +878,10 @@ namespace Client.Main.Scenes
             if (hero.IsDead || target.IsDead)
                 return false;
 
-            if (!_isDuelAttackTarget(target))
+            if (!SkillCastRules.IsFriendlyTargetSkill(skill.SkillId) && !_isDuelAttackTarget(target))
+                return false;
+
+            if (!IsInSkillRange(target.Location, skill.SkillId))
                 return false;
 
             if (!TryBeginSkillCast(skill, hero))
@@ -862,20 +909,20 @@ namespace Client.Main.Scenes
                 return false;
 
             Vector2 targetTile = hero.Location;
-            if (skill.SkillId != HellFireSkillId && skill.SkillId != InfernoSkillId && skill.SkillId != EvilSpiritSkillId)
+            if (targetLocationOverride.HasValue)
+                targetTile = targetLocationOverride.Value;
+            else if (_scene.World is WalkableWorldControl aimWorld)
             {
-                if (targetLocationOverride.HasValue)
-                {
-                    targetTile = targetLocationOverride.Value;
-                }
-                else if (_scene.World is WalkableWorldControl world)
-                {
-                    if (extraTargetId != 0 && world.TryGetWalkerById(extraTargetId, out var target))
-                        targetTile = target.Location;
-                    else
-                        targetTile = new Vector2(world.MouseTileX, world.MouseTileY);
-                }
+                if (extraTargetId != 0 && aimWorld.TryGetWalkerById(extraTargetId, out var target))
+                    targetTile = target.Location;
+                else
+                    targetTile = new Vector2(aimWorld.MouseTileX, aimWorld.MouseTileY);
             }
+
+            // Validate the aimed tile before changing the packet origin for skills
+            // such as Twister/Evil Spirit, which send the caster's coordinates.
+            if (!IsInSkillRange(targetTile, skill.SkillId, extraTargetId != 0))
+                return false;
 
             byte targetX = (byte)Math.Clamp((int)targetTile.X, 0, Constants.TERRAIN_SIZE - 1);
             byte targetY = (byte)Math.Clamp((int)targetTile.Y, 0, Constants.TERRAIN_SIZE - 1);
@@ -899,7 +946,7 @@ namespace Client.Main.Scenes
 
             var characterState = MuGame.Network?.GetCharacterState();
 
-            if (skill.SkillId == TwisterSkillId)
+            if (SkillCastRules.UsesCasterAreaPosition(skill.SkillId))
             {
                 requestTargetX = (byte)Math.Clamp((int)hero.Location.X, 0, Constants.TERRAIN_SIZE - 1);
                 requestTargetY = (byte)Math.Clamp((int)hero.Location.Y, 0, Constants.TERRAIN_SIZE - 1);
@@ -969,7 +1016,7 @@ namespace Client.Main.Scenes
         {
             if (skill.SkillId == 76 && MuGame.Network?.GetCharacterState()?.IsFenrirEquipped != true)
                 return false;
-            if (hero.IsAttackOrSkillAnimationPlaying())
+            if (!CanStartCast(hero))
                 return false;
 
             if (!TryConsumeSkillDelay(skill.SkillId))

@@ -376,6 +376,9 @@ namespace Client.Main.Controllers
             PlayerAction.PlayerSkillHell or PlayerAction.PlayerSkillHellBegin or
             PlayerAction.PlayerSkillHellStart or PlayerAction.PlayerAttackDeathstab => AnimationType.Skill,
 
+            PlayerAction rageFenrirSkill when rageFenrirSkill >= PlayerAction.PlayerRageFenrir &&
+                rageFenrirSkill <= PlayerAction.PlayerRageFenrirOneLeft => AnimationType.Skill,
+
             PlayerAction action when action.ToString().Contains("Skill", StringComparison.Ordinal)
                 => AnimationType.Skill,
 

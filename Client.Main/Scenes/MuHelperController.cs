@@ -701,13 +701,8 @@ namespace Client.Main.Scenes
             if (skill == null)
                 return false;
 
-            if (target != null && !SkillDatabase.IsSelfSkill(skillId))
-            {
-                uint range = SkillDatabase.GetSkillRange(skillId);
-                if (range > 0 && ChebyshevDistance(target.Location, _scene.Hero.Location) > range + 1)
-                    return false;
-            }
-
+            // The shared cast entry point enforces MuMain's range rules for every
+            // input path, including mounted bonuses and skill-specific multipliers.
             return _skillController.CastSkillFromHotbar(skill, target);
         }
 

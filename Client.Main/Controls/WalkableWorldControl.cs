@@ -1,5 +1,6 @@
 ﻿using Client.Main.Controllers;
 using Client.Main.Graphics;
+using Client.Main.Core.Utilities;
 using Client.Main.Models;
 using Client.Main.Objects;
 using Client.Main.Objects.Monsters;
@@ -198,7 +199,8 @@ namespace Client.Main.Controls
                         return;
 
                     // Don't allow movement if player is dead
-                    if (!Walker.IsAlive())
+                    if (!Walker.IsAlive() ||
+                        (Walker is PlayerObject && SkillCastRules.BlocksWalking((Client.Main.Models.PlayerAction)Walker.CurrentAction)))
                         return;
 
                     float worldX = newTile.X * Constants.TERRAIN_SCALE;

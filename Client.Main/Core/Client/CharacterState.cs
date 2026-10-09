@@ -1616,6 +1616,11 @@ namespace Client.Main.Core.Client
             ItemDataParser.TryGetGroupAndNumber(pet, out byte group, out short number) &&
             group == 13 && number == 37;
 
+        public bool IsDarkHorseEquipped =>
+            _inventoryItems.TryGetValue(8, out var pet) &&
+            ItemDataParser.TryGetGroupAndNumber(pet, out byte group, out short number) &&
+            group == 13 && number == 4;
+
         /// <summary>
         /// Clears the character's skill list.
         /// </summary>

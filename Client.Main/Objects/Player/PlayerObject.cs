@@ -3173,13 +3173,16 @@ namespace Client.Main.Objects.Player
 
         public float GetAttackRangeTiles() => GetAttackRangeForAction(GetAttackAnimation(false));
 
-        public override void MoveTo(Vector2 targetLocation, bool sendToServer = true, bool usePathfinding = true)
+        public override void MoveTo(Vector2 targetLocation, bool sendToServer = true, bool usePathfinding = true, float stopWithinRange = 0f)
         {
+            if (IsMainWalker && SkillCastRules.BlocksWalking((PlayerAction)CurrentAction))
+                return;
+
             // A direct movement request supersedes a pending NPC approach calculation.
             if (_pendingNpcNetworkId != 0)
                 ClearPendingNpcInteraction();
 
-            base.MoveTo(targetLocation, sendToServer, usePathfinding);
+            base.MoveTo(targetLocation, sendToServer, usePathfinding, stopWithinRange);
         }
 
         public bool TryQueueNpcInteraction(NPCObject npc)

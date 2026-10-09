@@ -215,9 +215,8 @@ namespace Client.Main.Core.Client
         {
             float distance = SkillDatabase.GetSkillRange(skillId);
 
-            // Dark Horse pet adds +2 range (SourceMain behavior)
-            // When CharacterState tracks HasDarkHorse, add:
-            // if (state != null && state.HasDarkHorse) distance += 2;
+            if (state?.IsDarkHorseEquipped == true)
+                distance += 2f;
 
             return distance;
         }

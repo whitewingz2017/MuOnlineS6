@@ -338,7 +338,7 @@ namespace Client.Main.Objects
             PlayAction(actionIndex, false);
         }
 
-        public virtual void MoveTo(Vector2 targetLocation, bool sendToServer = true, bool usePathfinding = true)
+        public virtual void MoveTo(Vector2 targetLocation, bool sendToServer = true, bool usePathfinding = true, float stopWithinRange = 0f)
         {
             if (World == null || targetLocation == Location || !this.IsAlive())
                 return;
@@ -361,6 +361,7 @@ namespace Client.Main.Objects
             if (!usePathfinding)
             {
                 var path = Pathfinding.BuildDirectPath(startPos, targetLocation);
+                TrimPathToRange(path, targetLocation, stopWithinRange);
                 ApplyPathOnMainThread(path, sendToServer, currentWorld, startPos, requestVersion);
                 return;
             }
@@ -373,7 +374,8 @@ namespace Client.Main.Objects
                 sendToServer,
                 currentWorld,
                 requestVersion,
-                cancellation);
+                cancellation,
+                stopWithinRange);
         }
 
         private async Task ComputePathAsync(
@@ -382,7 +384,8 @@ namespace Client.Main.Objects
             bool sendToServer,
             WorldControl expectedWorld,
             uint requestVersion,
-            CancellationTokenSource cancellation)
+            CancellationTokenSource cancellation,
+            float stopWithinRange)
         {
             CancellationToken token = cancellation.Token;
             try
@@ -391,13 +394,16 @@ namespace Client.Main.Objects
                     startPos,
                     targetLocation,
                     expectedWorld,
-                    token).ConfigureAwait(false);
+                    token,
+                    stopWithinRange).ConfigureAwait(false);
 
                 if (token.IsCancellationRequested)
                     return;
 
                 if ((path == null || path.Count == 0) && !sendToServer)
                     path = Pathfinding.BuildDirectPath(startPos, targetLocation);
+
+                TrimPathToRange(path, targetLocation, stopWithinRange);
 
                 byte[] preparedDirections = sendToServer
                     ? BuildServerDirections(path, startPos)
@@ -457,6 +463,23 @@ namespace Client.Main.Objects
             }
         }
 
+        private static void TrimPathToRange(List<Vector2> path, Vector2 target, float range)
+        {
+            if (path == null || range <= 0f)
+                return;
+
+            // Stop at the first tile within the cast circle, before sending the
+            // path to the server; never truncate only the rendered movement.
+            for (int i = 0; i < path.Count; i++)
+            {
+                if (Vector2.DistanceSquared(path[i], target) <= range * range)
+                {
+                    path.RemoveRange(i + 1, path.Count - i - 1);
+                    return;
+                }
+            }
+        }
+
         protected void ApplyPathOnMainThread(
             List<Vector2> path,
             bool sendToServer,
@@ -482,6 +505,13 @@ namespace Client.Main.Objects
             }
 
             long applyStarted = Stopwatch.GetTimestamp();
+            // A cast may have started while the path was being calculated.
+            if (IsMainWalker && this is PlayerObject && SkillCastRules.BlocksWalking((PlayerAction)CurrentAction))
+            {
+                _movementIntent = false;
+                return;
+            }
+
             long queueStarted = applyStarted;
             _currentPath ??= new Queue<Vector2>(Math.Max(16, path.Count));
             _currentPath.Clear();

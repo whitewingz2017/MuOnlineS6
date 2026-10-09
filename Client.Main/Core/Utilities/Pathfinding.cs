@@ -55,9 +55,10 @@ namespace Client.Main.Core.Utilities
             Vector2 start,
             Vector2 goal,
             WorldControl world,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            float stopWithinRange = 0f)
             => RunBoundedAsync(
-                token => FindPath(start, goal, world, token),
+                token => FindPath(start, goal, world, token, stopWithinRange),
                 cancellationToken);
 
         /// <summary>
@@ -109,7 +110,8 @@ namespace Client.Main.Core.Utilities
             Vector2 start,
             Vector2 goal,
             WorldControl world,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            float stopWithinRange = 0f)
         {
             ArgumentNullException.ThrowIfNull(world);
             if (cancellationToken.IsCancellationRequested)
@@ -135,7 +137,8 @@ namespace Client.Main.Core.Utilities
 
                     PathNode currentNode = ctx.OpenSet.Dequeue();
 
-                    if (currentNode.Position == goalNode.Position)
+                    if (currentNode.Position == goalNode.Position ||
+                        (stopWithinRange > 0f && Vector2.DistanceSquared(currentNode.Position, goal) <= stopWithinRange * stopWithinRange))
                         return RetracePath(startNode, currentNode);
 
                     if (!ctx.ClosedSet.Add(currentNode.Position))
