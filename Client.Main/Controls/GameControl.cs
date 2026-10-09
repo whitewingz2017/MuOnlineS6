@@ -402,7 +402,13 @@ namespace Client.Main.Controls
                 if (control.Status != GameControlStatus.Disposed &&
                     ReferenceEquals(control.Parent, this))
                 {
-                    control.Update(gameTime);
+                    // Custom UI handlers also read MuGame's mouse state directly. Scope
+                    // those reads to the topmost hit branch, preserving normal updates.
+                    var game = MuGame.Instance;
+                    var previousControl = game.PointerUpdateControl;
+                    game.PointerUpdateControl = control;
+                    try { control.Update(gameTime); }
+                    finally { game.PointerUpdateControl = previousControl; }
                 }
             }
 

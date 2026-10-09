@@ -245,6 +245,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private bool _rightFooterHovered;
 
         private bool _isRepairMode;
+        private InventoryItem _mobileSelectedItem;
+        private int _mobileSelectedEquipSlot = -1;
         private int _repairEnableLevel = 50;
 
         public bool IsSelfRepairMode => _isRepairMode;
@@ -479,6 +481,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         public void Hide()
         {
+            ClearMobileSelection();
             if (_pickedItemRenderer.Item != null)
             {
                 InventoryItem itemToReturn = _pickedItemRenderer.Item;
@@ -599,6 +602,14 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 _hoveredItem = hoveredEquip;
             }
 
+            if (UiThemeManager.IsMobilePlatform && _pickedItemRenderer.Item == null)
+            {
+                if (leftJustPressed && IsMouseOver && _hoveredItem == null)
+                    ClearMobileSelection();
+                _hoveredItem = _mobileSelectedItem;
+                _hoveredEquipSlot = _mobileSelectedEquipSlot;
+            }
+
             if (leftJustReleased && _pickedItemRenderer.Item != null && !_isDragging)
             {
                 // Simple click without moving should keep the item picked up; only place after a drag.
@@ -676,6 +687,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 }
 
                 // Draw overlays beneath items (consistent with vault/NPC shop)
+                DrawMobileSelection(spriteBatch);
                 DrawGridOverlays(spriteBatch);
                 DrawEquipHighlights(spriteBatch);
                 DrawInventoryItems(spriteBatch);
@@ -1508,6 +1520,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 return;
             }
 
+            ClearMobileSelection();
             _items.Clear();
             _itemGrid = new InventoryItem[Columns, Rows];
             _equippedItems.Clear();
@@ -1746,6 +1759,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                         }
 
                         // Normal mode - pick up item
+                        if (SelectBeforePickup(_hoveredItem, -1, UiThemeManager.IsMobilePlatform))
+                            return;
                         _pickedItemRenderer.PickUpItem(_hoveredItem);
                         _pickedItemOriginalGrid = _hoveredItem.GridPosition;
                         _pickedAtMousePos = mousePos;
@@ -1847,6 +1862,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                             }
 
                             // Normal mode - pick up equipped item
+                            if (SelectBeforePickup(eqItem, _hoveredEquipSlot, UiThemeManager.IsMobilePlatform))
+                                return;
                             _pickedItemRenderer.PickUpItem(eqItem);
                             _equippedItems.Remove((byte)_hoveredEquipSlot);
                             _pickedFromEquipSlot = _hoveredEquipSlot;
@@ -2613,6 +2630,44 @@ namespace Client.Main.Controls.UI.Game.Inventory
             {
                 return null;
             }
+        }
+
+        private bool SelectBeforePickup(InventoryItem item, int equipSlot, bool selectFirst)
+        {
+            if (!selectFirst)
+                return false;
+            if (ReferenceEquals(_mobileSelectedItem, item) && _mobileSelectedEquipSlot == equipSlot)
+            {
+                ClearMobileSelection();
+                return false;
+            }
+            _mobileSelectedItem = item;
+            _mobileSelectedEquipSlot = equipSlot;
+            return true;
+        }
+
+        private void ClearMobileSelection()
+        {
+            _mobileSelectedItem = null;
+            _mobileSelectedEquipSlot = -1;
+        }
+
+        private void DrawMobileSelection(SpriteBatch spriteBatch)
+        {
+            if (!UiThemeManager.IsMobilePlatform || _mobileSelectedItem == null || GraphicsManager.Instance?.Pixel == null)
+                return;
+            Rectangle rect;
+            if (_mobileSelectedEquipSlot >= 0 && _equipSlots.TryGetValue((byte)_mobileSelectedEquipSlot, out var layout))
+                rect = Translate(layout.Rect);
+            else
+            {
+                var grid = Translate(_gridRect);
+                rect = new Rectangle(grid.X + _mobileSelectedItem.GridPosition.X * INVENTORY_SQUARE_WIDTH,
+                    grid.Y + _mobileSelectedItem.GridPosition.Y * INVENTORY_SQUARE_HEIGHT,
+                    _mobileSelectedItem.Definition.Width * INVENTORY_SQUARE_WIDTH,
+                    _mobileSelectedItem.Definition.Height * INVENTORY_SQUARE_HEIGHT);
+            }
+            spriteBatch.Draw(GraphicsManager.Instance.Pixel, rect, Theme.SlotSelected * Alpha);
         }
 
         private void DrawGridOverlays(SpriteBatch spriteBatch)

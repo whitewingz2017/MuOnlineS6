@@ -170,8 +170,24 @@ namespace Client.Main
         public GameWindow GameWindow => this.Window;
         public MouseState PrevMouseState { get; private set; }
         public MouseState Mouse { get; set; }
-        public MouseState PrevUiMouseState { get; private set; }
-        public MouseState UiMouseState { get; private set; }
+        private MouseState _uiMouseState;
+        private MouseState _prevUiMouseState;
+        internal GameControl PointerUpdateControl { get; set; }
+        private bool IsUiPointerBlocked => PointerUpdateControl is UIControl control &&
+            control.Scene != null && !control.Scene.CanReceivePointerInput(control);
+        private MouseState BlockedUiMouseState => new MouseState(-1000000, -1000000,
+            _uiMouseState.ScrollWheelValue, ButtonState.Released, ButtonState.Released,
+            ButtonState.Released, ButtonState.Released, ButtonState.Released);
+        public MouseState PrevUiMouseState
+        {
+            get => IsUiPointerBlocked ? BlockedUiMouseState : _prevUiMouseState;
+            private set => _prevUiMouseState = value;
+        }
+        public MouseState UiMouseState
+        {
+            get => IsUiPointerBlocked ? BlockedUiMouseState : _uiMouseState;
+            private set => _uiMouseState = value;
+        }
         public Point UiMousePosition { get; private set; }
         public KeyboardState PrevKeyboard { get; private set; }
         public KeyboardState Keyboard { get; private set; }

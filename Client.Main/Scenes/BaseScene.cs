@@ -59,6 +59,18 @@ namespace Client.Main.Scenes
         private bool _progressiveInitializationReserved;
         private bool _leftMouseCapturedByUi;
         private bool _rightMouseCapturedByUi;
+        private GameControl _pointerGestureControl;
+
+        internal bool CanReceivePointerInput(GameControl control)
+        {
+            var owner = _pointerGestureControl ?? MouseHoverControl;
+            if (owner == null || ReferenceEquals(owner, World))
+                return true;
+            for (var branch = owner; branch != null; branch = branch.Parent)
+                if (ReferenceEquals(branch, control))
+                    return true;
+            return false;
+        }
 
         public BaseScene()
         {
@@ -266,7 +278,10 @@ namespace Client.Main.Scenes
                 out GameControl topmostInteractiveForScroll);
 
             MouseHoverControl = topmostUiControl; // general hover (tooltips, visual effects)
-            MouseControl = topmostInteractiveForScroll; // target for scroll dispatch
+            // A blocking overlay must not route scroll/clicks to a lower sibling.
+            MouseControl = topmostUiControl;
+            while (MouseControl != null && !MouseControl.Interactive)
+                MouseControl = MouseControl.Parent is UIControl ? MouseControl.Parent : null;
 
 
             // no UI control captured the mouse for scroll interaction, check the World itself
@@ -286,6 +301,9 @@ namespace Client.Main.Scenes
             bool rightJustPressed = rightPressed && prevUiMouse.RightButton == ButtonState.Released;
             bool leftJustReleased = !leftPressed && prevUiMouse.LeftButton == ButtonState.Pressed;
             bool rightJustReleased = !rightPressed && prevUiMouse.RightButton == ButtonState.Pressed;
+
+            if (leftJustPressed || rightJustPressed)
+                _pointerGestureControl = topmostUiControl;
 
             if (leftJustPressed && isPointerOverUi)
                 _leftMouseCapturedByUi = true;
@@ -321,6 +339,8 @@ namespace Client.Main.Scenes
             UpdatePassProfiler.AddSceneInput(sceneInputStarted);
             long controlTreeStarted = UpdatePassProfiler.Start();
             base.Update(gameTime);
+            if (!leftPressed && !rightPressed)
+                _pointerGestureControl = null;
             UpdatePassProfiler.AddSceneControlTree(controlTreeStarted);
             long scenePostStarted = UpdatePassProfiler.Start();
 
