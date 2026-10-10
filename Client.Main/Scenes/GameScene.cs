@@ -846,6 +846,8 @@ namespace Client.Main.Scenes
 
             ApplyHudTheme();
             _hudShell?.Update(gameTime);
+            if (UiThemeManager.CurrentId != UiThemeId.Classic)
+                ApplyChatThemeLayout();
 
             long buffsStarted = UpdatePassProfiler.Start();
             MuGame.Network?.UpdateBuffs();
@@ -1096,6 +1098,8 @@ namespace Client.Main.Scenes
             !_initialWorldActivationCooldown && World != null && World.Visible &&
             World.Status == GameControlStatus.Ready;
 
+        internal bool CanDrawScreenUi => _sceneShellInitialized && IsWorldReadyToDraw;
+
         internal void PrepareShadowMapForDraw()
         {
             if (_sceneShellInitialized && IsWorldReadyToDraw)
@@ -1143,6 +1147,11 @@ namespace Client.Main.Scenes
             // BaseScene draws the world and then the UI. A preliminary UI pass is
             // overwritten by the world and repeats all inventory/HUD rendering work.
             base.Draw(gameTime);
+        }
+
+        internal override void DrawScreenUi(GameTime gameTime)
+        {
+            base.DrawScreenUi(gameTime);
 
             // Final top-most pass: draw dragged item previews above all UI windows
             using (new SpriteBatchScope(
@@ -1399,22 +1408,13 @@ namespace Client.Main.Scenes
             if (_chatLog == null || _chatInput == null)
                 return;
 
-            bool classic = !ChatUiTheme.UseModernLayout;
-            if (classic)
-            {
-                _chatLog.X = 12;
-                _chatLog.Y = UiScaler.VirtualSize.Y - UiThemeManager.Current.Metrics.ChatInputSize.Y
-                    - Math.Max(1, _chatLog.ViewSize.Y) - 10;
-                _chatInput.X = 12;
-                _chatInput.Y = UiScaler.VirtualSize.Y - UiThemeManager.Current.Metrics.ChatInputSize.Y - 8;
-            }
-            else
-            {
-                _chatLog.X = 5;
-                _chatLog.Y = UiScaler.VirtualSize.Y - 160 - ChatInputBoxControl.CHATBOX_HEIGHT;
-                _chatInput.X = 5;
-                _chatInput.Y = UiScaler.VirtualSize.Y - 65 - ChatInputBoxControl.CHATBOX_HEIGHT;
-            }
+            _chatInput.Alpha = 1f;
+
+            // Anchor using the actual log height; fonts, resizing and theme changes
+            // must never push messages below the input toolbar or behind the HUD.
+            _chatInput.X = 5;
+            _chatInput.Y = UiScaler.VirtualSize.Y - 110 - _chatInput.ViewSize.Y;
+            _chatLog.AnchorAbove(_chatInput.X, _chatInput.Y - 8);
         }
 
         private void ApplyUiThemeVisibility()

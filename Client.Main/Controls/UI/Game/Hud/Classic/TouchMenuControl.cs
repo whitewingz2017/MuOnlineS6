@@ -24,6 +24,11 @@ namespace Client.Main.Controls.UI.Game.Hud
         private Texture2D _menuTexture, _mapTexture, _chatTexture;
         private Rectangle _menuRect, _mapRect, _chatRect;
         private bool _open = true;
+        private float _menuProgress = 1f;
+        private float _chatProgress;
+        private static float Ease(float value) => value * value * (3f - 2f * value);
+        private static float Advance(float value, bool open, float seconds) =>
+            MathHelper.Clamp(value + (open ? 1f : -1f) * seconds / 0.24f, 0f, 1f);
         private UiThemeId _loadedTheme = (UiThemeId)(-1);
         public SkillImprintControl ImprintPanel { get; set; }
         public PotionImprintControl PotionPanel { get; set; }
@@ -93,10 +98,11 @@ namespace Client.Main.Controls.UI.Game.Hud
             {
                 string path = _entries[i].Icon switch
                 {
-                    "inventory" => "Interface/DH/img_new_btn_bao.png",
+                    "inventory" => "Interface/DH/upscale_inventory.png",
                     "settings"  => "Interface/DH/img_btn_setting.png.png",
-                    "character" => "Interface/DH/icon_RankGE.png",
+                    "character" => "Interface/DH/Character.png",
                     "skill"     => "Interface/DH/img_new_btn_ji.png",
+                    "exit"     => "Interface/DH/btn_exit.png",
                     _           => IconPath(_entries[i].Icon)
                 };
 
@@ -110,22 +116,42 @@ namespace Client.Main.Controls.UI.Game.Hud
             int rightX = UiScaler.VirtualSize.X - RightMargin - Size;
             _menuRect = new Rectangle(rightX, TopMargin, Size, Size);
             _mapRect = new Rectangle(16, 42, Size, Size);
-            _chatRect = new Rectangle(UiScaler.VirtualSize.X / 2 - 176, UiScaler.VirtualSize.Y - 116, Size, Size);
+            int chatX = UiScaler.VirtualSize.X / 2 - 174;
+            int chatY = UiScaler.VirtualSize.Y - 125; // control for chat positioning, not the chat window itself
+            _chatRect = new Rectangle(chatX - (int)MathF.Round((Size + 8) * Ease(_chatProgress)), chatY, Size, Size);
             for (int i = 0; i < _entries.Length; i++)
-                _rects[i] = new Rectangle(rightX - (2 - _entries[i].Column) * Step,
-                    TopMargin + _entries[i].Row * Step, Size, Size);
+            {
+                int targetX = rightX - (2 - _entries[i].Column) * Step;
+                int targetY = TopMargin + _entries[i].Row * Step;
+                float progress = Ease(_menuProgress);
+                _rects[i] = new Rectangle((int)MathF.Round(MathHelper.Lerp(rightX, targetX, progress)),
+                    (int)MathF.Round(MathHelper.Lerp(TopMargin, targetY, progress)), Size, Size);
+            }
+            if (Scene is GameScene scene && scene.ChatInput != null && UiThemeManager.CurrentId == UiThemeId.Classic)
+            {
+                scene.ChatInput.X = chatX + (int)MathF.Round(20f * (1f - Ease(_chatProgress)));
+                scene.ChatInput.Y = chatY;
+                scene.ChatInput.Alpha = Ease(_chatProgress);
+                scene.ChatLog?.AnchorAbove(chatX, chatY - 8);
+            }
             // Bounds cover all shortcuts; hit testing below only captures the icons.
             X = 0; Y = 0; ControlSize = ViewSize = UiScaler.VirtualSize;
         }
         public override bool ContainsPointerPoint(Point point)
         {
             if (_menuRect.Contains(point) || _mapRect.Contains(point) || _chatRect.Contains(point)) return true;
-            if (_open)
+            if (_open || _menuProgress > 0f)
                 foreach (var rect in _rects) if (rect.Contains(point)) return true;
             return false;
         }
         public override void Update(GameTime gameTime)
         {
+            if (Visible)
+            {
+                float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
+                _menuProgress = Advance(_menuProgress, _open, seconds);
+                _chatProgress = Advance(_chatProgress, (Scene as GameScene)?.ChatInput?.Visible == true, seconds);
+            }
             LayoutRects();
             base.Update(gameTime);
             if (!Visible) return;
@@ -157,12 +183,12 @@ namespace Client.Main.Controls.UI.Game.Hud
             using (new SpriteBatchScope(sb, SpriteSortMode.Deferred, BlendState.AlphaBlend,
                 SamplerState.LinearClamp, transform: UiScaler.SpriteTransform))
             {
-                void DrawIcon(Texture2D texture, Rectangle rect)
+                void DrawIcon(Texture2D texture, Rectangle rect, float opacity = 1f)
                 {
-                    if (texture != null && !texture.IsDisposed) sb.Draw(texture, rect, Color.White * Alpha);
+                    if (texture != null && !texture.IsDisposed) sb.Draw(texture, rect, Color.White * (Alpha * opacity));
                 }
                 DrawIcon(_menuTexture, _menuRect); DrawIcon(_mapTexture, _mapRect); DrawIcon(_chatTexture, _chatRect);
-                if (_open) for (int i = 0; i < _entries.Length; i++) DrawIcon(_textures[i], _rects[i]);
+                if (_menuProgress > 0f) for (int i = 0; i < _entries.Length; i++) DrawIcon(_textures[i], _rects[i], Ease(_menuProgress));
             }
         }
     }

@@ -222,6 +222,11 @@ namespace Client.Main
                 PreferMultiSampling = Constants.MSAA_ENABLED,
                 HardwareModeSwitch = false // Required for dynamic resolution changes at runtime
             };
+            // Native-resolution UI renders on the backbuffer. Inventory previews and
+            // cached window surfaces temporarily bind another target during that pass.
+            // Preserve the already presented world/UI when they restore the backbuffer.
+            _graphics.PreparingDeviceSettings += (_, args) =>
+                args.GraphicsDeviceInformation.PresentationParameters.RenderTargetUsage = RenderTargetUsage.PreserveContents;
 
             if (OperatingSystem.IsAndroid())
             {
@@ -899,7 +904,17 @@ namespace Client.Main
                         requireTempTarget2: postProcessPasses >= 2,
                         requireRecoveryTarget: gameSceneRecovery);
 
-                    bool containedRenderFailure = DrawSceneToMainRenderTarget(gameTime);
+                    bool nativeUi = ActiveScene is GameScene readyScene && readyScene.CanDrawScreenUi;
+                    bool containedRenderFailure;
+                    ActiveScene.DeferScreenUi = nativeUi;
+                    try
+                    {
+                        containedRenderFailure = DrawSceneToMainRenderTarget(gameTime);
+                    }
+                    finally
+                    {
+                        ActiveScene.DeferScreenUi = false;
+                    }
                     LogBlackFrameDiagnostics(containedRenderFailure);
                     if (gameSceneRecovery &&
                         containedRenderFailure &&
@@ -918,6 +933,24 @@ namespace Client.Main
                         var postProcessStarted = RenderPassProfiler.Start();
                         ApplyPostProcessingEffects();
                         RenderPassProfiler.AddPostProcess(postProcessStarted);
+                    }
+
+                    if (nativeUi)
+                    {
+                        // Keep screen UI out of the scaled world and post-processing targets.
+                        // Recovery targets now preserve world color; draw the current UI over it.
+                        var screenUiStarted = RenderPassProfiler.Start();
+                        UiScaler.DrawingAtNativeResolution = true;
+                        try
+                        {
+                            ActiveScene.DrawScreenUi(gameTime);
+                            ActiveScene.DrawScreenUiAfter(gameTime);
+                        }
+                        finally
+                        {
+                            UiScaler.DrawingAtNativeResolution = false;
+                            RenderPassProfiler.AddSceneAfter(screenUiStarted);
+                        }
                     }
                 }
                 else

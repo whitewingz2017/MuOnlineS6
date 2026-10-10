@@ -69,6 +69,17 @@ namespace Client.Main.Controls.UI
         private Rectangle _scrollThumbArea;
         private Rectangle _resizeHandleArea;
         private float _lineHeight; // Calculated line height from the font
+        private int? _bottomAnchor;
+
+        internal void AnchorAbove(int x, int bottom)
+        {
+            if (X == x && _bottomAnchor == bottom && Y == bottom - ViewSize.Y)
+                return;
+            X = x;
+            _bottomAnchor = bottom;
+            Y = bottom - ViewSize.Y;
+            UpdateLayout();
+        }
 
         // --- Public Properties ---
         public int Width { get; private set; }
@@ -654,7 +665,7 @@ namespace Client.Main.Controls.UI
             int deltaHeight = newHeight - oldHeight;
 
             // Subtract delta so the bottom edge stays fixed as height grows/shrinks.
-            Y -= deltaHeight;
+            Y = _bottomAnchor.HasValue ? _bottomAnchor.Value - newHeight : Y - deltaHeight;
             if (_showFrame)
             {
                 int scrollX = DisplayRectangle.X + Width - WND_LEFT_RIGHT_EDGE - SCROLL_BAR_WIDTH;

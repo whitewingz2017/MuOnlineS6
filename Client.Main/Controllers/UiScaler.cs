@@ -59,7 +59,11 @@ namespace Client.Main.Controllers
         public static float InverseScale { get; private set; } = 1f;
 
         public static Vector2 Offset { get; private set; } = Vector2.Zero;
-        public static Matrix SpriteTransform { get; private set; } = Matrix.Identity;
+        private static Matrix _spriteTransform = Matrix.Identity;
+        internal static bool DrawingAtNativeResolution { get; set; }
+        public static Matrix SpriteTransform => DrawingAtNativeResolution
+            ? Matrix.CreateScale(ScaleX, ScaleY, 1f) * Matrix.CreateTranslation(Offset.X, Offset.Y, 0f)
+            : _spriteTransform;
         public static ScaleMode Mode { get; private set; } = ScaleMode.Uniform;
 
         /// <summary>
@@ -117,7 +121,7 @@ namespace Client.Main.Controllers
             float finalScale = Scale * Constants.RENDER_SCALE;
             var transform = Matrix.CreateScale(finalScale, finalScale, 1f);
             transform.Translation = new Vector3(Offset * Constants.RENDER_SCALE, 0f);
-            SpriteTransform = transform;
+            _spriteTransform = transform;
         }
 
         private static void ConfigureStretch()
@@ -135,7 +139,7 @@ namespace Client.Main.Controllers
             // Create non-uniform scale transform
             float finalScaleX = ScaleX * Constants.RENDER_SCALE;
             float finalScaleY = ScaleY * Constants.RENDER_SCALE;
-            SpriteTransform = Matrix.CreateScale(finalScaleX, finalScaleY, 1f);
+            _spriteTransform = Matrix.CreateScale(finalScaleX, finalScaleY, 1f);
         }
 
         /// <summary>

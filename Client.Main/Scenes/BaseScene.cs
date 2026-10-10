@@ -18,6 +18,7 @@ namespace Client.Main.Scenes
 {
     public abstract class BaseScene : GameControl
     {
+        internal bool DeferScreenUi { get; set; }
         public new WorldControl World { get; protected set; }
 
         /// <summary>
@@ -602,6 +603,12 @@ namespace Client.Main.Scenes
                 }
             }
 
+            if (!DeferScreenUi)
+                DrawScreenUi(gameTime);
+        }
+
+        internal virtual void DrawScreenUi(GameTime gameTime)
+        {
             // --- Pass 3: Render standard 2D UI (HUD overlays) ---
             // This batch ignores the depth buffer and draws on top of everything.
             using (new SpriteBatchScope(
@@ -626,6 +633,19 @@ namespace Client.Main.Scenes
                     ctrl.Draw(gameTime);
                 }
             }
+        }
+
+        public override void DrawAfter(GameTime gameTime)
+        {
+            if (!DeferScreenUi)
+                base.DrawAfter(gameTime);
+        }
+
+        internal void DrawScreenUiAfter(GameTime gameTime)
+        {
+            foreach (var control in Controls.GetSnapshotArray())
+                if (control != World && control.Visible)
+                    control.DrawAfter(gameTime);
         }
     }
 }

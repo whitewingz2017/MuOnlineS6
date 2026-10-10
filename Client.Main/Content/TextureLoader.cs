@@ -603,8 +603,7 @@ namespace Client.Main.Content
 
         private static bool ShouldGenerateMipMaps(string path, TextureData textureInfo)
         {
-            if (!Constants.HIGH_QUALITY_TEXTURES ||
-                textureInfo == null || textureInfo.IsCompressed ||
+            if (textureInfo == null || textureInfo.IsCompressed ||
                 textureInfo.Width <= 1 && textureInfo.Height <= 1 ||
                 textureInfo.Components is not (3 or 4) ||
                 textureInfo.Data == null)
@@ -614,6 +613,18 @@ namespace Client.Main.Content
 
             string normalized = NormalizePathKey(path);
             if (string.IsNullOrEmpty(normalized))
+                return false;
+
+            // DH menu artwork may be thousands of pixels wide but is drawn at 48 UI
+            // units. Linear filtering of level zero samples too few pixels, causing
+            // speckled edges and unreadable detail even on a native-resolution HUD.
+            // Filter these icons at their displayed size, including on Android Low.
+            if (normalized.StartsWith("interface/dh/", StringComparison.Ordinal) &&
+                normalized.EndsWith(".png", StringComparison.Ordinal) &&
+                (textureInfo.Width >= 96 || textureInfo.Height >= 96))
+                return true;
+
+            if (!Constants.HIGH_QUALITY_TEXTURES)
                 return false;
 
             // UI is rendered in screen space and does not benefit from a mip chain. Excluding
