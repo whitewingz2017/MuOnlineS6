@@ -1994,6 +1994,17 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
             else if (Scene?.World is Controls.WalkableWorldControl world && _network_manager_exists())
             {
+                string dropError = ItemDropPolicy.GetBlockReason(item);
+                if (item.Definition.Group == 14 && item.Definition.Id == 28 && world.WorldIndex >= 45 && world.WorldIndex <= 50)
+                    dropError = "This item cannot be dropped in Illusion Temple.";
+                if (dropError != null)
+                {
+                    AddItem(item);
+                    ReleasePickedItem();
+                    _networkManager.GetCharacterState()?.RaiseInventoryChanged();
+                    (Scene as Client.Main.Scenes.GameScene)?.ChatLog?.AddMessage("System", dropError, MessageType.Error);
+                    return;
+                }
                 byte tileX = world.MouseTileX;
                 byte tileY = world.MouseTileY;
 

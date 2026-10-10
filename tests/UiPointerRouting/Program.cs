@@ -15,6 +15,23 @@ try
 {
     int checks = 0;
     void Check(bool value, string message) { if (!value) throw new Exception(message); checks++; }
+    InventoryItem DropItem(int group, int id, int level = 0, byte flags = 0, byte option = 0)
+    {
+        byte[] raw = flags == 0 ? [] : [(byte)(group << 4), (byte)id, (byte)level, 100, flags, option];
+        return new InventoryItem(new ItemDefinition(id, "Drop test", 1, 1) { Group = group }, Point.Zero, raw, 100, level);
+    }
+    for (int group = 0; group < 12; group++)
+        for (int level = 0; level <= 15; level++)
+            Check((Client.Main.Core.Utilities.ItemDropPolicy.GetBlockReason(DropItem(group, 0, level)) != null) == (level >= 7),
+                $"Incorrect normal equipment drop rule for group {group}, level {level}.");
+    Check(Client.Main.Core.Utilities.ItemDropPolicy.GetBlockReason(DropItem(0, 0, 0, 8, 1)) != null, "Excellent item can be dropped.");
+    Check(Client.Main.Core.Utilities.ItemDropPolicy.GetBlockReason(DropItem(0, 0, 0, 16, 1)) != null, "Ancient item can be dropped.");
+    Check(Client.Main.Core.Utilities.ItemDropPolicy.GetBlockReason(DropItem(0, 0, 0, 32, 1)) != null, "Harmony item can be dropped.");
+    foreach (var jewel in new[] { 13, 14, 16, 22, 31 })
+        Check(Client.Main.Core.Utilities.ItemDropPolicy.GetBlockReason(DropItem(14, jewel)) != null, "Valuable jewel can be dropped.");
+    Check(Client.Main.Core.Utilities.ItemDropPolicy.GetBlockReason(DropItem(12, 0)) != null, "Wings can be dropped.");
+    Check(Client.Main.Core.Utilities.ItemDropPolicy.GetBlockReason(DropItem(13, 37)) != null, "Fenrir can be dropped.");
+    Check(Client.Main.Core.Utilities.ItemDropPolicy.GetBlockReason(DropItem(14, 0, 15)) == null, "Upgrade cutoff incorrectly applies to potions.");
     var game = (MuGame)RuntimeHelpers.GetUninitializedObject(typeof(MuGame));
     var graphics = (GraphicsDeviceManager)RuntimeHelpers.GetUninitializedObject(typeof(GraphicsDeviceManager));
     graphics.PreferredBackBufferWidth = 1280; graphics.PreferredBackBufferHeight = 720;

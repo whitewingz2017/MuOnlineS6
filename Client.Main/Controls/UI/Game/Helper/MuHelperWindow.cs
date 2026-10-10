@@ -192,7 +192,7 @@ namespace Client.Main.Controls.UI.Game.Helper
             _titleLabel = AddLabel(this, "Official MU Helper", 4, 11, WindowWidth - 8, 24, 9, ModernHudTheme.TextWhite, bold: true);
             _titleLabel.Visible = false;
 
-            string[] tabNames = { "Hunting", "Obtaining", "Other Settings" };
+            string[] tabNames = { "Hunting", "Obtaining", "Others" };
             for (int i = 0; i < tabNames.Length; i++)
             {
                 int tabIndex = i;
