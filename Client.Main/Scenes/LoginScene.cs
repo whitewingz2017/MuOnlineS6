@@ -36,6 +36,7 @@ namespace Client.Main.Scenes
         private NetworkManager _networkManager;
         private ILogger<LoginScene> _logger;
         private bool _uiInitialized = false; // Flag for one-time UI initialization
+        private bool _returningToServerSelection;
 
         // Constructors
         public LoginScene()
@@ -113,6 +114,9 @@ namespace Client.Main.Scenes
             // Assuming NewLoginWorld.Initialize() is relatively fast.
             // If it were slow, it would need its own progress reporting that this method would scale.
             await loginWorld.Initialize();
+            if (loginWorld.Status != GameControlStatus.Ready ||
+                loginWorld.Terrain.Status != GameControlStatus.Ready)
+                throw new InvalidOperationException($"Login map could not load from '{System.IO.Path.Combine(Constants.DataPath, "World95")}'. Check the client Data files.");
             await MuGame.YieldToNextFrameAsync(
                 "LoginScene.AttachWorld",
                 MainThreadDispatcher.WorkPriority.Critical);
@@ -286,6 +290,8 @@ namespace Client.Main.Scenes
         // --- Network Event Handlers ---
         private void HandleConnectionStateChange(object sender, ClientConnectionState newState)
         {
+            // Capture at reception: the queued UI update may run after reconnect finishes.
+            bool intentionalReturn = _returningToServerSelection;
             MuGame.ScheduleOnMainThread(() =>
             {
                 _logger.LogDebug(">>> HandleConnectionStateChange (UI Thread): Received state {NewState} (Previous handled: {PrevState})", newState, _previousStateHandled);
@@ -328,7 +334,7 @@ namespace Client.Main.Scenes
                     case ClientConnectionState.Initial:
                         ResetServerSelectionUI();
                         hideAll = true;
-                        if (_previousStateHandled >= ClientConnectionState.ConnectingToConnectServer && _previousStateHandled < ClientConnectionState.InGame)
+                        if (!intentionalReturn && _previousStateHandled >= ClientConnectionState.ConnectingToConnectServer && _previousStateHandled < ClientConnectionState.InGame)
                         {
                             showErrorAndExit = true;
                         }
@@ -378,8 +384,10 @@ namespace Client.Main.Scenes
             if (_loginDialog != null)
             {
                 _loginDialog.Visible = showLogin;
+                _loginDialog.CanGoBack = !_returningToServerSelection &&
+                    _networkManager.CurrentState == ClientConnectionState.ConnectedToGameServer;
                 if (showLogin)
-                    _loginDialog.BringToFront();
+                    _loginDialog.BringToFrontBelowMessages();
             }
 
             if (_serverList != null)
@@ -427,18 +435,29 @@ namespace Client.Main.Scenes
             }
         }
 
-        private void LoginDialog_CancelAttempt(object sender, EventArgs e)
+        private async void LoginDialog_CancelAttempt(object sender, EventArgs e)
         {
-            if (_loginDialog != null)
-                _loginDialog.Visible = false;
+            // Wait for a completed game-server connection; do not race a pending
+            // server switch or an authentication response.
+            if (_returningToServerSelection ||
+                _networkManager.CurrentState != ClientConnectionState.ConnectedToGameServer)
+                return;
 
-            bool hasServers = _serverList != null && _serverList.Controls.Count > 0;
-            if (_nonEventGroup != null)
-                _nonEventGroup.Visible = true;
-            if (_eventGroup != null)
-                _eventGroup.Visible = true;
-            if (_serverList != null)
-                _serverList.Visible = hasServers;
+            _returningToServerSelection = true;
+            UpdateUIVisibility(false, false, true);
+            try
+            {
+                await _networkManager.ForceReconnectToConnectServerAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to return to server selection.");
+                MuGame.ScheduleOnMainThread(() => MessageWindow.Show("Unable to reconnect to server selection. Please try again."));
+            }
+            finally
+            {
+                _returningToServerSelection = false;
+            }
         }
 
         private void HandleServerListReceived(object sender, List<ServerInfo> servers)
@@ -650,7 +669,7 @@ namespace Client.Main.Scenes
             if (_loginDialog != null)
             {
                 _loginDialog.Visible = true;
-                _loginDialog.BringToFront();
+                _loginDialog.BringToFrontBelowMessages();
                 _loginDialog.FocusUsername();
             }
 

@@ -103,7 +103,6 @@ namespace Client.Main.Controls.UI.Game.Hud
                     // terminar o passo atual suavemente — evita o "pulo" ao soltar).
                     _active = false;
                     _knob = Vector2.Zero;
-                    _lastDx = _lastDy = 0;   // zera a direção pra o próximo drag reemitir
                     return;
                 }
 
@@ -125,76 +124,29 @@ namespace Client.Main.Controls.UI.Game.Hud
             }
         }
 
-        // Quantos tiles à frente projetar o alvo na direção do analógico. Um alvo LONGE faz
-        // o MoveTo montar um caminho de vários tiles, então o char anda CONTÍNUO (IsMoving
-        // fica true entre tiles) — sem o flick de idle que reiniciava a animação, e permitindo
-        // entrar em corrida. Antes era 1 tile por vez, esperando parar → travava a animação.
-        private const int ProjectTiles = 8;
-        private int _lastDx, _lastDy;      // última direção de tile emitida
+        private static Vector2 GetStepDirection(Vector2 screenDir)
+        {
+            Vector2 raw = new(screenDir.X + screenDir.Y, screenDir.X - screenDir.Y);
+            return new Vector2(Math.Sign(MathF.Round(raw.X * 1.2f)),
+                Math.Sign(MathF.Round(raw.Y * 1.2f)));
+        }
 
         private void DriveMovement(HeroObject hero, Vector2 screenDir)
         {
-            // Mapeia direção de TELA -> delta de TILE (iso do MU).
-            //   tela-cima (0,-1) -> tile (-1,+1); direita (1,0) -> (+1,+1);
-            //   baixo (0,+1) -> (+1,-1); esquerda (-1,0) -> (-1,-1).  (sy p/ baixo positivo)
-            float sx = screenDir.X;
-            float sy = screenDir.Y;
-            Vector2 raw = new(sx + sy, sx - sy);
-            if (raw.LengthSquared() < 0.0001f)
+            // Finish the current tile (including pending async pathfinding) before
+            // accepting another step. Releasing the stick never leaves a long path.
+            if (hero.IsMoving || hero.MovementIntent)
                 return;
 
-            int dx = Math.Sign(MathF.Round(raw.X * 1.2f));
-            int dy = Math.Sign(MathF.Round(raw.Y * 1.2f));
-            if (dx == 0 && dy == 0)
+            Vector2 step = GetStepDirection(screenDir);
+            if (step == Vector2.Zero || Scene?.World is not WalkableWorldControl world)
                 return;
 
-            // Reemite quando a DIREÇÃO muda OU quando a fila do caminho está ACABANDO (≤3
-            // tiles restantes). Reemitir ANTES de esvaziar mantém isAboutToMove SEMPRE true —
-            // sem isso, o path zerava por 1 frame, _runFrames resetava e a corrida caía pra
-            // andar a cada ~6 passos (corre/anda/corre). Alimentar à frente = corrida contínua.
-            bool dirChanged = dx != _lastDx || dy != _lastDy;
-            // The current WalkerObject API does not expose the internal path queue.
-            // Re-emit only when the current movement step has completed; direction
-            // changes still re-target immediately.
-            // An asynchronous path request is already movement intent. Replacing it
-            // every frame can prevent Android from ever finishing the first path.
-            bool pathLow = !hero.IsMoving && !hero.MovementIntent;
-            if (!dirChanged && !pathLow)
+            Vector2 target = new Vector2((int)hero.Location.X, (int)hero.Location.Y) + step;
+            if (target.X < 0 || target.Y < 0 || target.X >= Constants.TERRAIN_SIZE ||
+                target.Y >= Constants.TERRAIN_SIZE || !world.IsWalkable(target))
                 return;
 
-            var loc = hero.Location;
-
-            // COLISÃO: o world walkable vem da Scene (o mesmo que o clique-mouse usa em
-            // WalkableWorldControl). hero.World nem sempre é o WalkableWorldControl, por
-            // isso a versão anterior não bloqueava e o char atravessava tudo.
-            var world = Scene?.World as WalkableWorldControl;
-
-            // Projeta na direção do analógico parando no PRIMEIRO tile bloqueado, então o
-            // alvo é o último tile caminhável — o char anda contínuo até a parede e para.
-            int steps = 0;
-            int lastX = (int)loc.X, lastY = (int)loc.Y;
-            for (int i = 1; i <= ProjectTiles; i++)
-            {
-                int nx = (int)loc.X + dx * i;
-                int ny = (int)loc.Y + dy * i;
-                if (nx < 0 || ny < 0 || nx >= Constants.TERRAIN_SIZE || ny >= Constants.TERRAIN_SIZE)
-                    break;
-                if (world != null && !world.IsWalkable(new Vector2(nx, ny)))
-                    break;
-                lastX = nx; lastY = ny; steps++;
-            }
-            if (steps == 0)
-                return; // encostado na parede nessa direção: não emite movimento
-
-            var target = new Vector2(lastX, lastY);
-            if (target == loc)
-                return;
-
-            _lastDx = dx;
-            _lastDy = dy;
-            // usePathfinding:true = MESMO A* do clique-mouse. Garante colisão até em
-            // diagonais que passam por cantos bloqueados (BuildDirectPath cortava reto e
-            // atravessava). O alvo multi-tile mantém movimento contínuo / corrida.
             hero.MoveTo(target, sendToServer: true, usePathfinding: true);
         }
 

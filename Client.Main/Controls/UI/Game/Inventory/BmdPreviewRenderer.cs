@@ -7,6 +7,7 @@ using Client.Main.Content;
 using Client.Main.Controllers;
 using Client.Main.Graphics;
 using Client.Main.Models;
+using Client.Main.Core.Utilities;
 using Client.Data.BMD;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -1617,23 +1618,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 return MuRotationConverter.ConvertToMonoGame(25f, 45f, 0f);
             }
 
-            short group = (short)definition.Group;
-            if (group == 6)
-            {
-                return MuRotationConverter.ConvertToMonoGame(270f, 270f, 0f);
-            }
-
-            if (group == 13 || group == 14)
-            {
-                return MuRotationConverter.ConvertToMonoGame(270f, 0f, 0f);
-            }
-
-            if (group == 0 || group == 1 || group == 2 || group == 3 || group == 5)
-            {
-                return MuRotationConverter.ConvertToMonoGame(25f, 45f, 0f);
-            }
-
-            return MuRotationConverter.ConvertToMonoGame(270f, -10f, 0f);
+            Vector3 angles = MuMainItemMetadata.InventoryRotation(definition);
+            return MuRotationConverter.ConvertToMonoGame(angles.X, angles.Y, angles.Z);
         }
 
         public static Quaternion GetInventoryOrientation(ItemDefinition definition)
@@ -1671,7 +1657,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         /// <summary>
         /// Returns the MU Online rotation values for each item group
-        /// These are the same values used in GetInventoryBaseRotation
+        /// Legacy world-drop rotations; inventory uses MuMain's per-model display metadata.
         /// </summary>
         private static (float muX, float muY, float muZ) GetMuRotationValues(ItemDefinition definition)
         {

@@ -57,8 +57,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- This host builds MGUI content for Windows above. Disable content discovery in
+         referenced libraries so their DesktopGL assets cannot collide during publish. -->
     <ProjectReference Include="..\Client.Main\Client.Main.csproj"
-                      AdditionalProperties="MonoGameFramework=MonoGame.Framework.WindowsDX;TargetFramework=$(ClientMainTargetFramework)" />
+                      AdditionalProperties="MonoGameFramework=MonoGame.Framework.WindowsDX;TargetFramework=$(ClientMainTargetFramework);EnableMGCBItems=false" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(Configuration)' == 'Release' AND '$(PerformanceRelease)' == 'true'">

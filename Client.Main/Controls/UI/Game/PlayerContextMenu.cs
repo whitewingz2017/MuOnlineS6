@@ -70,6 +70,16 @@ namespace Client.Main.Controls.UI.Game
         public ushort TargetPlayerId => _targetPlayerId;
         public string TargetPlayerName => _targetPlayerName;
 
+        internal void SetPointerInteraction(bool enabled)
+        {
+            // The touch that opened the menu must be released before any action
+            // can be selected, including when screen-edge clamping puts it under a finger.
+            Interactive = enabled;
+            CapturePointerWhenNonInteractive = !enabled;
+            foreach (var button in Controls)
+                button.Interactive = enabled;
+        }
+
         public void SetDuelButtonEnabled(bool enabled)
         {
             _duelButton.Enabled = enabled;

@@ -68,13 +68,6 @@ namespace Client.Main.Core.Utilities
                     int width = item.Width;
                     int height = item.Height;
 
-                    // Fix for bows and crossbows - they should always be 2 slots wide
-                    // Exclude arrows and bolts (ammunition)
-                    if (item.ItemSubGroup == 4 && itemName != "Arrow" && itemName != "Bolt") // Group 4
-                    {
-                        width = 2;
-                    }
-
                     var definition = new ItemDefinition(
                         id: item.ItemSubIndex,
                         name: itemName,
@@ -95,7 +88,13 @@ namespace Client.Main.Core.Utilities
                         RequiredStrength = item.ReqStr,
                         RequiredDexterity = item.ReqDex,
                         RequiredEnergy = item.ReqEne,
+                        RequiredVitality = item.ReqVit,
+                        RequiredCommand = item.ReqCmd,
                         RequiredLevel = item.ReqLvl,
+                        SkillIndex = item.SkillIndex,
+                        EquipmentSlot = item.Slot,
+                        SetAttribute = item.SetAttr,
+                        ClassRequirements = [item.DW, item.DK, item.FE, item.MG, item.DL, item.SU, item.RF, item.GL, item.RW, item.SL, item.GC, item.KM, item.LM, item.IK, item.AL],
                         TwoHanded = item.TwoHands != 0,
                         Group = item.ItemSubGroup,
                         AllowedClasses = BuildAllowedClasses(item),
@@ -311,6 +310,10 @@ namespace Client.Main.Core.Utilities
             public byte ExcellentFlags;
             public byte Durability;
             public byte SocketCount;
+            public byte OptionType;
+            public byte HarmonyOption;
+            public byte AncientBonusOption;
+            public byte AncientDiscriminator;
 
             public bool HasBlueOptions => HasSkill || HasLuck || OptionLevel > 0;
         }
@@ -331,6 +334,10 @@ namespace Client.Main.Core.Utilities
                 d.ExcellentFlags = ext.ExcellentFlags;
                 d.Durability = ext.Durability;
                 d.SocketCount = ext.SocketCount;
+                d.OptionType = ext.OptionType;
+                d.HarmonyOption = ext.HarmonyOption;
+                d.AncientBonusOption = ext.AncientBonusOption;
+                d.AncientDiscriminator = ext.AncientDiscriminator;
                 return d;
             }
 
@@ -347,7 +354,9 @@ namespace Client.Main.Core.Utilities
             d.OptionLevel = optionLevel;
 
             d.IsExcellent = (excByte & 0x3F) != 0;
-            d.IsAncient = (ancientByte & 0x0F) > 0;
+            d.IsAncient = (ancientByte & 3) > 0;
+            d.AncientDiscriminator = (byte)(ancientByte & 3);
+            d.AncientBonusOption = (byte)((ancientByte >> 2) & 3);
             d.ExcellentFlags = excByte;
             d.Durability = itemData.Length > 2 ? itemData[2] : (byte)0;
 

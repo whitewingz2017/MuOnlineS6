@@ -143,7 +143,7 @@ namespace Client.Main.Controls.Terrain
             var fullPathWorldFolder = Path.Combine(Constants.DataPath, worldFolder);
 
             if (string.IsNullOrEmpty(fullPathWorldFolder) || !Directory.Exists(fullPathWorldFolder))
-                return null;
+                throw new DirectoryNotFoundException($"Required terrain folder is missing: {fullPathWorldFolder}");
 
             // Load terrain .att
             string attPath = GetActualPath(Path.Combine(fullPathWorldFolder, $"EncTerrain{_worldIndex}.att"));

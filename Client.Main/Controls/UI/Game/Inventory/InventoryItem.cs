@@ -28,7 +28,13 @@ public class InventoryItem
         Level = level;
 
         RawData = rawData ?? Array.Empty<byte>();
-        Details = ItemDatabase.ParseItemDetails(RawData);
+        var details = ItemDatabase.ParseItemDetails(RawData);
+        if (RawData.Length == 0)
+        {
+            details.Level = level;
+            details.Durability = (byte)Math.Clamp(durability, 0, 255);
+        }
+        Details = details;
     }
 
     public Rectangle GetBounds() => new(GridPosition.X, GridPosition.Y,

@@ -48,6 +48,8 @@ namespace Client.Main.Scenes
         private TouchActionButtonsControl _classicTouchActions;
         private TouchMenuControl _classicTouchMenu;
         private VirtualJoystickControl _classicJoystick;
+        internal bool UsesMobileJoystickMovement => UiThemeManager.IsMobilePlatform &&
+            _classicJoystick is { Visible: true, Interactive: true };
         private SkillImprintControl _classicSkillImprint;
         private PotionImprintControl _classicPotionImprint;
         private Controls.UI.Game.Skills.MasterSkillTreeControl _masteryTree;

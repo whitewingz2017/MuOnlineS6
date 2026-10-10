@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Client.Main;
 using Client.Main.Controls.UI;
+using Client.Main.Controls.UI.Common;
 using Client.Main.Controls.UI.Game.Inventory;
 using Client.Main.Controls.UI.Game.Hud;
 using Client.Data.Texture;
@@ -38,6 +39,64 @@ try
     typeof(MuGame).GetField("_graphics", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(game, graphics);
     typeof(MuGame).GetProperty(nameof(MuGame.Instance))!.SetValue(null, game);
     var scene = new TestScene();
+    var holdType = typeof(GameScene).Assembly.GetType("Client.Main.Scenes.PlayerMenuHoldGesture")!;
+    var hold = Activator.CreateInstance(holdType, nonPublic: true)!;
+    var updateHold = holdType.GetMethod("Update", BindingFlags.NonPublic | BindingFlags.Instance)!;
+    bool Hold(ushort? target, bool down, bool wasDown, Point position, double seconds) =>
+        (bool)updateHold.Invoke(hold, [target, down, wasDown, position, seconds])!;
+    Check(!Hold(7, true, false, Point.Zero, 0.1), "A short player tap opened the menu.");
+    Check(!Hold(7, true, true, new Point(3, 2), 0.8), "Player menu opened before one second.");
+    Check(Hold(7, true, true, new Point(4, 2), 0.2), "One-second hold did not open the player menu.");
+    Check(!Hold(7, true, true, Point.Zero, 2), "The same held touch reopened the menu.");
+    Check(!Hold(7, false, true, Point.Zero, 1), "Releasing a hold opened the menu.");
+    Check(!Hold(7, true, false, Point.Zero, 0.5) && !Hold(7, true, true, new Point(20, 0), 0.6),
+        "Dragging away from a player did not cancel the hold.");
+    Check(!Hold(7, true, true, Point.Zero, 2), "Returning a dragged touch restarted the hold without a fresh press.");
+    Check(!Hold(7, true, false, Point.Zero, 0.5) && !Hold(8, true, true, Point.Zero, 0.6),
+        "Changing players while holding opened a different player's menu.");
+    Check(!Hold(null, true, false, Point.Zero, 2), "A hold without a player opened the menu.");
+    var stepDirection = typeof(VirtualJoystickControl).GetMethod("GetStepDirection", BindingFlags.Static | BindingFlags.NonPublic)!;
+    foreach (var direction in new[] { new Vector2(-1, 0), new Vector2(1, 0), new Vector2(0, -1), new Vector2(0, 1),
+        Vector2.Normalize(new Vector2(1, 1)), Vector2.Normalize(new Vector2(-1, 1)),
+        Vector2.Normalize(new Vector2(1, -1)), Vector2.Normalize(new Vector2(-1, -1)) })
+    {
+        var step = (Vector2)stepDirection.Invoke(null, [direction])!;
+        Check(step != Vector2.Zero && Math.Abs(step.X) <= 1 && Math.Abs(step.Y) <= 1,
+            "Joystick projected farther than one neighboring tile.");
+    }
+    Check((Vector2)stepDirection.Invoke(null, [new Vector2(-1, 0)])! == new Vector2(-1, -1),
+        "Dragging left no longer moves toward screen-left.");
+    var login = new Client.Main.Controls.UI.Login.LoginDialog();
+    var back = (OkButton)typeof(Client.Main.Controls.UI.Login.LoginDialog)
+        .GetField("_classicCancelButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(login)!;
+    var ok = (OkButton)typeof(Client.Main.Controls.UI.Login.LoginDialog)
+        .GetField("_okButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(login)!;
+    Check(back.Visible && back.Interactive && back.TexturePath == "Interface/newui_button_cancel.OZT",
+        "Login Back button is unavailable or uses the wrong texture.");
+    Check(back.Y == ok.Y && back.X >= ok.X + ok.ViewSize.X && back.Y + back.ViewSize.Y <= login.ControlSize.Y,
+        "Login Back overlaps OK or falls outside the dialog.");
+    int backRequests = 0;
+    login.CancelAttempt += (_, _) => backRequests++;
+    var cancel = typeof(Client.Main.Controls.UI.Login.LoginDialog)
+        .GetMethod("CancelButton_Click", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    login.CanGoBack = false;
+    cancel.Invoke(login, [back, EventArgs.Empty]);
+    Check(backRequests == 0, "Disabled Back allowed navigation during a connection or login.");
+    login.CanGoBack = true;
+    cancel.Invoke(login, [back, EventArgs.Empty]);
+    Check(backRequests == 1, "Back did not request return to server selection.");
+    scene.Controls.Add(login);
+    var loginError = (MessageWindow)Activator.CreateInstance(typeof(MessageWindow), nonPublic: true)!;
+    scene.Controls.Add(loginError);
+    var raiseLogin = typeof(Client.Main.Controls.UI.Login.LoginDialog)
+        .GetMethod("BringToFrontBelowMessages", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    raiseLogin.Invoke(login, null);
+    raiseLogin.Invoke(login, null); // Repeated queued state updates after a failed login.
+    Check(scene.Controls.Last() == loginError, "Connection-state updates covered the login error.");
+    loginError.Close();
+    raiseLogin.Invoke(login, null);
+    Check(scene.Controls.Last() == login, "Closing the error did not restore the login form.");
+    scene.Controls.Remove(login);
     var underneath = new TestControl();
     var window = new TestControl();
     var child = new TestControl { X = 10, Y = 10, ControlSize = new Point(20, 20), ViewSize = new Point(20, 20) };
@@ -192,6 +251,21 @@ try
     Check(ReferenceEquals(scene.MouseHoverControl, joystick) && ((Vector2)knobField.GetValue(joystick)!).X > 40,
         "Chat overlay prevented the real joystick from receiving its drag.");
     Frame(center.X + 50, center.Y, ButtonState.Released);
+    scene.Controls.Clear();
+    var heldMenu = new Client.Main.Controls.UI.Game.PlayerContextMenu { Visible = true };
+    typeof(Client.Main.Controls.GameControl).GetProperty("Status")!.SetValue(heldMenu, GameControlStatus.Ready);
+    var heldMenuAction = new TestControl();
+    heldMenu.Controls.Add(heldMenuAction);
+    scene.Controls.Add(heldMenu);
+    var setMenuInput = heldMenu.GetType().GetMethod("SetPointerInteraction", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    setMenuInput.Invoke(heldMenu, [false]);
+    Frame(50, 50, ButtonState.Pressed);
+    Frame(50, 50, ButtonState.Released);
+    Check(heldMenuAction.Clicks == 0, "Releasing the menu-opening hold selected a player action.");
+    setMenuInput.Invoke(heldMenu, [true]);
+    Frame(50, 50, ButtonState.Pressed);
+    Frame(50, 50, ButtonState.Released);
+    Check(heldMenuAction.Clicks == 1, "Player menu actions did not accept a new tap after the hold.");
     Console.WriteLine($"PASS: {checks} UI routing, mobile selection, menu layout, joystick drag and PNG/OZP checks.");
 }
 catch (Exception exception) { Console.Error.WriteLine(exception); Environment.Exit(1); }

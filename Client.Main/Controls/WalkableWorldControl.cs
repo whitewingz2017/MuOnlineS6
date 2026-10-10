@@ -1,5 +1,6 @@
 ﻿using Client.Main.Controllers;
 using Client.Main.Graphics;
+using Client.Main.Controls.UI;
 using Client.Main.Core.Utilities;
 using Client.Main.Models;
 using Client.Main.Objects;
@@ -177,7 +178,11 @@ namespace Client.Main.Controls
                     }
                 }
 
-                if (!deferMonsterClickToGameScene)
+                // Touch movement belongs to the joystick. Keep monster/NPC
+                // selection above, but never translate its touch into a ground path.
+                if (!deferMonsterClickToGameScene &&
+                    !(UiThemeManager.IsMobilePlatform && Scene.MouseHoverObject is PlayerObject remotePlayer && remotePlayer != Walker) &&
+                    !(Scene is Client.Main.Scenes.GameScene mobileScene && mobileScene.UsesMobileJoystickMovement))
                 {
                     if (Scene is Client.Main.Scenes.GameScene gameScene &&
                         MuGame.Instance.PrevMouseState.LeftButton == ButtonState.Released)

@@ -6,6 +6,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using System;
+using System.Linq;
 
 namespace Client.Main.Controls.UI.Login
 {
@@ -22,7 +23,12 @@ namespace Client.Main.Controls.UI.Login
         private readonly TextFieldControl _passwordInput;
         private readonly OkButton _okButton;
         private readonly ButtonControl _classicOkButton;
-        private readonly ButtonControl _classicCancelButton;
+        private readonly OkButton _classicCancelButton;
+        public bool CanGoBack
+        {
+            get => _classicCancelButton.Interactive;
+            set => _classicCancelButton.Interactive = value;
+        }
 
         // Properties
         public string ServerName
@@ -47,6 +53,16 @@ namespace Client.Main.Controls.UI.Login
         /// </summary>
         public event EventHandler LoginAttempt;
         public event EventHandler CancelAttempt;
+
+        internal void BringToFrontBelowMessages()
+        {
+            BringToFront();
+            // A queued connection-state update must not cover an error that
+            // was just shown by the login response handler.
+            if (Parent == null) return;
+            foreach (var message in Parent.Controls.OfType<MessageWindow>().Where(m => m.Visible).ToArray())
+                message.BringToFront();
+        }
 
         // Constructors
         public LoginDialog()
@@ -140,7 +156,11 @@ namespace Client.Main.Controls.UI.Login
             _classicOkButton.Click += OkButton_Click;
             Controls.Add(_classicOkButton);
 
-            _classicCancelButton = CreateClassicButton("CANCEL", ModernHudTheme.BgLight);
+            _classicCancelButton = new OkButton
+            {
+                TexturePath = "Interface/newui_button_cancel.OZT",
+                AutoViewSize = false
+            };
             _classicCancelButton.Click += CancelButton_Click;
             Controls.Add(_classicCancelButton);
 
@@ -233,14 +253,19 @@ namespace Client.Main.Controls.UI.Login
                 _passwordInput.ViewSize = new Point(176, 14);
                 _userInput.Skin = TextFieldSkin.NineSlice;
                 _passwordInput.Skin = TextFieldSkin.NineSlice;
+                _okButton.Align = ControlAlign.None;
+                _okButton.X = 83;
+                _okButton.Y = 160;
+                _classicCancelButton.X = 155;
+                _classicCancelButton.Y = 160;
+                _classicCancelButton.ViewSize = new Point(54, 30);
             }
 
             _okButton.Visible = !classic;
             _okButton.Interactive = !classic;
             _classicOkButton.Visible = classic;
             _classicOkButton.Interactive = classic;
-            _classicCancelButton.Visible = classic;
-            _classicCancelButton.Interactive = classic;
+            _classicCancelButton.Visible = true;
             _line1.Visible = !classic;
             _line2.Visible = !classic;
             _line1.ViewSize = new Point(Math.Max(1, ControlSize.X - 20), 8);
@@ -329,8 +354,11 @@ namespace Client.Main.Controls.UI.Login
 
         private void CancelButton_Click(object sender, EventArgs e)
         {
+            if (!CanGoBack) return;
             _userInput.OnBlur();
             _passwordInput.OnBlur();
+            if (Scene != null && (Scene.FocusControl == _userInput || Scene.FocusControl == _passwordInput))
+                Scene.FocusControl = null;
             CancelAttempt?.Invoke(this, EventArgs.Empty);
         }
 

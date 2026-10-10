@@ -286,14 +286,7 @@ namespace Client.Main
             SHADOW_BIAS = 0.005f;
             SHADOW_NORMAL_BIAS = 0.008f;
 
-            // DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
-            #if WINDOWS_DX
-                // PC development/client data location
-                DataPath = @"C:\MuOnline_Source\Main5.2-main\Source Main 5.2\bin\Data";
-            #else
-                // Android and other platforms use the application's Data directory
-                DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
-            #endif
+            DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
         }
 
 #if DEBUG

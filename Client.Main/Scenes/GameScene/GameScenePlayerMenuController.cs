@@ -24,6 +24,8 @@ namespace Client.Main.Scenes
         private ushort? _playerMenuHoverId;
         private double _playerMenuHintCooldown;
         private float _playerMenuHintAlpha;
+        private readonly PlayerMenuHoldGesture _holdGesture = new();
+        private bool _ignoreHoldRelease;
 
         public GameScenePlayerMenuController(GameScene scene, Action<string> whisperRequested, Action<ushort, string> duelRequested)
         {
@@ -39,7 +41,7 @@ namespace Client.Main.Scenes
 
             _playerMenuHint = new LabelControl
             {
-                Text = "ALT + RMB: player menu",
+                Text = UiThemeManager.IsMobilePlatform ? "Hold: player menu" : "ALT + RMB: player menu",
                 FontSize = 11f,
                 Padding = new Margin { Left = 6, Right = 6, Top = 4, Bottom = 4 },
                 BackgroundColor = new Color(0, 0, 0, 180),
@@ -77,13 +79,36 @@ namespace Client.Main.Scenes
             _playerMenuHoverId = null;
             _playerMenuHintCooldown = 0;
             _playerMenuHintAlpha = 0;
+            _holdGesture.Reset();
+            _ignoreHoldRelease = false;
         }
 
         public void Update(GameTime gameTime, KeyboardState keyboardState, MouseState uiMouse, MouseState prevUiMouse)
         {
             bool contextMenuOpened = false;
 
-            if (!_scene.IsMouseInputConsumedThisFrame &&
+            if (UiThemeManager.IsMobilePlatform)
+            {
+                var target = !_scene.IsMouseInputConsumedThisFrame && !IsMenuVisible &&
+                    (_scene.MouseHoverControl == null || _scene.MouseHoverControl == _scene.World) &&
+                    _scene.MouseHoverObject is PlayerObject player && player != _scene.Hero && player.World == _scene.World
+                    ? player : null;
+                bool opened = _holdGesture.Update(target?.NetworkId,
+                    uiMouse.LeftButton == ButtonState.Pressed,
+                    prevUiMouse.LeftButton == ButtonState.Pressed,
+                    uiMouse.Position, gameTime.ElapsedGameTime.TotalSeconds);
+                if (_holdGesture.IsHolding || opened)
+                    _scene.SetMouseInputConsumed();
+                if (opened)
+                {
+                    ShowPlayerContextMenu(target, uiMouse.Position);
+                    _playerContextMenu.SetPointerInteraction(false);
+                    _ignoreHoldRelease = true;
+                    contextMenuOpened = true;
+                }
+            }
+
+            if (!UiThemeManager.IsMobilePlatform && !_scene.IsMouseInputConsumedThisFrame &&
                 _scene.MouseHoverObject is PlayerObject hoveredPlayer &&
                 hoveredPlayer != _scene.Hero)
             {
@@ -102,7 +127,7 @@ namespace Client.Main.Scenes
             if (_playerContextMenu?.Visible == true && !contextMenuOpened)
             {
                 bool clickReleasedOutside =
-                    ((prevUiMouse.LeftButton == ButtonState.Pressed && uiMouse.LeftButton == ButtonState.Released) ||
+                    ((!_ignoreHoldRelease && prevUiMouse.LeftButton == ButtonState.Pressed && uiMouse.LeftButton == ButtonState.Released) ||
                      (prevUiMouse.RightButton == ButtonState.Pressed && uiMouse.RightButton == ButtonState.Released))
                     && !_playerContextMenu.IsMouseOver;
 
@@ -116,6 +141,11 @@ namespace Client.Main.Scenes
             }
 
             UpdatePlayerMenuHint(gameTime, keyboardState, _scene.MouseHoverObject as PlayerObject, uiMouse.Position);
+            if (uiMouse.LeftButton == ButtonState.Released)
+            {
+                _ignoreHoldRelease = false;
+                _playerContextMenu?.SetPointerInteraction(true);
+            }
         }
 
         private void ShowPlayerContextMenu(PlayerObject targetPlayer, Point mousePos)
@@ -153,7 +183,8 @@ namespace Client.Main.Scenes
             bool ctrlDown = keyboardState.IsKeyDown(Keys.LeftControl) || keyboardState.IsKeyDown(Keys.RightControl);
             bool menuOpen = _playerContextMenu?.Visible == true;
             bool playerValid = hoveredPlayer != null && hoveredPlayer != _scene.Hero && hoveredPlayer.World == _scene.World;
-            bool shouldShow = playerValid && !ctrlDown && !menuOpen && _playerMenuHintCooldown <= 0;
+            bool shouldShow = playerValid && !ctrlDown && !menuOpen && _playerMenuHintCooldown <= 0 &&
+                (!UiThemeManager.IsMobilePlatform || _holdGesture.IsHolding);
 
             if (!playerValid)
             {
@@ -212,6 +243,46 @@ namespace Client.Main.Scenes
             }
 
             return false;
+        }
+    }
+
+    internal sealed class PlayerMenuHoldGesture
+    {
+        private ushort? _target;
+        private Point _origin;
+        private double _elapsed;
+        internal bool IsHolding => _target.HasValue;
+
+        internal void Reset()
+        {
+            _target = null;
+            _elapsed = 0;
+        }
+
+        internal bool Update(ushort? target, bool pressed, bool previouslyPressed, Point position, double seconds)
+        {
+            if (!pressed)
+            {
+                Reset();
+                return false;
+            }
+            if (!previouslyPressed)
+            {
+                Reset();
+                _target = target;
+                _origin = position;
+            }
+            if (!_target.HasValue || _target != target ||
+                Vector2.DistanceSquared(_origin.ToVector2(), position.ToVector2()) > 14 * 14)
+            {
+                Reset();
+                return false;
+            }
+            _elapsed += seconds;
+            if (_elapsed < 1.0)
+                return false;
+            Reset(); // Require a new press before another menu can open.
+            return true;
         }
     }
 }

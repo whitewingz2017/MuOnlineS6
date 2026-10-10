@@ -30,6 +30,8 @@ namespace Client.Main.Controls.UI.Game.Common
 
     public static class ItemUiHelper
     {
+        public static int TooltipLineHeight(SpriteFont font, string text, float scale) =>
+            (int)MathF.Ceiling(font.MeasureString("Q").Y * scale * (string.IsNullOrWhiteSpace(text) ? 0.55f : 1.1f));
         /// <summary>
         /// Calculates max durability based on item level, excellent, and ancient options.
         /// Formula from ZzzInventory.cpp:CalcMaxDurability()
@@ -43,6 +45,7 @@ namespace Client.Main.Controls.UI.Game.Common
             int level = details.Level;
             for (int i = 0; i < level; i++)
             {
+                if (def.Group * 512 + def.Id >= 13 * 512 + 51) break;
                 if (i >= 14)      // Level 15
                     maxDur = Math.Min(maxDur + 8, 255);
                 else if (i >= 13) // Level 14
@@ -61,18 +64,22 @@ namespace Client.Main.Controls.UI.Game.Common
                     maxDur++;
             }
 
+            if (def.Group == 13 && def.Id is 4 or 5) maxDur = 255;
             // Ancient items: +20 durability
             if (details.IsAncient)
             {
                 maxDur += 20;
             }
             // Excellent items (non-wings): +15 durability
-            else if (details.IsExcellent && def.Group != 12) // Group 12 = Wings
+            else if (details.IsExcellent && !MuMainItemMetadata.IsArchangel(def)
+                && !(def.Group == 13 && def.Id == 30)
+                && !(def.Group == 12 && (def.Id is >= 3 and <= 6 or >= 36 and <= 40 or 42 or 43 or 49 or 50)))
             {
                 maxDur += 15;
             }
 
-            return Math.Min(maxDur, 255);
+            if (def.Group is >= 7 and <= 11 && def.Id is >= 62 and <= 72) maxDur = 255;
+            return maxDur;
         }
 
         /// <summary>
@@ -88,14 +95,14 @@ namespace Client.Main.Controls.UI.Game.Common
             {
                 if (isExcellent && dropLevel > 0)
                     dmgMin += baseMin * 25 / dropLevel + 5;
-                dmgMin += level * 3;
+                dmgMin += Math.Min(9, level) * 3 + (level > 9 ? level - 6 : 0);
             }
 
             if (baseMax > 0)
             {
                 if (isExcellent && dropLevel > 0)
-                    dmgMax += baseMin * 25 / dropLevel + 5;
-                dmgMax += level * 3;
+                    dmgMax += baseMax * 25 / dropLevel + 5;
+                dmgMax += Math.Min(9, level) * 3 + (level > 9 ? level - 6 : 0);
             }
 
             return (dmgMin, dmgMax);
@@ -119,7 +126,7 @@ namespace Client.Main.Controls.UI.Game.Common
                 {
                     if (isExcellent && dropLevel > 0)
                         defense += baseDefense * 12 / dropLevel + 4 + dropLevel / 5;
-                    defense += level * 3; // Non-shields: +level*3
+                    defense += Math.Min(9, level) * 3 + (level > 9 ? level - 6 : 0);
                 }
             }
 
@@ -181,130 +188,87 @@ namespace Client.Main.Controls.UI.Game.Common
 
             var characterState = MuGame.Network?.GetCharacterState();
 
-            string name = details.IsExcellent ? $"Excellent {item.Definition.Name}"
-                        : details.IsAncient ? $"Ancient {item.Definition.Name}"
+            string name = details.IsExcellent && !MuMainItemMetadata.IsWing(item.Definition) ? $"Excellent {item.Definition.Name}"
+                        : details.IsAncient ? $"{MuMainAncientNames.Get(item.Definition.Group, item.Definition.Id, details.AncientDiscriminator) ?? "Ancient"} {item.Definition.Name}"
                         : item.Definition.Name;
 
             if (details.Level > 0)
                 name += $" +{details.Level}";
 
-            lines.Add((name, Color.White));
-
             var def = item.Definition;
-            int itemLevel = details.Level;
-            bool isExcellent = details.IsExcellent;
+            var blue = new Color(128, 179, 255);
+            var green = new Color(26, 255, 128);
+            var yellow = new Color(255, 204, 26);
+            Color nameColor = details.IsAncient ? new Color(0, 255, 204) : details.IsExcellent ? green
+                : details.Level >= 7 ? yellow : details.HasBlueOptions ? blue : Color.White;
+            if (details.SocketCount > 0 && !details.IsAncient) nameColor = new Color(204, 128, 255);
+            if (MuMainItemMetadata.IsWing(def)) nameColor = details.Level >= 7 ? yellow
+                : details.HasBlueOptions || details.IsExcellent ? blue : Color.White;
+            if (MuMainItemMetadata.IsArchangel(def)) nameColor = new Color(255, 26, 255);
+            lines.Add((name, nameColor));
+            lines.Add((" ", Color.White));
             bool isStaff = def.Group == 5;
-            bool isShield = def.Group == 6;
-
-            // Physical damage (all weapons including staffs)
-            if (def.DamageMin > 0 || def.DamageMax > 0)
-            {
-                var (dmgMin, dmgMax) = CalculateDamageWithLevel(def.DamageMin, def.DamageMax, itemLevel, isExcellent, def.DropLevel);
-
-                // Staffs have special calculation: DamageMin / 2 + Level * 2
-                if (isStaff)
-                {
-                    dmgMin = dmgMin / 2 + itemLevel * 2;
-                    dmgMax = 0;
-                }
-
-                string dmgType = def.TwoHanded ? "Two-hand" : "One-hand";
-                if (dmgMax > 0)
-                    lines.Add(($"{dmgType} Damage : {dmgMin} ~ {dmgMax}", Color.Orange));
-                else
-                    lines.Add(($"{dmgType} Damage : {dmgMin}", Color.Orange));
-            }
-
-            // Wizard damage (for staffs and other magic weapons)
-            if (def.MagicPower > 0)
-            {
-                lines.Add(($"Wizardry Damage : {def.MagicPower}%", new Color(150, 200, 255)));
-            }
-
-            // Defense
-            if (def.Defense > 0)
-            {
-                int defense = CalculateDefenseWithLevel(def.Defense, itemLevel, isShield, isExcellent, def.DropLevel);
-                lines.Add(($"Defense     : {defense}", Color.Orange));
-            }
-
-            if (def.DefenseRate > 0) lines.Add(($"Defense Rate: {def.DefenseRate}", Color.Orange));
-            if (def.AttackSpeed > 0) lines.Add(($"Attack Speed: {def.AttackSpeed}", Color.Orange));
-
-            // Movement speed for boots/gloves
-            if (def.WalkSpeed > 0)
-            {
-                lines.Add(($"Movement Speed : {def.WalkSpeed}", new Color(100, 255, 100)));
-            }
-
-            // Max durability with level/excellent/ancient bonuses
+            var stats = MuMainItemStats.Calculate(item);
+            if (stats.DamageMin > 0 || stats.DamageMax > 0)
+                lines.Add(($"{(def.TwoHanded ? "Two-handed" : "One-handed")} Damage: {stats.DamageMin} ~ {stats.DamageMax}", details.IsExcellent ? blue : Color.White));
+            if (stats.Defense > 0) lines.Add(($"Defense: {stats.Defense}", details.IsExcellent && def.Group is >= 7 and <= 11 ? blue : Color.White));
+            if (stats.DefenseRate > 0) lines.Add(($"Defense Rate: {stats.DefenseRate}", details.IsExcellent ? blue : Color.White));
+            if (def.WalkSpeed > 0) lines.Add(($"Movement Speed: {def.WalkSpeed}", Color.White));
+            if (def.AttackSpeed > 0) lines.Add(($"Attack Speed: {def.AttackSpeed}", Color.White));
             int maxDurability = CalculateMaxDurability(def, details, isStaff);
+            if ((isStaff ? def.MagicDurability : def.BaseDurability) > 0)
+                lines.Add(($"Durability: {item.Durability}/{maxDurability}", Color.White));
 
-            // Only show durability if item has durability (maxDurability > 0)
-            // This excludes jewels, scrolls, and other items without durability
-            if (maxDurability > 0)
+            var requirements = MuMainItemRules.Requirements(item);
+            void Requirement(string label, int required, int? available)
             {
-                lines.Add(($"Durability : {item.Durability}/{maxDurability}", Color.Silver));
+                if (required <= 0) return;
+                bool lacking = available.HasValue && available.Value < required;
+                lines.Add(($"{label}: {required}", lacking ? Color.Red : Color.White));
+                if (lacking) lines.Add(($"Lacking {required - available.Value}", Color.Red));
             }
-
-            if (def.RequiredLevel > 0)
+            Requirement("Minimum Level", requirements.Level, characterState?.Level);
+            Requirement("Required Strength", requirements.Strength, characterState?.TotalStrength);
+            Requirement("Required Agility", requirements.Agility, characterState?.TotalAgility);
+            Requirement("Required Vitality", requirements.Vitality, characterState?.TotalVitality);
+            Requirement("Required Energy", requirements.Energy, characterState?.TotalEnergy);
+            Requirement("Required Command", requirements.Command, characterState?.TotalLeadership);
+            if (def.ClassRequirements.Length > 0)
             {
-                Color color = (characterState != null && characterState.Level >= def.RequiredLevel) ? Color.LightGray : Color.Red;
-                lines.Add(($"Required Level   : {def.RequiredLevel}", color));
-            }
-
-            // Requirements with level/excellent bonuses
-            if (def.RequiredStrength > 0)
-            {
-                int reqStr = CalculateRequirement(def.RequiredStrength, itemLevel, isExcellent, def.DropLevel);
-                Color color = (characterState != null && characterState.TotalStrength >= reqStr) ? Color.LightGray : Color.Red;
-                lines.Add(($"Required Strength: {reqStr}", color));
-            }
-            if (def.RequiredDexterity > 0)
-            {
-                int reqDex = CalculateRequirement(def.RequiredDexterity, itemLevel, isExcellent, def.DropLevel);
-                Color color = (characterState != null && characterState.TotalAgility >= reqDex) ? Color.LightGray : Color.Red;
-                lines.Add(($"Required Agility : {reqDex}", color));
-            }
-            if (def.RequiredEnergy > 0)
-            {
-                int reqEne = 20 + def.RequiredEnergy * (def.DropLevel + itemLevel * 3) * 4 / 10; // Energy uses different formula
-                Color color = (characterState != null && characterState.TotalEnergy >= reqEne) ? Color.LightGray : Color.Red;
-                lines.Add(($"Required Energy  : {reqEne}", color));
-            }
-
-            if (def.AllowedClasses != null)
-            {
-                foreach (var cls in def.AllowedClasses)
-                    lines.Add(($"Can be equipped by {cls}", Color.LightGray));
-
-                bool canEquip = characterState != null && def.AllowedClasses.Contains(CharacterClassDatabase.GetClassName(characterState.Class));
-                if (!canEquip)
+                lines.Add((" ", Color.White));
+                var job = characterState == null ? (-1, 0) : MuMainItemRules.ClassJob(characterState.Class);
+                for (int family = 0; family < Math.Min(7, def.ClassRequirements.Length); family++)
                 {
-                    var className = characterState != null ? CharacterClassDatabase.GetClassName(characterState.Class) : "Unknown";
-                    lines.Add(($"This item cannot be equipped by {className}", Color.Red));
+                    int step = def.ClassRequirements[family];
+                    if (step == 0) continue;
+                    bool matches = job.Item1 == family && job.Item2 >= step;
+                    lines.Add(($"Can be equipped by {MuMainItemRules.RequiredClassName(family, step)}", matches ? Color.White : new Color(178, 51, 26)));
                 }
             }
-
-            if (details.OptionLevel > 0)
-                lines.Add(($"Additional Option +{details.OptionLevel * 4}", Color.CornflowerBlue));//new Color(80, 255, 80)));
-
+            if (def.Group == 11 && details.Level >= 5) lines.Add(("Increases moving speed", blue));
+            if (def.Group == 10 && details.Level >= 5) lines.Add(("Increases swimming speed", blue));
+            if (stats.MagicPower > 0)
+                lines.Add(($"{(MuMainItemStats.IsScepter(def) ? "Pet Attack" : MuMainItemMetadata.IsSummonerBook(def) ? "Curse Damage" : "Wizardry Damage")} Increase: {stats.MagicPower}%", blue));
+            if (details.HasSkill && def.SkillIndex != 0)
+                lines.Add(($"{SkillDatabase.GetSkillName(def.SkillIndex)} Skill", blue));
             if (details.HasLuck)
             {
-                lines.Add(("Luck  (success rate of Jewel of Soul + 25%)", Color.CornflowerBlue));
-                lines.Add(("Luck  (critical damage rate +5%)", Color.CornflowerBlue));
-            } 
-            if (details.HasSkill) lines.Add(("+Skill (Right mouse click - skill)", Color.CornflowerBlue));
-
-            if (details.IsExcellent)
+                lines.Add(("Luck (success rate of Jewel of Soul +25%)", blue));
+                lines.Add(("Luck (critical damage rate +5%)", blue));
+            }
+            foreach (string option in MuMainItemStats.AdditionalOptions(item)) lines.Add((option, blue));
+            foreach (string option in MuMainItemStats.ExcellentOptions(item)) lines.Add((option, green));
+            if (details.IsAncient && details.AncientBonusOption > 0 && def.SetAttribute is >= 0 and <= 3)
             {
-                byte excByte = item.RawData.Length > 3 ? item.RawData[3] : (byte)0;
-                foreach (var option in ItemDatabase.ParseExcellentOptions(excByte))
-                    lines.Add(($"+{option}", new Color(128, 255, 128)));
+                string attribute = def.SetAttribute switch { 0 => "Strength", 1 => "Agility", 2 => "Energy", _ => "Vitality" };
+                lines.Add(($"{attribute} Increase +{details.AncientBonusOption * 5}", blue));
             }
 
-            if (details.IsAncient)
-                lines.Add(("Ancient Option", new Color(0, 255, 128)));
+            int harmonyCategory = def.Group < 5 ? 0 : def.Group == 5 ? 1 : def.Group < 12 ? 2 : -1;
+            var harmony = MuMainItemOptionMetadata.GetHarmony(harmonyCategory, details.HarmonyOption >> 4);
+            int harmonyLevel = details.HarmonyOption & 15;
+            if (harmony != null && harmony.Name.Length > 0 && harmonyLevel < 14)
+                lines.Add(($"{harmony.Name} +{harmony.Values[harmonyLevel]}", details.Level >= harmonyLevel ? yellow : Color.Gray));
 
             // Show "Right-click to use" for consumables (potions, scrolls), but not for jewels
             if (def.IsConsumable() && !def.IsJewel())

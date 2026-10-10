@@ -688,13 +688,13 @@ namespace Client.Main
                 UiScaler.VirtualSize.Y,
                 UiScaler.ActualSize.X,
                 UiScaler.ActualSize.Y);
-#if WINDOWS_DX
-            _mguiRenderer = new MainRenderer(
-                new GameRenderHost<MuGame>(this));
+// #if WINDOWS_DX
+//             _mguiRenderer = new MainRenderer(
+//                 new GameRenderHost<MuGame>(this));
 
-            _mguiDesktop = new MGDesktop(_mguiRenderer);
-            _mguiHelperWindow = new MguiHelperWindow(_mguiDesktop);
-#endif
+//             _mguiDesktop = new MGDesktop(_mguiRenderer);
+//             _mguiHelperWindow = new MguiHelperWindow(_mguiDesktop);
+// #endif
 
             base.Initialize();
         }

@@ -72,7 +72,14 @@ namespace Client.Main.Controls.UI.Game.Inventory
         public int RequiredStrength { get; set; }
         public int RequiredDexterity { get; set; }
         public int RequiredEnergy { get; set; }
+        public int RequiredVitality { get; set; }
+        public int RequiredCommand { get; set; }
         public int RequiredLevel { get; set; }
+        public int SkillIndex { get; set; }
+        public int EquipmentSlot { get; set; } = -1;
+        public int SetAttribute { get; set; } = -1;
+        // Item.bmd stores the minimum job advancement, not just a class flag.
+        public byte[] ClassRequirements { get; set; } = [];
         public bool TwoHanded { get; set; }
         public int Group { get; set; }
         public bool IsExpensive { get; set; }

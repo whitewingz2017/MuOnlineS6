@@ -1191,9 +1191,9 @@ namespace Client.Main.Controls.UI.Game
 
             var lines = ItemUiHelper.BuildTooltipLines(_hoveredItem);
             const float scale = 0.44f;
-            const int lineSpacing = 4;
-            const int paddingX = 14;
-            const int paddingY = 12;
+
+            const int paddingX = 4;
+            const int paddingY = 4;
 
             int maxWidth = 0;
             int totalHeight = 0;
@@ -1201,9 +1201,9 @@ namespace Client.Main.Controls.UI.Game
             {
                 Vector2 sz = _font.MeasureString(text) * scale;
                 maxWidth = Math.Max(maxWidth, (int)MathF.Ceiling(sz.X));
-                totalHeight += (int)MathF.Ceiling(sz.Y) + lineSpacing;
+                totalHeight += ItemUiHelper.TooltipLineHeight(_font, text, scale);
             }
-            totalHeight += 6; // separator after first line
+ // separator after first line
 
             int tooltipWidth = maxWidth + paddingX * 2;
             int tooltipHeight = totalHeight + paddingY * 2;
@@ -1236,34 +1236,22 @@ namespace Client.Main.Controls.UI.Game
                 }
             }
 
-            tooltipRect.X = Math.Clamp(tooltipRect.X, 10, screenBounds.Right - tooltipRect.Width - 10);
-            tooltipRect.Y = Math.Clamp(tooltipRect.Y, 10, screenBounds.Bottom - tooltipRect.Height - 10);
+            tooltipRect.X = Math.Clamp(tooltipRect.X, 10, Math.Max(10, screenBounds.Right - tooltipRect.Width - 10));
+            tooltipRect.Y = Math.Clamp(tooltipRect.Y, 10, Math.Max(10, screenBounds.Bottom - tooltipRect.Height - 10));
 
             var pixel = GraphicsManager.Instance.Pixel;
             if (pixel == null) return;
 
-            var shadowRect = new Rectangle(tooltipRect.X + 4, tooltipRect.Y + 4, tooltipRect.Width, tooltipRect.Height);
-            spriteBatch.Draw(pixel, shadowRect, Color.Black * 0.5f);
-
-            UiDrawHelper.DrawVerticalGradient(spriteBatch, tooltipRect, new Color(20, 24, 32, 252), new Color(12, 14, 18, 254));
-
-            bool isExcellent = _hoveredItem.Details.IsExcellent;
-            bool isAncient = _hoveredItem.Details.IsAncient;
-            bool isHighLevel = _hoveredItem.Details.Level >= 7;
-
-            Color borderColor = isExcellent ? Theme.GlowExcellent :
-                                isAncient ? Theme.GlowAncient :
-                                isHighLevel ? Theme.Accent :
-                                Theme.TextWhite;
-
-            const int borderThickness = 2;
+            spriteBatch.Draw(pixel, tooltipRect, Color.Black * 0.8f);
+            Color borderColor = Color.White;
+            const int borderThickness = 1;
             spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Y, tooltipRect.Width, borderThickness), borderColor);
             spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Bottom - borderThickness, tooltipRect.Width, borderThickness), borderColor);
             spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Y, borderThickness, tooltipRect.Height), borderColor);
             spriteBatch.Draw(pixel, new Rectangle(tooltipRect.Right - borderThickness, tooltipRect.Y, borderThickness, tooltipRect.Height), borderColor);
 
             int textY = tooltipRect.Y + paddingY;
-            bool firstLine = true;
+
             foreach (var (text, color) in lines)
             {
                 Vector2 textSize = _font.MeasureString(text) * scale;
@@ -1271,19 +1259,13 @@ namespace Client.Main.Controls.UI.Game
 
                 spriteBatch.DrawString(_font, text, new Vector2(textX + 1, textY + 1), Color.Black * 0.7f,
                                        0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-                Color lineColor = firstLine ? borderColor : color;
+                Color lineColor = color;
                 spriteBatch.DrawString(_font, text, new Vector2(textX, textY), lineColor,
                                        0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
 
-                textY += (int)textSize.Y + lineSpacing;
+                textY += ItemUiHelper.TooltipLineHeight(_font, text, scale);
 
-                if (firstLine)
-                {
-                    textY += 2;
-                    spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X + 8, textY, tooltipRect.Width - 16, 1), borderColor * 0.3f);
-                    textY += 4;
-                    firstLine = false;
-                }
+
             }
         }
 

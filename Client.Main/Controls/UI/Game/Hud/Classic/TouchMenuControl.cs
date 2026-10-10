@@ -99,7 +99,7 @@ namespace Client.Main.Controls.UI.Game.Hud
                 string path = _entries[i].Icon switch
                 {
                     "inventory" => "Interface/DH/upscale_inventory.png",
-                    "settings"  => "Interface/DH/img_btn_setting.png.png",
+                    "settings"  => "Interface/DH/img_btn_setting.png",
                     "character" => "Interface/DH/Character.png",
                     "skill"     => "Interface/DH/img_new_btn_ji.png",
                     "exit"     => "Interface/DH/btn_exit.png",

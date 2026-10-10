@@ -181,6 +181,17 @@ namespace Client.Main.Scenes
             }
             catch (Exception e)
             {
+                // Shipping desktop builds may have no logger provider. Preserve initialization
+                // failures so the loading screen's short message can be diagnosed.
+                try
+                {
+                    var directory = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MuMono", "Logs");
+                    System.IO.Directory.CreateDirectory(directory);
+                    System.IO.File.AppendAllText(System.IO.Path.Combine(directory, "startup-errors.log"),
+                        $"{DateTimeOffset.Now:O} {GetType().Name}{Environment.NewLine}{e}{Environment.NewLine}");
+                }
+                catch { /* Reporting must not replace the original scene failure. */ }
                 _logger?.LogDebug($"Error during InitializeWithProgressReporting for {GetType().Name}: {e.Message}{Environment.NewLine}{e.StackTrace}");
                 Status = GameControlStatus.Error;
                 Report($"Error initializing {GetType().Name}: {e.Message}", 1.0f);
