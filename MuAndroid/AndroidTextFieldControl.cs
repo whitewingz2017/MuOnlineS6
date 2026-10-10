@@ -16,7 +16,9 @@ namespace MuAndroid
 
             Task.Run(async () =>
             {
-                var result = await KeyboardInput.Show(
+                var result = SubmitOnMobileKeyboardDone
+                    ? await ShowChatKeyboardAsync()
+                    : await KeyboardInput.Show(
                     title: Label,
                     description: Placeholder,
                     defaultText: Value,
@@ -24,13 +26,57 @@ namespace MuAndroid
                 );
 
                 if (result != null)
-                    Value = result;
+                    Client.Main.MuGame.ScheduleOnMainThread(() =>
+                    {
+                        // Ignore dialog completion after the user closed the field.
+                        if (!Visible) return;
+                        Value = result;
+                        if (SubmitOnMobileKeyboardDone)
+                            OnEnterKeyPressed();
+                    });
             }).ConfigureAwait(false);
 
 
             //// Subscribe to Android text input event (Critical for soft keyboard and scrcpy)
             //AndroidKeyboard.TextInput += OnTextInput;
             //AndroidKeyboard.Show();
+        }
+
+        private Task<string> ShowChatKeyboardAsync()
+        {
+            var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var activity = AndroidKeyboard.Activity;
+            if (activity == null) { completion.SetResult(null); return completion.Task; }
+            activity.RunOnUiThread(() =>
+            {
+                var input = new Android.Widget.EditText(activity);
+                input.SetSingleLine(true);
+                input.Text = Value;
+                input.Hint = Placeholder;
+                input.ImeOptions = Android.Views.InputMethods.ImeAction.Send;
+                var dialog = new Android.App.AlertDialog.Builder(activity)
+                    .SetTitle(Label)
+                    .SetView(input)
+                    .SetPositiveButton("Send", (_, _) => completion.TrySetResult(input.Text))
+                    .SetNegativeButton("Cancel", (_, _) => completion.TrySetResult(null))
+                    .Create();
+                input.EditorAction += (_, args) =>
+                {
+                    if (args.ActionId == Android.Views.InputMethods.ImeAction.Send ||
+                        args.ActionId == Android.Views.InputMethods.ImeAction.Done ||
+                        (args.Event?.KeyCode == Android.Views.Keycode.Enter && args.Event.Action == Android.Views.KeyEventActions.Down))
+                    {
+                        args.Handled = true;
+                        completion.TrySetResult(input.Text);
+                        dialog.Dismiss();
+                    }
+                };
+                dialog.DismissEvent += (_, _) => completion.TrySetResult(null);
+                dialog.Show();
+                input.RequestFocus();
+                dialog.Window?.SetSoftInputMode(Android.Views.SoftInput.StateAlwaysVisible);
+            });
+            return completion.Task;
         }
 
         public override void OnBlur()

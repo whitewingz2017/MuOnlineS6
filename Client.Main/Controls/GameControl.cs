@@ -257,6 +257,7 @@ namespace Client.Main.Controls
 
         protected virtual MouseState CurrentMouseState => MuGame.Instance.Mouse;
         protected virtual MouseState PreviousMouseState => MuGame.Instance.PrevMouseState;
+        public virtual bool ContainsPointerPoint(Point point) => DisplayRectangle.Contains(point);
 
         // Public Methods
         public virtual bool OnClick()
@@ -346,10 +347,8 @@ namespace Client.Main.Controls
             else
             {
                 var mouse = CurrentMouseState;
-                Rectangle rectangle = DisplayRectangle;
                 Point mousePosition = mouse.Position;
-                IsMouseOver = mousePosition.X >= rectangle.Left && mousePosition.X <= rectangle.Right &&
-                              mousePosition.Y >= rectangle.Top && mousePosition.Y <= rectangle.Bottom;
+                IsMouseOver = ContainsPointerPoint(mousePosition);
 
                 if (!Interactive)
                 {

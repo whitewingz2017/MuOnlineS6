@@ -105,7 +105,7 @@ namespace Client.Main.Controls.UI
             _backgroundAlpha = DEFAULT_BACK_ALPHA;
             // Classic is click-through until its frame is explicitly opened. Modern keeps
             // its existing message interaction behavior when the frame is hidden.
-            Interactive = !IsSeason6;
+            Interactive = UiThemeManager.CurrentId != UiThemeId.Classic && !IsSeason6;
 
             UpdateLayout(); // Initial layout calculation
         }
@@ -114,7 +114,7 @@ namespace Client.Main.Controls.UI
         {
             base.OnThemeChanged(e);
             UpdateLayout();
-            Interactive = !IsSeason6 || _showFrame;
+            Interactive = _showFrame || (UiThemeManager.CurrentId != UiThemeId.Classic && !IsSeason6);
         }
 
         public IEnumerable<string> GetPreloadTexturePaths() => s_chatLogTexturePaths;
@@ -252,7 +252,7 @@ namespace Client.Main.Controls.UI
         /// </summary>
         public void ShowFrame(bool show)
         {
-            Interactive = !IsSeason6 || show;
+            Interactive = show || (UiThemeManager.CurrentId != UiThemeId.Classic && !IsSeason6);
 
             if (_showFrame != show)
             {

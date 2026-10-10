@@ -153,6 +153,12 @@ namespace Client.Main.Controls.UI
 
             // 2. Text Input Fields
             _chatInput = TextFieldControl.Create();
+            _chatInput.SubmitOnMobileKeyboardDone = true;
+            _chatInput.EnterKeyPressed += (_, _) =>
+            {
+                if (UiThemeManager.IsMobilePlatform && Visible)
+                    ProcessEnterKey();
+            };
             _chatInput.X = 72;
             _chatInput.Y = 30;
             _chatInput.ViewSize = new Point(176, 14);

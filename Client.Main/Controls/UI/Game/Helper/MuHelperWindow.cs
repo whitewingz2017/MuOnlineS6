@@ -862,7 +862,7 @@ namespace Client.Main.Controls.UI.Game.Helper
 
             // --- Activation Skill 2 ---
             AddClassicLabel(page, "Activation Skill 2", 52, 148, 78, 12, 6.2f, ModernHudTheme.TextWhite);
-            AddClassicSkillSlot(page, string.Empty, 54, 160,
+            AddClassicSkillSlot(page, string.Empty, 52, 162,
                 () => _controller.Config.ActivationSkill2.SkillId, id => _controller.Config.ActivationSkill2.SkillId = id, ClassicSkillSlotRenderer.CellWidth, ClassicSkillSlotRenderer.CellHeight);
 
             AddClassicToggle(page, "Combo", 10, 168, () => _controller.Config.UseCombo,
@@ -875,12 +875,12 @@ namespace Client.Main.Controls.UI.Game.Helper
                 value => _controller.Config.ActivationSkill2.UseCondition = value, out _);
 
             // --- Buff Duration + 3 slots ---
-            AddClassicToggle(page, "Buff Duration", 10, 230, () => _controller.Config.BuffDuration,
+            AddClassicToggle(page, "Buff Duration", 4, 222, () => _controller.Config.BuffDuration,
                 value => _controller.Config.BuffDuration = value, out _);
             for (int i = 0; i < 3; i++)
             {
                 int slot = i;
-                AddClassicSkillSlot(page, string.Empty, 14 + i * 36, 248,
+                AddClassicSkillSlot(page, string.Empty, 14 + i * 36, 240,
                     () => _controller.Config.BuffSkillIds[slot], id => _controller.Config.BuffSkillIds[slot] = id, ClassicSkillSlotRenderer.CellWidth, ClassicSkillSlotRenderer.CellHeight);
             }
         }
@@ -1140,23 +1140,23 @@ namespace Client.Main.Controls.UI.Game.Helper
                 value => _controller.Config.RepairItem = value, out _);
 
             // --- Main pick toggles (full rows, clear of range) ---
-            AddClassicToggle(page, "Pick All Near Items", 10, 52, () => _controller.Config.PickAllItems,
+            AddClassicToggle(page, "Pick All Near Items", 10, 48, () => _controller.Config.PickAllItems,
                 value => _controller.Config.PickAllItems = value, out _);
-            AddClassicToggle(page, "Pick Selected Items", 10, 70, () => _controller.Config.PickSelectedItems,
+            AddClassicToggle(page, "Pick Selected Items", 11, 61, () => _controller.Config.PickSelectedItems,
                 value => _controller.Config.PickSelectedItems = value, out _);
 
             // --- 2x2 item filters ---
-            AddClassicToggle(page, "Jewel/Gem", 10, 96, () => _controller.Config.PickJewel,
+            AddClassicToggle(page, "Jewel/Gem", 10, 80, () => _controller.Config.PickJewel,
                 value => _controller.Config.PickJewel = value, out _);
-            AddClassicToggle(page, "Set Item", 90, 96, () => _controller.Config.PickAncient,
+            AddClassicToggle(page, "Set Item", 91, 80, () => _controller.Config.PickAncient,
                 value => _controller.Config.PickAncient = value, out _);   // or rename label only
-            AddClassicToggle(page, "Zen", 10, 114, () => _controller.Config.PickZen,
+            AddClassicToggle(page, "Zen", 11, 100, () => _controller.Config.PickZen,
                 value => _controller.Config.PickZen = value, out _);
-            AddClassicToggle(page, "Excellent Item", 90, 114, () => _controller.Config.PickExcellent,
+            AddClassicToggle(page, "Excellent Item", 90, 100, () => _controller.Config.PickExcellent,
                 value => _controller.Config.PickExcellent = value, out _);
 
             // --- Extra item filter ---
-            AddClassicToggle(page, "Add Extra Item", 10, 136, () => _controller.Config.PickExtraItems,
+            AddClassicToggle(page, "Add Extra Item", 11, 120, () => _controller.Config.PickExtraItems,
                 value => _controller.Config.PickExtraItems = value, out _);
 
             _extraItemsBox.X = 12;
@@ -2281,33 +2281,33 @@ namespace Client.Main.Controls.UI.Game.Helper
 
                 if (_extraItemsBox != null)
                 {
-                    _extraItemsBox.X = 20;
-                    _extraItemsBox.Y = 178;
+                    _extraItemsBox.X = 10;
+                    _extraItemsBox.Y = 143;
                     _extraItemsBox.ControlSize = new Point(105, 22);
                     _extraItemsBox.ViewSize = _extraItemsBox.ControlSize;
                     _extraItemsBox.FontSize = 8;
                 }
                 if (_addExtraItemButton != null)
                 {
-                    _addExtraItemButton.X = 128;
-                    _addExtraItemButton.Y = 178;
+                    _addExtraItemButton.X = 121;
+                    _addExtraItemButton.Y = 143;
                     _addExtraItemButton.ControlSize = new Point(34, 22);
                     _addExtraItemButton.ViewSize = _addExtraItemButton.ControlSize;
                     _addExtraItemButton.FontSize = 6.5f;
                 }
                 if (_extraItemsListLabel != null)
                 {
-                    _extraItemsListLabel.X = 20;
-                    _extraItemsListLabel.Y = 205;
-                    _extraItemsListLabel.ControlSize = new Point(145, 90);
+                    _extraItemsListLabel.X = 8;
+                    _extraItemsListLabel.Y = 170;
+                    _extraItemsListLabel.ControlSize = new Point(148, 63);
                     _extraItemsListLabel.ViewSize = _extraItemsListLabel.ControlSize;
                     _extraItemsListLabel.FontSize = 6.5f;
                 }
                 if (_deleteExtraItemButton != null)
                 {
-                    _deleteExtraItemButton.X = 116;
-                    _deleteExtraItemButton.Y = 300;
-                    _deleteExtraItemButton.ControlSize = new Point(48, 22);
+                    _deleteExtraItemButton.X = 121;
+                    _deleteExtraItemButton.Y = 240;
+                    _deleteExtraItemButton.ControlSize = new Point(34, 22);
                     _deleteExtraItemButton.ViewSize = _deleteExtraItemButton.ControlSize;
                     _deleteExtraItemButton.FontSize = 6.5f;
                 }

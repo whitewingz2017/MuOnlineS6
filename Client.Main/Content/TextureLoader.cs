@@ -166,7 +166,7 @@ namespace Client.Main.Content
                 }
                 else
                 {
-                    string resourcePath = Path.ChangeExtension(path, reader.GetType().Name.Replace("Reader", ""));
+                    string resourcePath = ext == ".png" ? path : Path.ChangeExtension(path, reader.GetType().Name.Replace("Reader", ""));
                     if (!_bundledUiResources.Value.TryGetValue(NormalizePathKey(resourcePath), out string resourceName))
                         return null;
 
@@ -214,7 +214,7 @@ namespace Client.Main.Content
             if (!_readers.TryGetValue(ext, out var reader)) return null;
 
             // Determine expected extension based on reader type logic (legacy MU logic)
-            string expectedExtension = reader.GetType().Name.ToLowerInvariant().Replace("reader", "");
+            string expectedExtension = ext == ".png" ? "png" : reader.GetType().Name.ToLowerInvariant().Replace("reader", "");
 
             // 1. Try path with correct extension
             string expectedFilePath = Path.ChangeExtension(fullPath, expectedExtension);

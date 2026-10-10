@@ -47,6 +47,9 @@ namespace Client.Main.Controls.UI.Game.Map
         private Texture2D? _btnSetup;
         private Texture2D? _btnStart;
         private Texture2D? _btnStop;
+        private Texture2D? _microSetup;
+        private Texture2D? _microStart;
+        private Texture2D? _microStop;
 
         private bool _texturesLoaded;
         private bool _texturesLoading;
@@ -144,6 +147,8 @@ namespace Client.Main.Controls.UI.Game.Map
         private bool UseOriginalLocationBar =>
             UiThemeManager.CurrentId == UiThemeId.Classic ||
             (MuGame.AppSettings?.HudTheme ?? HudTheme.Hybrid) != HudTheme.ClassicPc;
+
+        private bool UseMicroHelperButtons => UseOriginalLocationBar;
 
         public Point GetBuffAnchor(int gap)
 
@@ -349,7 +354,7 @@ namespace Client.Main.Controls.UI.Game.Map
             int plateWidth = ScaleOriginal(OriginalPlateWidth, scale);
             int height = ScaleOriginal(OriginalBaseHeight, scale);
             int gap = ScaleOriginal(OriginalButtonGap, scale);
-            int buttonWidth = ScaleOriginal(OriginalButtonWidth, scale);
+            int buttonWidth = ScaleOriginal(UseMicroHelperButtons ? OriginalButtonHeight : OriginalButtonWidth, scale);
             int buttonHeight = ScaleOriginal(OriginalButtonHeight, scale);
 
             ControlSize = new Point(plateWidth + gap + (buttonWidth * 2) + gap, height);
@@ -418,16 +423,31 @@ namespace Client.Main.Controls.UI.Game.Map
                 ModernHudTheme.Accent * 0.3f * Alpha, size: 6, thickness: 1);
 
             int gap = ScaleOriginal(OriginalButtonGap, wScale);
-            int buttonWidth = ScaleOriginal(OriginalButtonWidth, wScale);
+            int buttonWidth = ScaleOriginal(UseMicroHelperButtons ? OriginalButtonHeight : OriginalButtonWidth, wScale);
             int buttonHeight = ScaleOriginal(OriginalButtonHeight, wScale);
             int buttonY = plate.Y + Math.Max(0, (plate.Height - buttonHeight) / 2);
             _hitSetup = new Rectangle(plate.Right + gap, buttonY, buttonWidth, buttonHeight);
             _hitStartStop = new Rectangle(_hitSetup.Right + gap, buttonY, buttonWidth, buttonHeight);
 
-            DrawThemedHelperButton(spriteBatch, _hitSetup, "Setup", false);
-            DrawThemedHelperButton(spriteBatch, _hitStartStop,
-                _scene.IsMuHelperActive ? "Stop" : "Start",
-                _scene.IsMuHelperActive);
+            if (!UseMicroHelperButtons || !DrawMicroHelperButton(spriteBatch, _microSetup, _hitSetup))
+                DrawThemedHelperButton(spriteBatch, _hitSetup, "Setup", false);
+            if (!UseMicroHelperButtons || !DrawMicroHelperButton(spriteBatch,
+                _scene.IsMuHelperActive ? _microStop : _microStart, _hitStartStop))
+                DrawThemedHelperButton(spriteBatch, _hitStartStop,
+                    _scene.IsMuHelperActive ? "Stop" : "Start", _scene.IsMuHelperActive);
+        }
+
+        private bool DrawMicroHelperButton(SpriteBatch spriteBatch, Texture2D? texture, Rectangle destination)
+        {
+            // MicroUI_B has three authored 29x29 states, padded to 32x128 by the loader.
+            const int frameSize = 29;
+            if (texture == null || texture.Width < frameSize || texture.Height < frameSize * 3)
+                return false;
+            bool hovered = destination.Contains(MuGame.Instance.UiMouseState.Position);
+            bool pressed = hovered && MuGame.Instance.UiMouseState.LeftButton == ButtonState.Pressed;
+            int frame = pressed ? 2 : hovered ? 1 : 0;
+            spriteBatch.Draw(texture, destination, new Rectangle(0, frame * frameSize, frameSize, frameSize), Color.White * Alpha);
+            return true;
         }
 
         private void DrawThemedHelperButton(SpriteBatch spriteBatch, Rectangle destination, string text, bool active)
@@ -544,6 +564,10 @@ namespace Client.Main.Controls.UI.Game.Map
                 _btnStop =
                     await UiThemeManager.LoadThemeTextureAsync(
                         "Interface/MacroUI/MacroUI_Stop.OZT");
+
+                _microSetup = await UiThemeManager.LoadThemeTextureAsync("Interface/MicroUI_B/MacroUI_BSetup.ozt");
+                _microStart = await UiThemeManager.LoadThemeTextureAsync("Interface/MicroUI_B/MacroUI_BStart.ozt");
+                _microStop = await UiThemeManager.LoadThemeTextureAsync("Interface/MicroUI_B/MacroUI_Stop.ozt");
             }
             catch
             {

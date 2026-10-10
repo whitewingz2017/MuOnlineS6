@@ -1088,7 +1088,7 @@ namespace Client.Main.Controls.UI.Game.PauseMenu
             {
                 BuildCategory("Interface", (ref int currentY) =>
                 {
-                    if (UiThemeManager.IsMobilePlatform)
+                    if (UiThemeManager.CanUseMobileInterface)
                     {
                         AddOption(
                             "Classic Phone",
@@ -1098,7 +1098,7 @@ namespace Client.Main.Controls.UI.Game.PauseMenu
                             OptionRowHeight);
                         AddHeading("Classic Phone includes touch controls and the virtual joystick.", ref currentY);
                     }
-                    else
+                    if (!UiThemeManager.IsMobilePlatform)
                     {
                         AddOption(
                             "Hybrid Theme",

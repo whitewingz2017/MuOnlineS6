@@ -192,9 +192,20 @@ public static class UiThemeManager
     public static event EventHandler<UiThemeChangedEventArgs>? ThemeChanged;
 
     public static bool IsMobilePlatform => OperatingSystem.IsAndroid() || OperatingSystem.IsIOS();
+    public static bool CanUseMobileInterface
+    {
+        get
+        {
+#if DEBUG
+            return true;
+#else
+            return IsMobilePlatform;
+#endif
+        }
+    }
     public static UiThemeDefinition Current => _current;
     public static UiThemeId CurrentId => _current.Id;
-    public static IReadOnlyList<UiThemeDefinition> AvailableThemes => IsMobilePlatform ? _mobileThemes : _desktopThemes;
+    public static IReadOnlyList<UiThemeDefinition> AvailableThemes => CanUseMobileInterface ? _mobileThemes : _desktopThemes;
 
     public static void ConfigurePersistence(Action<UiThemeId> persist)
     {
@@ -210,10 +221,10 @@ public static class UiThemeManager
                 configuredTheme);
             parsed = UiThemeId.Modern;
         }
-        else if (!IsMobilePlatform && parsed == UiThemeId.Classic)
+        else if (!CanUseMobileInterface && parsed == UiThemeId.Classic)
         {
             (logger ?? _logger)?.LogInformation(
-                "The Classic Phone UI is available only on mobile platforms. Falling back to Modern.");
+                "The Classic Phone UI is unavailable in desktop Release builds. Falling back to Modern.");
             parsed = UiThemeId.Modern;
         }
 
@@ -239,7 +250,7 @@ public static class UiThemeManager
 
     public static bool SetTheme(UiThemeId theme, bool persist = true)
     {
-        if (!Enum.IsDefined(theme) || (!IsMobilePlatform && theme == UiThemeId.Classic))
+        if (!Enum.IsDefined(theme) || (!CanUseMobileInterface && theme == UiThemeId.Classic))
             theme = UiThemeId.Modern;
 
         UiThemeDefinition next = GetDefinition(theme);

@@ -1303,6 +1303,19 @@ namespace Client.Main.Scenes
                 _partyPanel.BringToFront();
         }
 
+        internal void ToggleMobileMap()
+        {
+            if (NpcShopControl.Instance.Visible) return;
+            _moveCommandWindow?.ToggleVisibility();
+            if (_moveCommandWindow?.Visible == true) _moveCommandWindow.BringToFront();
+        }
+        internal void OpenMobileChat()
+        {
+            if (_chatInput == null) return;
+            if (_chatInput.Visible) _chatInput.Hide();
+            else _chatInput.Show();
+        }
+
         internal void ShowClassicOptions()
         {
             _pauseMenu?.ShowOptionsPanel();
@@ -1494,6 +1507,8 @@ namespace Client.Main.Scenes
             }
             if (_classicTouchMenu != null)
             {
+                if (classic && !_classicTouchMenu.Visible)
+                    _classicTouchMenu.Open();
                 _classicTouchMenu.Visible = classic;
                 _classicTouchMenu.Interactive = classic;
                 if (!classic)

@@ -507,10 +507,7 @@ namespace Client.Main.Scenes
                 return false;
             }
 
-            return point.X >= rect.X
-                && point.X < rect.Right
-                && point.Y >= rect.Y
-                && point.Y < rect.Bottom;
+            return control.ContainsPointerPoint(point);
         }
 
         private static bool ShouldUiControlCapturePointer(GameControl control, bool interactiveOnly)

@@ -79,6 +79,7 @@ namespace Client.Main.Controls.UI
         }
 
         public bool MaskValue { get; set; }
+        public bool SubmitOnMobileKeyboardDone { get; set; }
         public event EventHandler ValueChanged;
         public event EventHandler EnterKeyPressed;
 

@@ -156,7 +156,9 @@ namespace Client.Main.Controls.UI.Game.Hud
             // The current WalkerObject API does not expose the internal path queue.
             // Re-emit only when the current movement step has completed; direction
             // changes still re-target immediately.
-            bool pathLow = !hero.IsMoving;
+            // An asynchronous path request is already movement intent. Replacing it
+            // every frame can prevent Android from ever finishing the first path.
+            bool pathLow = !hero.IsMoving && !hero.MovementIntent;
             if (!dirChanged && !pathLow)
                 return;
 

@@ -289,7 +289,7 @@ namespace Client.Main
             // DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
             #if WINDOWS_DX
                 // PC development/client data location
-                DataPath = @"C:\OpenMU\Data";
+                DataPath = @"C:\MuOnline_Source\Main5.2-main\Source Main 5.2\bin\Data";
             #else
                 // Android and other platforms use the application's Data directory
                 DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");

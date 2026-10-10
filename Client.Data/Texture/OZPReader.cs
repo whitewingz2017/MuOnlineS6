@@ -10,8 +10,13 @@ namespace Client.Data.Texture
 
         protected override TextureData Read(byte[] buffer)
         {
-            if (buffer[0] == 137 && buffer[1] == 'P' && buffer[2] == 'N' && buffer[3] == 'G')
-                return this.ReadPNG(buffer[4..]);
+            if (buffer.Length >= 8 && buffer[0] == 137 && buffer[1] == 'P' && buffer[2] == 'N' && buffer[3] == 'G')
+            {
+                // Plain PNGs have the complete signature here; OZP adds a four-byte
+                // prefix before that signature. Both share this reader.
+                return this.ReadPNG(buffer[4] == 13 && buffer[5] == 10 && buffer[6] == 26 && buffer[7] == 10
+                    ? buffer : buffer[4..]);
+            }
 
             throw new ApplicationException($"Invalid file format");
         }
