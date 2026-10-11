@@ -23,7 +23,9 @@ namespace Client.Main.Controls.UI.Game.Hud
     /// </summary>
     public sealed class TouchActionButtonsControl : UIControl
     {
-        private const string AttackTexPath = "Interface/DH/mi_attack.OZP";
+        private const string AttackTexPath = "Interface/DH/Attack.png";
+        private bool _holdingAttack;
+        private int _heldSkill = -1;
         private const string SkillFrameTexPath = "Interface/DH/mi_skill_frame.OZP";
         private const string SkillGlowTexPath = "Interface/DH/mi_skill_glow.OZP";
         // Skill Settings socket stack: silver ring from bg_allShow, ty_bg_skillBg disc,
@@ -31,8 +33,6 @@ namespace Client.Main.Controls.UI.Game.Hud
         private const string SocketRingTexPath = "Interface/SkillWin/socket_ring.OZP";
         private const string HoleBaseTexPath = "Interface/SkillWin/hole_base.OZP";
         private const string HoleGlowTexPath = "Interface/SkillWin/hole_glow.OZP";
-        private const string AttackRingTexPath = "Interface/SkillWin/attack_ring.OZP";
-        private const string AttackIconTexPath = "Interface/SkillWin/attack_icon.OZP";
 
         // Keep all seven skill slots available and use a separate circular target for reset.
         private const int ResetSize = 56;
@@ -81,8 +81,6 @@ namespace Client.Main.Controls.UI.Game.Hud
         private Texture2D _texSocketRing;
         private Texture2D _texHoleBase;
         private Texture2D _texHoleGlow;
-        private Texture2D _texAttackRing;
-        private Texture2D _texAttackIcon;
         private UiThemeId _loadedTheme = (UiThemeId)(-1);
 
         private Rectangle _attackRect;
@@ -122,8 +120,6 @@ namespace Client.Main.Controls.UI.Game.Hud
             try { _texSocketRing = await UiThemeManager.LoadThemeTextureAsync(SocketRingTexPath); } catch { _texSocketRing = null; }
             try { _texHoleBase = await UiThemeManager.LoadThemeTextureAsync(HoleBaseTexPath); } catch { _texHoleBase = null; }
             try { _texHoleGlow = await UiThemeManager.LoadThemeTextureAsync(HoleGlowTexPath); } catch { _texHoleGlow = null; }
-            try { _texAttackRing = await UiThemeManager.LoadThemeTextureAsync(AttackRingTexPath); } catch { _texAttackRing = null; }
-            try { _texAttackIcon = await UiThemeManager.LoadThemeTextureAsync(AttackIconTexPath); } catch { _texAttackIcon = null; }
             _loadedTheme = UiThemeManager.CurrentId;
         }
 
@@ -159,14 +155,20 @@ namespace Client.Main.Controls.UI.Game.Hud
         public override void Update(GameTime gameTime)
         {
             base.Update(gameTime);
-            if (!Visible || Scene is not GameScene gs)
+            if (!Visible || Scene is not GameScene gs || MuGame.Network is { IsConnected: false })
+            {
+                _holdingAttack = false;
+                _heldSkill = -1;
                 return;
+            }
 
             LayoutButtons();
 
             // Em fade (menu/painel abertos) o cluster não captura toques.
             if (MasterAlpha < 0.95f)
             {
+                _holdingAttack = false;
+                _heldSkill = -1;
                 _attackPressed = false;
                 _pressedSkill = -1;
                 return;
@@ -191,13 +193,24 @@ namespace Client.Main.Controls.UI.Game.Hud
             }
             if (down && hitSkill >= 0) _pressedSkill = hitSkill;
 
-            if (justPressed && hitSkill >= 0)
+            if (!down)
+            {
+                _holdingAttack = false;
+                _heldSkill = -1;
+            }
+            else if (justPressed)
+            {
+                _heldSkill = hitSkill;
+                _holdingAttack = hitSkill < 0 && _attackRect.Contains(p);
+            }
+
+            if (down && hitSkill >= 0 && _heldSkill == hitSkill)
             {
                 Scene.SetMouseInputConsumed();
                 SkillEntryState skill = hitSkill < skills.Count ? skills[hitSkill] : null;
                 if (skill != null)
                     CastSkill(gs, skill);
-                else
+                else if (justPressed)
                     gs.ModernHud?.BeginSkillAssignment(hitSkill);
             }
             else if (justPressed && _resetRect.Contains(p))
@@ -205,7 +218,7 @@ namespace Client.Main.Controls.UI.Game.Hud
                 Scene.SetMouseInputConsumed();
                 gs.ModernHud?.ResetActiveSkillSet();
             }
-            else if (justPressed && _attackRect.Contains(p))
+            else if (down && _holdingAttack && _attackRect.Contains(p))
             {
                 Scene.SetMouseInputConsumed();
                 DoAttack(gs);
@@ -218,33 +231,35 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         private void DoAttack(GameScene gs)
         {
-            var target = FindNearestMonster(gs);
+            if (gs.Hero == null || gs.Hero.IsMoving || gs.Hero.MovementIntent)
+                return;
+            var target = FindNearestMonster(gs, gs.Hero.GetAttackRangeTiles());
             if (target != null)
                 gs.Hero.Attack(target);
         }
 
         private void CastSkill(GameScene gs, SkillEntryState skill)
         {
-            var target = FindNearestMonster(gs);
+            var target = FindNearestMonster(gs, gs.SkillController?.GetCastRange(skill.SkillId, hasTarget: true) ?? 0f);
             gs.SkillController?.CastSkillFromHotbar(skill, target);
         }
 
-        private static MonsterObject FindNearestMonster(GameScene gs)
+        private static MonsterObject FindNearestMonster(GameScene gs, float range)
         {
             var world = gs.World;
             var hero = gs.Hero;
             if (world?.Monsters == null || hero == null)
                 return null;
             MonsterObject nearest = null;
-            float best = float.MaxValue;
+            float best = range * range;
             var hloc = hero.Location;
             var monsters = world.Monsters;
             for (int i = 0; i < monsters.Count; i++)
             {
                 var m = monsters[i];
-                if (m == null || m.IsDead || m.World != world) continue;
+                if (m == null || m.IsDead || !m.Visible || m.World != world) continue;
                 float d = Vector2.DistanceSquared(hloc, m.Location);
-                if (d < best) { best = d; nearest = m; }
+                if (d <= best) { best = d; nearest = m; }
             }
             return nearest;
         }
@@ -336,40 +351,21 @@ namespace Client.Main.Controls.UI.Game.Hud
                 }
             }
 
-            // Botão de ataque (o maior): disco escuro + aro Attack.png do mobile (o mesmo
-            // da tela Skill Settings) emoldurando o emblema.
+            // Attack.png contains the complete button artwork, including its border.
             {
                 float a = (_attackPressed ? 0.7f : 1f) * MasterAlpha;
                 var rect = _attackPressed ? Shrink(_attackRect, 4) : _attackRect;
-                // SEM DrawDisc embaixo: o scanline tem borda dura (escada) e vaza além do
-                // aro — o interior escuro já vem ASSADO no Attack.png, como no settings.
-                if (pixel != null && !Tex(_texAttackRing))
-                    DrawDisc(sb, pixel, Mid(rect), rect.Width / 2f - 2f, new Color(22, 20, 18) * (0.80f * a));
-                if (Tex(_texAttackRing))
+                if (Tex(_texAttack))
                 {
-                    // Attack.png é 142x133 (não quadrado) e tem interior escuro assado:
-                    // desenha ANTES do emblema (ordem do settings: ring → icon).
                     var mid = Mid(rect);
-                    int rw = rect.Width;
-                    int rh = (int)MathF.Round(rw * 133f / 142f);
-                    sb.Draw(_texAttackRing, new Rectangle((int)(mid.X - rw / 2f), (int)(mid.Y - rh / 2f), rw, rh), Color.White * a);
+                    float scale = MathF.Min(rect.Width / (float)_texAttack.Width, rect.Height / (float)_texAttack.Height);
+                    int width = (int)MathF.Round(_texAttack.Width * scale);
+                    int height = (int)MathF.Round(_texAttack.Height * scale);
+                    sb.Draw(_texAttack, new Rectangle((int)(mid.X - width / 2f), (int)(mid.Y - height / 2f), width, height), Color.White * a);
                 }
-                // Emblema btn_AttackChange (84x94 no aro 142x133, o mesmo do settings):
-                // o mi_attack do DH é escuro e some sobre o interior assado do Attack.png.
-                if (Tex(_texAttackIcon))
-                {
-                    var mid2 = Mid(rect);
-                    // Espada reduzida 15% (estava grande demais): fator 0.85 sobre a
-                    // proporção original 84x94 do emblema.
-                    const float IconScale = 0.85f;
-                    int iw = (int)MathF.Round(rect.Width * 84f / 142f * IconScale);
-                    int ih = (int)MathF.Round(rect.Height * 94f / 133f * IconScale);
-                    sb.Draw(_texAttackIcon, new Rectangle((int)(mid2.X - iw / 2f), (int)(mid2.Y - ih / 2f), iw, ih), Color.White * a);
-                }
-                else if (_texAttack != null && !_texAttack.IsDisposed)
-                    sb.Draw(_texAttack, rect, Color.White * a);
+                else if (pixel != null)
+                    DrawDisc(sb, pixel, Mid(rect), rect.Width / 2f - 2f, new Color(22, 20, 18) * (0.80f * a));
             }
-
             // Restaura o batch padrão da cena (PointClamp) pros próximos controles.
             sb.End();
             sb.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, null, null, null, UiScaler.SpriteTransform);

@@ -618,7 +618,7 @@ namespace Client.Main.Scenes
                    skillId <= DarkRavenCommandLastSkillId;
         }
 
-        private float GetCastRange(ushort skillId, bool hasTarget)
+        internal float GetCastRange(ushort skillId, bool hasTarget)
         {
             var state = MuGame.Network?.GetCharacterState();
             ushort map = _scene.World?.MapId ?? 0;

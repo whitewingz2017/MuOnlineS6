@@ -536,7 +536,7 @@ namespace Client.Main.Models
         PlayerAttackDeathCannon = 138,
         PlayerAttackRemoval = 139,
         PlayerAttackStun = 140,
-        PlayerShock = 141,
+        PlayerHighShock = 141,
 
         PlayerStopTwoHandSwordTwo = 142,
         PlayerWalkTwoHandSwordTwo = 143,
@@ -629,7 +629,7 @@ namespace Client.Main.Models
         PlayerPointDance = 227, // Dance?
         PlayerRush1 = 228, // Charge?
         PlayerComeUp = 229,
-        ActionUnknown230 = 230,
+        PlayerShock = 230,
         PlayerDie1 = 231,
         PlayerDie2 = 232,
         PlayerSit1 = 233,

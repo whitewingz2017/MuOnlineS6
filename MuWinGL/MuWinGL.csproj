@@ -10,7 +10,7 @@
 
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Icon.ico</ApplicationIcon>
-    <AssemblyName>MuMono</AssemblyName>
+    <AssemblyName>TwinMU</AssemblyName>
     <UseSourceGenerators>true</UseSourceGenerators>
     <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
   </PropertyGroup>

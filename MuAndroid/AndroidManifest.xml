@@ -12,7 +12,7 @@
   <!-- minSdk, targetSdk and version metadata are generated from MuAndroid.csproj. -->
   <application
       android:hardwareAccelerated="true"
-      android:label="MuMono"
+      android:label="TwinMU"
       android:icon="@mipmap/ic_launcher"
       android:roundIcon="@mipmap/ic_launcher"
       android:usesCleartextTraffic="true"

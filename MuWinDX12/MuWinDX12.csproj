@@ -10,7 +10,7 @@
 
     <MonoGamePlatform>WindowsDX12</MonoGamePlatform>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>MuMonoDX12</AssemblyName>
+    <AssemblyName>TwinMUDX12</AssemblyName>
     <UseSourceGenerators>true</UseSourceGenerators>
     <DefineConstants>$(DefineConstants);WINDOWS;WINDOWS_DX12;NATIVE_BACKEND</DefineConstants>
   </PropertyGroup>

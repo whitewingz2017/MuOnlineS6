@@ -446,7 +446,7 @@ public static class UiThemeManager
             [UiThemeAsset.BottomBarBarOverlayRight] = "Interface/DH/mi_bar_overlay_right.OZP",
             [UiThemeAsset.BottomBarSkillFrame] = "Interface/DH/mi_skill_frame.OZP",
             [UiThemeAsset.BottomBarSkillGlow] = "Interface/DH/mi_skill_glow.OZP",
-            [UiThemeAsset.BottomBarAttack] = "Interface/DH/mi_attack.OZP",
+            [UiThemeAsset.BottomBarAttack] = "Interface/DH/Attack.png",
             [UiThemeAsset.TouchMenuNotification] = "Interface/DH/mi_btn_notification.OZP",
             [UiThemeAsset.TouchMenuSettings] = "Interface/DH/mi_btn_menu.OZP",
             [UiThemeAsset.TouchMenuBag] = "Interface/DH/mi_btn_bag.OZP",

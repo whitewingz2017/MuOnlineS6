@@ -210,6 +210,7 @@ namespace Client.Main
         // Constructors
         public MuGame()
         {
+            Window.Title = "TwinMU";
             _mainThreadId = Environment.CurrentManagedThreadId;
             Instance = this;
 

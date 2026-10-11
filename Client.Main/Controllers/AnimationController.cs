@@ -357,7 +357,7 @@ namespace Client.Main.Controllers
             PlayerAction.PlayerRageUniRun or PlayerAction.PlayerRageUniRunOneRight
                                                                                => AnimationType.Walk,
 
-            PlayerAction.PlayerShock => AnimationType.Emote,
+            PlayerAction.PlayerHighShock or PlayerAction.PlayerShock => AnimationType.Emote,
             PlayerAction attackAction when attackAction >= PlayerAction.PlayerAttackFist && attackAction <= PlayerAction.PlayerAttackRideCrossbow
                                                                                => AnimationType.Attack,
             PlayerAction attackUpAction when attackUpAction >= PlayerAction.PlayerAttackBowUp && attackUpAction <= PlayerAction.PlayerAttackStun

@@ -1096,6 +1096,9 @@ namespace Client.Main.Core.Client
         /// </summary>
         public bool HasInventoryItem(byte slot) => _inventoryItems.ContainsKey(slot);
 
+        internal int GetInventoryItemLevel(byte slot) =>
+            _inventoryItems.TryGetValue(slot, out var data) ? ItemDatabase.ParseItemDetails(data).Level : 0;
+
         private void RaiseHealth() => HealthChanged?.Invoke(CurrentHealth, MaximumHealth);
         private void RaiseMana() => ManaChanged?.Invoke(CurrentMana, MaximumMana);
 

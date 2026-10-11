@@ -306,6 +306,19 @@ namespace Client.Main.Objects
             // Override to play hit sound.
         }
 
+        internal void PlayDamageReaction(uint damage)
+        {
+            if (damage == 0 || IsDead)
+                return;
+            OnReceiveDamage();
+            bool usesPlayerRig = this is Monsters.SkeletonWarrior or Monsters.SkeletonArcher or Monsters.EliteSkeleton;
+            if (!usesPlayerRig && CurrentAction is (int)MonsterActionType.Attack1 or (int)MonsterActionType.Attack2)
+                return;
+            if (usesPlayerRig)
+                StopMovement();
+            PlayAction((ushort)MonsterActionType.Shock);
+        }
+
         /// <summary>
         /// Whether the standard hit-blood burst is spawned when this monster is damaged.
         /// SourceMain5.2 hit-blood loop (ZzzCharacter.cpp:4712) only skips MODEL_GHOST

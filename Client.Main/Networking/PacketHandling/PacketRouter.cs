@@ -147,7 +147,17 @@ namespace Client.Main.Networking.PacketHandling
         {
             _logger.LogWarning("Disconnected from {Server}.", _isConnectServerRouting ? "Connect Server" : "Game Server");
             MuGame.ScheduleOnMainThread(_fortitudeBuffs.Clear);
-            // TODO: Reset client state as needed, e.g. _networkManager.SetInGameStatus(false);
+            if (!_isConnectServerRouting)
+            {
+                MuGame.ScheduleOnMainThread(() =>
+                {
+                    if (MuGame.Instance.ActiveScene is Client.Main.Scenes.GameScene scene)
+                    {
+                        scene.Hero?.StopMovement();
+                        Client.Main.Controls.UI.MessageWindow.Show("Connection to the game server was lost. Please return to server selection.");
+                    }
+                });
+            }
             return Task.CompletedTask;
         }
 

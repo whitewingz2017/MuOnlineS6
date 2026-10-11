@@ -1841,8 +1841,9 @@ namespace Client.Main.Objects.Player
         {
             if (IsMainWalker)
             {
-                bootsLevel = Boots?.ItemLevel ?? 0;
-                glovesLevel = Gloves?.ItemLevel ?? 0;
+                var state = MuGame.Network?.GetCharacterState();
+                bootsLevel = state?.GetInventoryItemLevel(InventoryConstants.BootsSlot) ?? 0;
+                glovesLevel = state?.GetInventoryItemLevel(InventoryConstants.GlovesSlot) ?? 0;
                 return;
             }
 
@@ -1851,7 +1852,11 @@ namespace Client.Main.Objects.Player
         }
 
         private static bool IsUnderwaterRunMap(short worldIndex) =>
-            worldIndex == 8 || worldIndex == 68; // Atlans + Doppelganger Underwater
+            worldIndex == 8 || worldIndex == 68 || worldIndex is >= 24 and <= 29 || worldIndex == 36;
+
+        internal static bool CanRunWithoutEquipment(CharacterClassNumber characterClass) =>
+            characterClass is CharacterClassNumber.MagicGladiator or CharacterClassNumber.DuelMaster ||
+            IsDarkLordClass(characterClass) || IsRageFighterClass(characterClass);
 
         private static bool IsFenrirVehicle(short vehicleIndex) =>
             vehicleIndex >= 11 && vehicleIndex <= 18;
@@ -1891,9 +1896,7 @@ namespace Client.Main.Objects.Player
             bool hasRunItem = useGlovesForRun ? glovesLevel >= 5 : bootsLevel >= 5;
 
             bool canRun =
-                IsDarkKnightClass(CharacterClass) ||
-                IsDarkLordClass(CharacterClass) ||
-                IsRageFighterClass(CharacterClass) ||
+                CanRunWithoutEquipment(CharacterClass) ||
                 hasRunItem ||
                 hasFenrir;
 

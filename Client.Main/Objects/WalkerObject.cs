@@ -29,6 +29,8 @@ namespace Client.Main.Objects
         protected Queue<Vector2> _currentPath;   // FIFO – cheaper removal than List.RemoveAt(0)
         private uint _moveRequestVersion;
         private CancellationTokenSource _pathRequestCancellation;
+        private Task _walkSendTail = Task.CompletedTask;
+        private int _walkSendGeneration;
 
         public static int LastPathLength { get; private set; }
         public static double LastPathApplyMs { get; private set; }
@@ -199,6 +201,7 @@ namespace Client.Main.Objects
 
         public void Reset()
         {
+            Interlocked.Increment(ref _walkSendGeneration);
             _currentPath = null;
             MoveTargetPosition = Vector3.Zero;
             _movementIntent = false;
@@ -218,6 +221,11 @@ namespace Client.Main.Objects
         /// </summary>
         public void StopMovement()
         {
+            // Interrupted paths must not leave a pending intent that blocks the
+            // next joystick command, or allow an older async path to restart us.
+            unchecked { ++_moveRequestVersion; }
+            CancelPendingPathRequest();
+            _movementIntent = false;
             _currentPath?.Clear();
             _currentPath = null;
 
@@ -232,6 +240,14 @@ namespace Client.Main.Objects
 
             // Align target angle with current rotation to prevent snapping
             _targetAngle = Angle;
+        }
+
+        internal void ApplyServerPosition(Vector2 location)
+        {
+            Interlocked.Increment(ref _walkSendGeneration);
+            StopMovement();
+            Location = location;
+            SnapToTerrainHeight();
         }
 
         public void OnDirectionChanged()
@@ -344,6 +360,10 @@ namespace Client.Main.Objects
         /// </summary>
         public void PlayAction(ushort actionIndex, bool fromServer = false)
         {
+            // MuMain SetAction does not restart the same damage reaction.
+            if (this is MonsterObject && actionIndex == (ushort)MonsterActionType.Shock &&
+                CurrentAction == actionIndex && IsOneShotPlaying)
+                return;
             // If we re-trigger a one-shot while already in the same action, restart it.
             // This avoids "stuck" or jittery attacks/skills at low FPS / packet bursts.
             if (_priorActionIndex == actionIndex)
@@ -367,6 +387,8 @@ namespace Client.Main.Objects
 
         public virtual void MoveTo(Vector2 targetLocation, bool sendToServer = true, bool usePathfinding = true, float stopWithinRange = 0f)
         {
+            if (sendToServer && IsMainWalker && MuGame.Network is { IsConnected: false })
+                return;
             if (World == null || targetLocation == Location || !this.IsAlive())
                 return;
 
@@ -565,7 +587,15 @@ namespace Client.Main.Objects
                     // Packet construction and socket synchronization may run before the first
                     // await. Defer the complete send so path publication remains a small mutation.
                     long sendScheduleStarted = Stopwatch.GetTimestamp();
-                    _ = Task.Run(() => SendWalkDirectionsToServerSafelyAsync(preparedDirections, start));
+                    Task previousSend = _walkSendTail;
+                    int generation = _walkSendGeneration;
+                    byte[] directionsToSend = preparedDirections;
+                    _walkSendTail = Task.Run(async () =>
+                    {
+                        await previousSend.ConfigureAwait(false);
+                        if (generation == Volatile.Read(ref _walkSendGeneration))
+                            await SendWalkDirectionsToServerSafelyAsync(directionsToSend, start).ConfigureAwait(false);
+                    });
                     LastPathSendScheduleMs = Stopwatch.GetElapsedTime(sendScheduleStarted).TotalMilliseconds;
                 }
             }
@@ -718,6 +748,11 @@ namespace Client.Main.Objects
             if (remainingDistanceSq <= 0.0001f)
             {
                 MoveTargetPosition = targetPosition;
+                // A correction or floating-point rounding can reach the target
+                // before the normal final-step branch. Complete that path here too.
+                // A null path may still represent an initial async path request.
+                if (_currentPath != null && _currentPath.Count == 0)
+                    _movementIntent = false;
                 UpdateCameraPosition(MoveTargetPosition);
                 return;
             }
@@ -906,6 +941,7 @@ namespace Client.Main.Objects
 
         public override void Dispose()
         {
+            Interlocked.Increment(ref _walkSendGeneration);
             MovementStepCompleted = null;
             CancelPendingPathRequest();
             base.Dispose();

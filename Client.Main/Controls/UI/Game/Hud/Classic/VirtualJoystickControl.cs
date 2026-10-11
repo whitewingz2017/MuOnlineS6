@@ -72,7 +72,7 @@ namespace Client.Main.Controls.UI.Game.Hud
         {
             base.Update(gameTime);
 
-            if (!Visible || Scene == null)
+            if (!Visible || Scene == null || MuGame.Network is { IsConnected: false })
             {
                 _active = false;
                 _knob = Vector2.Zero;

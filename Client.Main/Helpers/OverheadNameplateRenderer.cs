@@ -158,6 +158,8 @@ namespace Client.Main.Helpers
                 return;
 
             float scale = MathF.Max(renderScale, 0.1f);
+            if (Client.Main.Controls.UI.UiThemeManager.IsMobilePlatform)
+                scale = MathF.Max(scale, MathF.Min(UiScaler.ScaleX, UiScaler.ScaleY) * 1.25f);
             float nameScale = BaseNameScale * scale;
             Vector2 nameSize = font.MeasureString(name) * nameScale;
 

@@ -14,7 +14,7 @@
     <_Command Condition="'$(OS)' == 'Windows_NT'">set "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1" &amp;&amp; "$(DotnetCommand)" "$(MGCBCommand)"</_Command>
     <_Command Condition="'$(OS)' != 'Windows_NT'">DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 "$(DotnetCommand)" "$(MGCBCommand)"</_Command>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>MuMonoVK</AssemblyName>
+    <AssemblyName>TwinMUVK</AssemblyName>
     <UseSourceGenerators>true</UseSourceGenerators>
     <DefineConstants>$(DefineConstants);WINDOWS;DESKTOP_VK;NATIVE_BACKEND</DefineConstants>
   </PropertyGroup>

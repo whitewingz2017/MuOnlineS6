@@ -1935,8 +1935,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         {
                             if (totalDmg > 0)
                                 monster.SpawnHitEffect();
-                            monster.OnReceiveDamage();
-                            monster.PlayAction((byte)MonsterActionType.Shock);
+                            monster.PlayDamageReaction(totalDmg);
                             _logger.LogDebug("Triggering hit animation for {Type} {Id:X4}", walker.GetType().Name, maskedId);
                         }
                     });
@@ -2368,7 +2367,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         var objToMove = world.FindWalkerById(maskedId);
                         if (objToMove != null)
                         {
-                            objToMove.Location = new Vector2(x, y);
+                            objToMove.ApplyServerPosition(new Vector2(x, y));
                             _logger.LogDebug("Updated visual position for {Type} {Id:X4}", objToMove.GetType().Name, maskedId);
                         }
                     }

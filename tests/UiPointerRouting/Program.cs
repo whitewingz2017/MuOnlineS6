@@ -120,6 +120,101 @@ try
     movementEvent.GetRemoveMethod(true)!.Invoke(walking, [nextTile]);
     boundary.Invoke(walking, [true]);
     Check(continuations == 1, "Detached joystick still continued walking.");
+    var updateMove = walkerType.GetMethod("UpdateMoveTargetPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    var cachedTarget = walkerType.GetField("_cachedTargetPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    var dirtyTarget = walkerType.GetField("_targetPositionDirty", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    cachedTarget.SetValue(walking, new Vector3(18050, 12950, 0));
+    dirtyTarget.SetValue(walking, false);
+    walking.MoveTargetPosition = new Vector3(18050, 12950, 0);
+    pathField.SetValue(walking, new Queue<Vector2>());
+    intentField.SetValue(walking, true);
+    updateMove.Invoke(walking, [new GameTime(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1.0 / 120))]);
+    Check(!walking.MovementIntent, "Reached tile left joystick movement permanently pending.");
+    walking.MoveTargetPosition = new Vector3(18050.002f, 12950, 0);
+    intentField.SetValue(walking, true);
+    updateMove.Invoke(walking, [new GameTime(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1.0 / 120))]);
+    Check(!walking.MovementIntent && walking.MoveTargetPosition == walking.TargetPosition,
+        "Near-target rounding left joystick movement permanently pending.");
+    pathField.SetValue(walking, null);
+    intentField.SetValue(walking, true);
+    updateMove.Invoke(walking, [new GameTime(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1.0 / 120))]);
+    Check(walking.MovementIntent, "Idle update cancelled an initial asynchronous movement request.");
+    walking.StopMovement();
+    Check(!walking.MovementIntent, "Stopping movement left the next joystick command blocked.");
+    var runWithoutEquipment = typeof(Client.Main.Objects.Player.PlayerObject).GetMethod("CanRunWithoutEquipment", BindingFlags.Static | BindingFlags.NonPublic)!;
+    var equipmentState = new Client.Main.Core.Client.CharacterState(Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+    var equipmentLevel = equipmentState.GetType().GetMethod("GetInventoryItemLevel", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    byte[] equippedBoots = [0xB0, 0, 5, 100, 0];
+    equipmentState.AddOrUpdateInventoryItem(6, equippedBoots);
+    Check((int)equipmentLevel.Invoke(equipmentState, [(byte)6])! == 5, "Running check did not read the equipped boots' upgrade level.");
+    equipmentState.RemoveInventoryItem(6);
+    Check((int)equipmentLevel.Invoke(equipmentState, [(byte)6])! == 0, "Unequipped boots left a stale running upgrade level.");
+    foreach (var classNumber in Enum.GetValues<MUnique.OpenMU.Network.Packets.CharacterClassNumber>())
+    {
+        int baseClass = (int)classNumber & ~3;
+        Check((bool)runWithoutEquipment.Invoke(null, [classNumber])! == (baseClass is 12 or 16 or 24),
+            $"Incorrect equipment-free running eligibility for {classNumber}.");
+    }
+    intentField.SetValue(walking, true);
+    pathField.SetValue(walking, new Queue<Vector2>([new Vector2(190, 159)]));
+    var sendGeneration = walkerType.GetField("_walkSendGeneration", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    int oldSendGeneration = (int)sendGeneration.GetValue(walking)!;
+    walkerType.GetMethod("ApplyServerPosition", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(walking, [new Vector2(184, 162)]);
+    Check(walking.Location == new Vector2(184, 162) && !walking.MovementIntent,
+        "Server correction did not replace the predicted position and clear movement intent.");
+    Check(pathField.GetValue(walking) == null && (int)sendGeneration.GetValue(walking)! > oldSendGeneration,
+        "Server correction left an old movement path or queued walk packet active.");
+    Check((int)PlayerAction.PlayerHighShock == 141 && (int)PlayerAction.PlayerShock == 230,
+        "Normal damage reaction must use MuMain PLAYER_SHOCK, not PLAYER_HIGH_SHOCK.");
+    using var playerAnimationStream = typeof(GameScene).Assembly.GetManifestResourceStream("Client.Main.Data.S6.player.bmd")!;
+    using var playerAnimationBuffer = new MemoryStream();
+    playerAnimationStream.CopyTo(playerAnimationBuffer);
+    var playerAnimationModel = new Client.Data.BMD.BMDReader().ReadFromBuffer(playerAnimationBuffer.ToArray());
+    var buildMonsterBones = typeof(Client.Main.Objects.MonsterObject)
+        .GetMethod("BuildBoneArray", BindingFlags.Static | BindingFlags.NonPublic)!;
+    var buildMonsterActions = typeof(Client.Main.Objects.MonsterObject)
+        .GetMethod("BuildActionArray", BindingFlags.Static | BindingFlags.NonPublic)!;
+    foreach (var skeletonType in new[] {
+        typeof(Client.Main.Objects.Monsters.SkeletonWarrior),
+        typeof(Client.Main.Objects.Monsters.SkeletonArcher),
+        typeof(Client.Main.Objects.Monsters.EliteSkeleton) })
+    {
+        var actionMap = (System.Collections.Generic.Dictionary<MonsterActionType, PlayerAction>)skeletonType
+            .GetField("_actionMap", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        Check((int)actionMap[MonsterActionType.Shock] == 230,
+            $"{skeletonType.Name} maps damage to the wrong Player.bmd animation.");
+        Check(actionMap[MonsterActionType.Die] == PlayerAction.PlayerDie1,
+            $"{skeletonType.Name} death mapping was changed by the damage fix.");
+        var indices = actionMap.ToDictionary(p => (int)p.Key, p => (int)p.Value);
+        var mappedActions = (Client.Data.BMD.BMDTextureAction[])buildMonsterActions.Invoke(null,
+            [playerAnimationModel, Enum.GetValues<MonsterActionType>().Length, indices])!;
+        var mappedBones = (Client.Data.BMD.BMDTextureBone[])buildMonsterBones.Invoke(null,
+            [playerAnimationModel, Enum.GetValues<MonsterActionType>().Length, indices])!;
+        Check(mappedActions[(int)MonsterActionType.Shock].NumAnimationKeys == playerAnimationModel.Actions[230].NumAnimationKeys,
+            $"{skeletonType.Name} damage animation has the wrong frame count.");
+        for (int boneIndex = 0; boneIndex < mappedBones.Length; boneIndex++)
+        {
+            if (ReferenceEquals(mappedBones[boneIndex], Client.Data.BMD.BMDTextureBone.Dummy)) continue;
+            Check(ReferenceEquals(mappedBones[boneIndex].Matrixes[(int)MonsterActionType.Shock].Position,
+                playerAnimationModel.Bones[boneIndex].Matrixes[230].Position),
+                $"{skeletonType.Name} bone {boneIndex} does not use the normal damage pose.");
+        }
+    }
+    Check(Client.Main.Core.Utilities.PlayerActionMapper.GetClientAction(
+        (byte)ServerPlayerActionType.Damage1, MUnique.OpenMU.Network.Packets.CharacterClassNumber.DarkKnight)
+        == PlayerAction.PlayerShock, "Server damage animation did not select normal player shock.");
+    var monster = new TestMonster();
+    var damageReaction = typeof(Client.Main.Objects.MonsterObject).GetMethod("PlayDamageReaction", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    damageReaction.Invoke(monster, [0u]);
+    Check(monster.CurrentAction != (int)MonsterActionType.Shock, "A missed attack triggered a monster hit reaction.");
+    damageReaction.Invoke(monster, [1u]);
+    var animTime = walkerType.GetField("_animTime", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    animTime.SetValue(monster, Convert.ChangeType(0.25, animTime.FieldType));
+    damageReaction.Invoke(monster, [1u]);
+    Check(Convert.ToDouble(animTime.GetValue(monster)) == 0.25, "Repeated damage restarted the same monster hit animation.");
+    monster.PlayAction((ushort)MonsterActionType.Attack1);
+    damageReaction.Invoke(monster, [1u]);
+    Check(monster.CurrentAction == (int)MonsterActionType.Attack1, "A normal monster attack was interrupted by a hit reaction.");
     var login = new Client.Main.Controls.UI.Login.LoginDialog();
     var back = (OkButton)typeof(Client.Main.Controls.UI.Login.LoginDialog)
         .GetField("_classicCancelButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(login)!;
@@ -351,6 +446,7 @@ sealed class TestScene : BaseScene
     public TestScene() { Controls.Clear(); Status = GameControlStatus.Ready; }
 }
 sealed class TestWalker : Client.Main.Objects.WalkerObject { }
+sealed class TestMonster : Client.Main.Objects.MonsterObject { }
 sealed class TestControl : UIControl
 {
     public int RawPresses, RawReleases, RawScrolls, Clicks;
