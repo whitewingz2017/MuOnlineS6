@@ -321,13 +321,22 @@ namespace Client.Main.Objects
         private void UpdateMovement(GameTime gameTime)
         {
             BeforeUpdatePosition(gameTime);
+            bool wasMoving = IsMoving;
             UpdatePosition(gameTime);
+
+            NotifyMovementStepCompleted(wasMoving);
 
             if (_currentPath != null && _currentPath.Count > 0 && !IsMoving)
             {
                 var next = _currentPath.Dequeue();
                 MoveTowards(next, gameTime);
             }
+        }
+
+        private void NotifyMovementStepCompleted(bool wasMoving)
+        {
+            if (wasMoving && !IsMoving && !MovementIntent && (_currentPath?.Count ?? 0) == 0)
+                MovementStepCompleted?.Invoke(this);
         }
 
         /// <summary>
@@ -891,8 +900,13 @@ namespace Client.Main.Objects
         protected bool _movementIntent;
         public bool MovementIntent => _movementIntent;
 
+        // Lets a held movement control supply its next single-tile command at
+        // the boundary, before PlayerObject selects an idle animation.
+        internal event Action<WalkerObject> MovementStepCompleted;
+
         public override void Dispose()
         {
+            MovementStepCompleted = null;
             CancelPendingPathRequest();
             base.Dispose();
         }

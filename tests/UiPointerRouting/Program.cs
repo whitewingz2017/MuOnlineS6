@@ -16,6 +16,17 @@ try
 {
     int checks = 0;
     void Check(bool value, string message) { if (!value) throw new Exception(message); checks++; }
+    await Client.Main.Core.Utilities.SkillDatabase.Initialize();
+    var rosterType = typeof(GameScene).Assembly.GetType("Client.Main.Controls.UI.Game.Skills.ClassSkillRoster")!;
+    var rosterFor = rosterType.GetMethod("For", BindingFlags.Static | BindingFlags.Public)!;
+    foreach (var (classNumber, skillNumber, damage) in new (int, int, int)[]
+        { (4, 44, 90), (0, 45, 90), (8, 46, 120), (12, 57, 75), (16, 74, 150), (20, 45, 90), (24, 269, 90) })
+    {
+        var roster = (ushort[])rosterFor.Invoke(null, [(MUnique.OpenMU.Network.Packets.CharacterClassNumber)classNumber])!;
+        Check(roster.Contains((ushort)skillNumber), $"Starting skill {skillNumber} is missing from class {classNumber}'s UI roster.");
+        Check(Client.Main.Core.Utilities.SkillDatabase.GetSkillDefinition(skillNumber)?.Damage == damage,
+            $"Starting skill {skillNumber} does not match MuMain's base damage.");
+    }
     InventoryItem DropItem(int group, int id, int level = 0, byte flags = 0, byte option = 0)
     {
         byte[] raw = flags == 0 ? [] : [(byte)(group << 4), (byte)id, (byte)level, 100, flags, option];
@@ -66,6 +77,49 @@ try
     }
     Check((Vector2)stepDirection.Invoke(null, [new Vector2(-1, 0)])! == new Vector2(-1, -1),
         "Dragging left no longer moves toward screen-left.");
+    var joystickTarget = typeof(VirtualJoystickControl).GetMethod("GetMovementTarget", BindingFlags.Static | BindingFlags.NonPublic)!;
+    Vector2 MovementTarget(Vector2 origin, Vector2 step, Func<Vector2, bool> walkable) =>
+        (Vector2)joystickTarget.Invoke(null, [origin, step, walkable])!;
+    Check(MovementTarget(new Vector2(100, 100), new Vector2(-1, -1), _ => true) == new Vector2(99, 99),
+        "Joystick did not request exactly one tile toward the left.");
+    Check(MovementTarget(new Vector2(100, 100), new Vector2(-1, -1), tile => tile.X != 99) == new Vector2(100, 100),
+        "One-tile joystick movement skipped a blocked tile.");
+    Check(MovementTarget(new Vector2(100, 100), new Vector2(-1, -1), tile => tile.X != 98) == new Vector2(99, 99),
+        "Joystick did not stop at one tile when the second tile was blocked.");
+    Check(MovementTarget(new Vector2(100, 100), new Vector2(-1, -1), tile => tile.X != 97) == new Vector2(99, 99),
+        "Joystick requested more than one tile.");
+    Check(MovementTarget(new Vector2(1, 1), new Vector2(-1, -1), _ => true) == Vector2.Zero,
+        "Joystick projected outside the map boundary.");
+    var walkerType = typeof(Client.Main.Objects.WalkerObject);
+    var boundary = walkerType.GetMethod("NotifyMovementStepCompleted", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    var movementEvent = walkerType.GetEvent("MovementStepCompleted", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    var intentField = walkerType.GetField("_movementIntent", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    var pathField = walkerType.GetField("_currentPath", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    var walking = (TestWalker)RuntimeHelpers.GetUninitializedObject(typeof(TestWalker));
+    int continuations = 0;
+    Action<Client.Main.Objects.WalkerObject> nextTile = current =>
+    {
+        continuations++;
+        intentField.SetValue(current, true);
+        pathField.SetValue(current, new Queue<Vector2>([new Vector2(1, 0)]));
+    };
+    movementEvent.GetAddMethod(true)!.Invoke(walking, [nextTile]);
+    boundary.Invoke(walking, [false]);
+    Check(continuations == 0, "Idle walker issued a movement completion.");
+    walking.MoveTargetPosition = new Vector3(1, 0, 0);
+    boundary.Invoke(walking, [true]);
+    Check(continuations == 0, "Movement continued before reaching its tile.");
+    walking.MoveTargetPosition = Vector3.Zero;
+    boundary.Invoke(walking, [true]);
+    Check(continuations == 1 && walking.MovementIntent,
+        "Held movement did not publish the next tile before idle animation selection.");
+    boundary.Invoke(walking, [true]);
+    Check(continuations == 1, "Movement completion duplicated a pending tile command.");
+    intentField.SetValue(walking, false);
+    pathField.SetValue(walking, null);
+    movementEvent.GetRemoveMethod(true)!.Invoke(walking, [nextTile]);
+    boundary.Invoke(walking, [true]);
+    Check(continuations == 1, "Detached joystick still continued walking.");
     var login = new Client.Main.Controls.UI.Login.LoginDialog();
     var back = (OkButton)typeof(Client.Main.Controls.UI.Login.LoginDialog)
         .GetField("_classicCancelButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(login)!;
@@ -144,6 +198,28 @@ try
     Check(!Tap(second, -1, true) && selected.GetValue(inventory) == null, "Second mobile tap did not enable pickup/clear selection.");
     Check(Tap(first, 3, true) && !Tap(first, 3, true), "Equipment tap selection differs from inventory.");
     Check(!Tap(first, -1, false) && selected.GetValue(inventory) == null, "Desktop pickup now requires a selection tap.");
+    // A dialog must never operate on a replacement item or a moved inventory slot.
+    var actionItem = new InventoryItem(new ItemDefinition(1, "Potion", 1, 1) { Group = 14 }, new Point(2, 3));
+    var currentItems = new List<InventoryItem> { actionItem };
+    typeof(InventoryControl).GetField("_items", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(inventory, currentItems);
+    var isCurrent = typeof(InventoryControl).GetMethod("IsCurrentItem", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    bool Current(Point original) => (bool)isCurrent.Invoke(inventory, [actionItem, -1, original])!;
+    Check(Current(new Point(2, 3)), "Selected item cannot be used from its original slot.");
+    actionItem.GridPosition = new Point(3, 3);
+    Check(!Current(new Point(2, 3)), "Mobile dialog acts on an item moved after opening.");
+    currentItems.Clear();
+    Check(!Current(new Point(3, 3)), "Mobile dialog acts on an item removed after opening.");
+    var actionDialog = (RequestDialog)Activator.CreateInstance(typeof(RequestDialog), nonPublic: true)!;
+    var extraButton = (ButtonControl)typeof(RequestDialog).GetField("_extraButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(actionDialog)!;
+    var acceptButton = (ButtonControl)typeof(RequestDialog).GetField("_acceptButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(actionDialog)!;
+    var cancelButton = (ButtonControl)typeof(RequestDialog).GetField("_rejectButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(actionDialog)!;
+    extraButton.Visible = true;
+    typeof(RequestDialog).GetMethod("AdjustSizeAndLayout", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(actionDialog, null);
+    Check(acceptButton.X + acceptButton.ViewSize.X < extraButton.X && extraButton.X + extraButton.ViewSize.X < cancelButton.X,
+        "Use / Drop / Cancel buttons overlap.");
+    Check(acceptButton.X >= 0 && cancelButton.X + cancelButton.ViewSize.X <= actionDialog.ViewSize.X,
+        "Mobile action buttons exceed the dialog bounds.");
+    actionDialog.Dispose();
     var mobileMenu = new TouchMenuControl();
     var menuRects = (Rectangle[])typeof(TouchMenuControl).GetField("_rects", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(mobileMenu)!;
     Check(menuRects.Length == 15 && menuRects.Distinct().Count() == 15, "Mobile menu grid overlaps or omits entries.");
@@ -274,6 +350,7 @@ sealed class TestScene : BaseScene
 {
     public TestScene() { Controls.Clear(); Status = GameControlStatus.Ready; }
 }
+sealed class TestWalker : Client.Main.Objects.WalkerObject { }
 sealed class TestControl : UIControl
 {
     public int RawPresses, RawReleases, RawScrolls, Clicks;

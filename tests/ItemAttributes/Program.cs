@@ -7,6 +7,31 @@ using MUnique.OpenMU.Network.Packets;
 
 int checks = 0;
 void Check(bool condition, string message) { checks++; if (!condition) throw new Exception(message); }
+// Armor previews must use MuMain's Player textures, while Item-only custom assets remain valid.
+var resolveModel = typeof(ItemDatabase).GetMethod("ResolveItemModelPath", BindingFlags.NonPublic | BindingFlags.Static)!;
+string assetRoot = Path.Combine(Path.GetTempPath(), "MuArmorPaths-" + Guid.NewGuid());
+string oldDataPath = Client.Main.Constants.DataPath;
+try
+{
+    Client.Main.Constants.DataPath = assetRoot;
+    Directory.CreateDirectory(Path.Combine(assetRoot, "Player", "LuckyItem", "65"));
+    File.WriteAllBytes(Path.Combine(assetRoot, "Player", "ArmorElf03.bmd"), []);
+    File.WriteAllBytes(Path.Combine(assetRoot, "Player", "LuckyItem", "65", "new_Armor04.bmd"), []);
+    Directory.CreateDirectory(Path.Combine(assetRoot, "Item", "Ingameshop"));
+    File.WriteAllBytes(Path.Combine(assetRoot, "Item", "Ingameshop", "necklace_red.bmd"), []);
+    string Resolve(int group, int id, string path) => (string)resolveModel.Invoke(null, [group, id, path])!;
+    Check(Resolve(8, 12, "Item/ArmorElf03.bmd") == "Player/ArmorElf03.bmd", "Wind Armor previews load conflicting Item textures.");
+    Check(Resolve(8, 12, "Item/armorelf03.bmd") == "Player/armorelf03.bmd", "Armor lookup must tolerate Android filename casing.");
+    Check(Resolve(8, 65, "Item/new_Armor04.bmd") == "Player/LuckyItem/65/new_Armor04.bmd", "Lucky armor does not use its own MuMain texture folder.");
+    Check(Resolve(8, 100, "Item/CustomArmor.bmd") == "Item/CustomArmor.bmd", "Item-only custom armor path was lost.");
+    Check(Resolve(0, 12, "Item/ArmorElf03.bmd") == "Item/ArmorElf03.bmd", "Non-armor item was redirected to Player.");
+    Check(Resolve(13, 113, "Item/necklace_red.bmd") == "Item/Ingameshop/necklace_red.bmd", "Shop necklace uses conflicting root Item textures.");
+}
+finally
+{
+    Client.Main.Constants.DataPath = oldDataPath;
+    Directory.Delete(assetRoot, true);
+}
 InventoryItem Item(int group = 0, int id = 0, int level = 0, byte flags = 0, params byte[] options)
 {
     var definition = new ItemDefinition(id, "Reference item", 2, 3) { Group = group, DropLevel = 50,
@@ -16,6 +41,12 @@ InventoryItem Item(int group = 0, int id = 0, int level = 0, byte flags = 0, par
     return new InventoryItem(definition, Point.Zero, raw, 100, level);
 }
 var normal = Item();
+var wizardRing = ItemDatabase.GetItemDefinition(13, 20);
+Check(wizardRing?.TexturePath == "Item/MagicRing00.bmd", "Wizard's Ring has no MuMain event model.");
+var previewModelPath = typeof(BmdPreviewRenderer).GetMethod("GetPreviewModelPath", BindingFlags.Static | BindingFlags.NonPublic)!;
+Check((string)previewModelPath.Invoke(null, [wizardRing, 0])! == "Item/MagicRing00.bmd", "Wizard's Ring +0 uses the wrong event model.");
+for (int ringLevel = 1; ringLevel <= 3; ringLevel++)
+    Check((string)previewModelPath.Invoke(null, [wizardRing, ringLevel])! == "Item/RingOfLordEvent00.bmd", "Wizard's Ring variant is missing its original model.");
 Check(MuMainItemRules.Requirements(normal) == new ItemRequirements(0, 170, 140, 80, 120, 30), "Base requirement vector differs from MuMain.");
 var excellent = Item(level: 15, flags: 9, options: [4, 32]);
 Check(MuMainItemRules.Requirements(excellent) == new ItemRequirements(0, 400, 308, 164, 260, 30), "+15 excellent/additional-option requirements are wrong.");
@@ -91,6 +122,39 @@ normal.Definition.RequiredLevel = 401;
 Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows insufficient Level."); normal.Definition.RequiredLevel = 0;
 state.Class = CharacterClassNumber.HighElf;
 Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows the wrong character class.");
+var displayType = typeof(BmdPreviewRenderer).Assembly.GetType("Client.Main.Core.Utilities.MuMainInventoryDisplay")!;
+var getDisplay = displayType.GetMethod("Get", BindingFlags.Public | BindingFlags.Static)!;
+var worldMatrix = displayType.GetMethod("WorldMatrix")!;
+var rotationMatrix = displayType.GetMethod("RotationMatrix", BindingFlags.Public | BindingFlags.Static)!;
+Vector3 MuRotate(Vector3 point, Vector3 degrees)
+{
+    float x = MathHelper.ToRadians(degrees.X), y = MathHelper.ToRadians(degrees.Y), z = MathHelper.ToRadians(degrees.Z);
+    float sr = MathF.Sin(x), cr = MathF.Cos(x), sp = MathF.Sin(y), cp = MathF.Cos(y), sy = MathF.Sin(z), cy = MathF.Cos(z);
+    // Independent column-vector AngleMatrix/VectorRotate from MuMain ZzzMathLib.
+    return new(cp * cy * point.X + (sr * sp * cy - cr * sy) * point.Y + (cr * sp * cy + sr * sy) * point.Z,
+        cp * sy * point.X + (sr * sp * sy + cr * cy) * point.Y + (cr * sp * sy - sr * cy) * point.Z,
+        -sp * point.X + sr * cp * point.Y + cr * cp * point.Z);
+}
+foreach (int group in new[] { 0, 4, 8, 12, 14 })
+    for (int id = 0; id < 512; id++)
+    {
+        var item = Item(group, id);
+        item.Durability = 2;
+        bool expected = group == 4 && id is 7 or 15 || group == 14 &&
+            (id is >= 0 and <= 8 or >= 35 and <= 40 or >= 46 and <= 50 or 70 or 71
+                or >= 78 and <= 82 or >= 88 and <= 90 or 94 or 100 or 133 or >= 153 and <= 156);
+        var tooltip = ItemUiHelper.BuildTooltipLines(item);
+        Check(tooltip.Count(line => line.text == "Number of items: 2") == (expected ? 1 : 0), $"Quantity tooltip mismatch for {group}:{id}.");
+        Check(!expected || !tooltip.Any(line => line.text.StartsWith("Durability:")), $"Stack quantity also displayed as durability for {group}:{id}.");
+    }
+Check(ItemUiHelper.ShowsItemCount(Item(14, 21, 3)) && !ItemUiHelper.ShowsItemCount(Item(14, 21, 2)), "Rena quantity must apply only to level 3.");
+foreach (var screen in new[] { new Rectangle(0, 0, 1247, 720), new Rectangle(0, 0, 320, 640) })
+    foreach (var itemRect in new[] { new Rectangle(10, 10, 34, 34), new Rectangle(screen.Right - 44, screen.Bottom - 44, 34, 34), new Rectangle(100, 280, 34, 34) })
+    {
+        var bounds = ItemUiHelper.GetTooltipBounds(itemRect, new Point(240, 200), screen);
+        Check(screen.Contains(bounds), "Item tooltip escaped the screen.");
+        Check(bounds.Bottom <= itemRect.Top || bounds.Top >= itemRect.Bottom, "Item tooltip was placed beside/over the item despite vertical room.");
+    }
 if (args.Length > 0)
 {
     foreach (string file in Directory.EnumerateFiles(Path.Combine(args[0], "src/bin/Data/Items/Models"), "Group*.json"))
@@ -104,6 +168,27 @@ if (args.Length > 0)
                 expected = new Vector3(rotation[0].GetSingle(), rotation[1].GetSingle(), rotation[2].GetSingle());
             var definition = new ItemDefinition(model.GetProperty("number").GetInt32(), "Source comparison", 1, 1) { Group = group };
             Check((Vector3)rotate.Invoke(null, [definition])! == expected, $"Model rotation mismatch for {group}:{definition.Id} in {file}.");
+            var matrix = (Matrix)rotationMatrix.Invoke(null, [expected])!;
+            foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
+                Check(Vector3.Distance(Vector3.Transform(axis, matrix), MuRotate(axis, expected)) < 0.00001f,
+                    $"MuMain rotation transform differs for {group}:{definition.Id}.");
+            float expectedScale = display.ValueKind == System.Text.Json.JsonValueKind.Object && display.TryGetProperty("scale", out var scaleValue) ? scaleValue.GetSingle() : 0.0025f;
+            float bodyHeight = display.ValueKind == System.Text.Json.JsonValueKind.Object && display.TryGetProperty("bodyHeight", out var bodyValue) ? bodyValue.GetSingle() : 0f;
+            Vector2 anchor = new(0.5f, 0.6f);
+            Vector3 offset = Vector3.Zero;
+            if (display.ValueKind == System.Text.Json.JsonValueKind.Object && display.TryGetProperty("anchor", out var anchorValue))
+                anchor = new(anchorValue[0].GetSingle(), anchorValue[1].GetSingle());
+            if (display.ValueKind == System.Text.Json.JsonValueKind.Object && display.TryGetProperty("offset", out var offsetValue))
+                for (int i = 0; i < offsetValue.GetArrayLength(); i++)
+                    if (i == 0) offset.X = offsetValue[i].GetSingle(); else if (i == 1) offset.Y = offsetValue[i].GetSingle(); else offset.Z = offsetValue[i].GetSingle();
+            var actualDisplay = getDisplay.Invoke(null, [definition])!;
+            Check((float)displayType.GetProperty("Scale")!.GetValue(actualDisplay)! == expectedScale, $"MuMain model scale differs for {group}:{definition.Id}.");
+            var actualWorld = (Matrix)worldMatrix.Invoke(actualDisplay, [definition, 34, 34, 0f])!;
+            float pixels = 480f / (400f * MathF.Tan(MathHelper.ToRadians(0.5f))) * 1.7f;
+            Vector3 sourcePoint = new(3, 7, 11);
+            Vector3 expectedPoint = MuRotate(sourcePoint + new Vector3(0, 0, bodyHeight), expected) * expectedScale * pixels
+                + new Vector3((anchor.X - 0.5f) * 34, (0.5f - anchor.Y) * 34, 0) + offset * pixels;
+            Check(Vector3.Distance(Vector3.Transform(sourcePoint, actualWorld), expectedPoint) < 0.001f, $"MuMain model position/scale differs for {group}:{definition.Id}.");
         }
     }
 }

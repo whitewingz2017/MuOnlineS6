@@ -4,6 +4,7 @@ using Client.Main.Content;
 using Client.Main.Controllers;
 using Client.Main.Controls;
 using Client.Main.Controls.UI;
+using Client.Main.Objects;
 using Client.Main.Objects.Player;
 using Client.Main.Scenes;
 using Microsoft.Xna.Framework;
@@ -35,6 +36,7 @@ namespace Client.Main.Controls.UI.Game.Hud
         private UiThemeId _loadedTheme = (UiThemeId)(-1);
 
         private bool _active;
+        private HeroObject _movementHero;
         private Vector2 _center;        // Fixed base center in virtual UI coordinates.
         private Vector2 _knob;          // Current knob position in virtual UI coordinates.
 
@@ -71,7 +73,12 @@ namespace Client.Main.Controls.UI.Game.Hud
             base.Update(gameTime);
 
             if (!Visible || Scene == null)
+            {
+                _active = false;
+                _knob = Vector2.Zero;
+                DetachMovementHero();
                 return;
+            }
 
             var hero = (Scene as GameScene)?.Hero;
             var mouse = MuGame.Instance.UiMouseState;
@@ -103,6 +110,7 @@ namespace Client.Main.Controls.UI.Game.Hud
                     // terminar o passo atual suavemente — evita o "pulo" ao soltar).
                     _active = false;
                     _knob = Vector2.Zero;
+                    DetachMovementHero();
                     return;
                 }
 
@@ -116,12 +124,46 @@ namespace Client.Main.Controls.UI.Game.Hud
                 float norm = clamped / BaseRadius; // 0..1
                 if (norm < DeadZone || hero == null)
                 {
+                    DetachMovementHero();
                     // Zona morta: não move (mantém o manípulo desenhado).
                     return;
                 }
 
+                if (!ReferenceEquals(_movementHero, hero))
+                {
+                    DetachMovementHero();
+                    _movementHero = hero;
+                    hero.MovementStepCompleted += ContinueMovement;
+                }
                 DriveMovement(hero, dir);
             }
+        }
+
+        private void ContinueMovement(WalkerObject walker)
+        {
+            if (!_active || !Visible || !ReferenceEquals(walker, _movementHero) ||
+                Scene is not GameScene scene || !ReferenceEquals(scene.Hero, walker))
+                return;
+            var mouse = MuGame.Instance.UiMouseState;
+            if (mouse.LeftButton != ButtonState.Pressed)
+                return;
+            Vector2 offset = mouse.Position.ToVector2() - Center;
+            if (offset.LengthSquared() < BaseRadius * BaseRadius * DeadZone * DeadZone)
+                return;
+            DriveMovement(_movementHero, Vector2.Normalize(offset));
+        }
+
+        private void DetachMovementHero()
+        {
+            if (_movementHero != null)
+                _movementHero.MovementStepCompleted -= ContinueMovement;
+            _movementHero = null;
+        }
+
+        public override void Dispose()
+        {
+            DetachMovementHero();
+            base.Dispose();
         }
 
         private static Vector2 GetStepDirection(Vector2 screenDir)
@@ -133,8 +175,8 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         private void DriveMovement(HeroObject hero, Vector2 screenDir)
         {
-            // Finish the current tile (including pending async pathfinding) before
-            // accepting another step. Releasing the stick never leaves a long path.
+            // Only one neighboring tile is requested. While held, the completion
+            // callback supplies the next tile before the animation can become idle.
             if (hero.IsMoving || hero.MovementIntent)
                 return;
 
@@ -142,12 +184,19 @@ namespace Client.Main.Controls.UI.Game.Hud
             if (step == Vector2.Zero || Scene?.World is not WalkableWorldControl world)
                 return;
 
-            Vector2 target = new Vector2((int)hero.Location.X, (int)hero.Location.Y) + step;
-            if (target.X < 0 || target.Y < 0 || target.X >= Constants.TERRAIN_SIZE ||
-                target.Y >= Constants.TERRAIN_SIZE || !world.IsWalkable(target))
-                return;
+            Vector2 origin = new((int)hero.Location.X, (int)hero.Location.Y);
+            Vector2 target = GetMovementTarget(origin, step, world.IsWalkable);
+            if (target != origin)
+                hero.MoveTo(target, sendToServer: true, usePathfinding: false);
+        }
 
-            hero.MoveTo(target, sendToServer: true, usePathfinding: true);
+        private static Vector2 GetMovementTarget(Vector2 origin, Vector2 step, Func<Vector2, bool> isWalkable)
+        {
+            Vector2 next = origin + step;
+            if (next.X < 0 || next.Y < 0 || next.X >= Constants.TERRAIN_SIZE ||
+                next.Y >= Constants.TERRAIN_SIZE || !isWalkable(next))
+                return origin;
+            return next;
         }
 
         public override void Draw(GameTime gameTime)

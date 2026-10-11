@@ -1101,7 +1101,7 @@ namespace Client.Main.Controls.UI.Game.Trade
             if (_hoveredItem == null || _font == null) return;
 
             var lines = ItemUiHelper.BuildTooltipLines(_hoveredItem);
-            const float scale = 0.44f;
+            float scale = ItemUiHelper.FitTooltipScale(_font, lines, 0.44f, UiScaler.VirtualSize);
 
             const int paddingX = 4;
             const int paddingY = 4;
@@ -1120,11 +1120,14 @@ namespace Client.Main.Controls.UI.Game.Trade
             int tooltipHeight = totalHeight + paddingY * 2;
 
             Point mouse = MuGame.Instance.UiMouseState.Position;
-            Rectangle tooltipRect = new(mouse.X + 16, mouse.Y + 16, tooltipWidth, tooltipHeight);
-            Rectangle screenBounds = new(0, 0, UiScaler.VirtualSize.X, UiScaler.VirtualSize.Y);
-
-            tooltipRect.X = Math.Clamp(tooltipRect.X, 10, Math.Max(10, screenBounds.Right - tooltipRect.Width - 10));
-            tooltipRect.Y = Math.Clamp(tooltipRect.Y, 10, Math.Max(10, screenBounds.Bottom - tooltipRect.Height - 10));
+            Rectangle gridRect = _hoverIsPartnerGrid ? _partnerGridRect : _myGridRect;
+            var itemRect = new Rectangle(
+                DisplayRectangle.X + gridRect.X + _hoveredItem.GridPosition.X * TRADE_SQUARE_WIDTH,
+                DisplayRectangle.Y + gridRect.Y + _hoveredItem.GridPosition.Y * TRADE_SQUARE_HEIGHT,
+                _hoveredItem.Definition.Width * TRADE_SQUARE_WIDTH,
+                _hoveredItem.Definition.Height * TRADE_SQUARE_HEIGHT);
+            Rectangle tooltipRect = ItemUiHelper.GetTooltipBounds(itemRect,
+                new Point(tooltipWidth, tooltipHeight), new Rectangle(0, 0, UiScaler.VirtualSize.X, UiScaler.VirtualSize.Y));
 
             var pixel = GraphicsManager.Instance.Pixel;
             if (pixel == null) return;

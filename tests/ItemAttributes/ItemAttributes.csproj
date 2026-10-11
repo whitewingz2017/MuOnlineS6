@@ -4,6 +4,8 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseAppHost>false</UseAppHost>
+    <!-- Catch reflection-dependent metadata loading before shipping an Android AOT build. -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <MonoGameFramework>MonoGame.Framework.WindowsDX</MonoGameFramework>
   </PropertyGroup>
   <ItemGroup>

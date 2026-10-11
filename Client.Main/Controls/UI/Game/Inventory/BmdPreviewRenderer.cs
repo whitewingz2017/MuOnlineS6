@@ -119,7 +119,6 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private sealed class PreviewPoseGeometry : IDisposable
         {
             public Matrix[] Bones;
-            public BoundingBox Bounds;
             public int[] MeshOrder;
             public PreviewMeshGeometry[] Meshes;
             public bool UsesPlayerIdlePose;
@@ -239,8 +238,6 @@ namespace Client.Main.Controls.UI.Game.Inventory
             new(ReferenceComparer<BMD>.Instance);
         private static readonly Dictionary<RenderTargetKey, Queue<PooledRenderTarget>> _renderTargetPool = new();
 
-        private static readonly Vector3[] _originalCornersBuffer = new Vector3[8];
-        private static readonly Vector3[] _transformedCornersBuffer = new Vector3[8];
 
         private static ItemPreviewEffectBindings _itemPreviewEffectBindings;
         private static GraphicsDevice _hookedGraphicsDevice;
@@ -293,7 +290,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
             if (definition == null || string.IsNullOrWhiteSpace(definition.TexturePath))
                 return string.Empty;
 
-            string key = $"{definition.TexturePath}:{width}x{height}";
+            // Shared BMD files can have different per-item display metadata.
+            string key = $"{definition.TexturePath}:g{definition.Group}:i{definition.Id}:slots{definition.Width}x{definition.Height}:{width}x{height}";
             if (isRotating)
             {
                 // One persistent target per item/size. The previous implementation added the
@@ -648,7 +646,6 @@ namespace Client.Main.Controls.UI.Game.Inventory
             var pose = new PreviewPoseGeometry
             {
                 Bones = bones,
-                Bounds = ComputeBounds(bmd, bones),
                 MeshOrder = BuildMeshRenderOrder(bmd),
                 Meshes = new PreviewMeshGeometry[bmd.Meshes.Length],
                 UsesPlayerIdlePose = usesPlayerIdlePose,
@@ -1037,6 +1034,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 if (rendered == null)
                     return entry?.Texture;
 
+
                 if (!useCache)
                 {
                     return rendered;
@@ -1069,6 +1067,11 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
         }
 
+        private static string GetPreviewModelPath(ItemDefinition definition, int level) =>
+            definition.Group == 13 && definition.Id == 20
+                ? level is >= 1 and <= 3 ? "Item/RingOfLordEvent00.bmd" : "Item/MagicRing00.bmd"
+                : definition.TexturePath;
+
         private static RenderTarget2D Render(
             ItemDefinition def,
             int width,
@@ -1099,7 +1102,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             try
             {
-                var modelTask = BMDLoader.Instance.Prepare(def.TexturePath);
+                string modelPath = GetPreviewModelPath(def, props.Level);
+                var modelTask = BMDLoader.Instance.Prepare(modelPath);
                 if (!modelTask.IsCompleted)
                     return target;
 
@@ -1156,62 +1160,16 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 gd.RasterizerState = RasterizerState.CullNone;
                 gd.SamplerStates[0] = GraphicsManager.GetQualityLinearWrapSamplerState();
 
-                Matrix view = Matrix.CreateLookAt(new Vector3(0, 0, 40f), Vector3.Zero, Vector3.Up);
-                Matrix projection = Matrix.CreatePerspectiveFieldOfView(
-                    MathHelper.ToRadians(30f),
-                    (float)width / height,
-                    1f,
-                    100f);
-
-                Matrix baseRotation = ItemOrientationHelper.GetInventoryBaseRotation(def);
-                Matrix mouseRotation = Matrix.CreateRotationY(MathHelper.ToRadians(rotationAngle));
-
-                BoundingBox originalBounds = pose.Bounds;
-                originalBounds.GetCorners(_originalCornersBuffer);
-                Vector3 rotatedMin = new(float.MaxValue);
-                Vector3 rotatedMax = new(float.MinValue);
-
-                for (int i = 0; i < _originalCornersBuffer.Length; i++)
-                {
-                    Vector3 rotatedCorner = Vector3.Transform(_originalCornersBuffer[i], baseRotation);
-                    rotatedMin = Vector3.Min(rotatedMin, rotatedCorner);
-                    rotatedMax = Vector3.Max(rotatedMax, rotatedCorner);
-                }
-
-                Vector3 rotatedSize = rotatedMax - rotatedMin;
-                float largestDimension = Math.Max(rotatedSize.X, Math.Max(rotatedSize.Y, rotatedSize.Z));
-                float scale = largestDimension > 0.0001f ? 15f / largestDimension : 1f;
-                Vector3 originalCenter = (originalBounds.Min + originalBounds.Max) * 0.5f;
-                Matrix finalRotation = rotationAngle != 0f ? baseRotation * mouseRotation : baseRotation;
-                Matrix worldBase = Matrix.CreateScale(scale) *
-                                   finalRotation *
-                                   Matrix.CreateTranslation(-originalCenter * scale);
-
-                for (int i = 0; i < _originalCornersBuffer.Length; i++)
-                    _transformedCornersBuffer[i] = Vector3.Transform(_originalCornersBuffer[i], worldBase);
-
-                float minX = float.MaxValue, maxX = float.MinValue;
-                float minY = float.MaxValue, maxY = float.MinValue;
-                float minZ = float.MaxValue, maxZ = float.MinValue;
-
-                for (int i = 0; i < _transformedCornersBuffer.Length; i++)
-                {
-                    Vector3 corner = _transformedCornersBuffer[i];
-                    minX = Math.Min(minX, corner.X);
-                    maxX = Math.Max(maxX, corner.X);
-                    minY = Math.Min(minY, corner.Y);
-                    maxY = Math.Max(maxY, corner.Y);
-                    minZ = Math.Min(minZ, corner.Z);
-                    maxZ = Math.Max(maxZ, corner.Z);
-                }
-
-                Matrix world = worldBase * Matrix.CreateTranslation(
-                    -(minX + maxX) * 0.5f,
-                    -(minY + maxY) * 0.5f,
-                    -(minZ + maxZ) * 0.5f);
+                // This fixed, axis-aligned camera is exactly a -1000 Z translation.
+                // CreateLookAt produces NaN basis components in Android ARM64 LLVM AOT.
+                Matrix view = Matrix.CreateTranslation(0f, 0f, -1000f);
+                Matrix projection = Matrix.CreateOrthographic(width, height, 1f, 2000f);
+                var display = MuMainInventoryDisplay.Get(def);
+                if (def.Group == 13 && def.Id == 20)
+                    display = display with { Anchor = new Vector2(0.5f, props.Level == 0 ? 0.65f : 0.8f) };
+                Matrix world = display.WorldMatrix(def, width, height, rotationAngle);
                 Matrix worldViewProjection = world * view * projection;
-                Vector3 eyePosition = new(0f, 0f, 40f);
-
+                Vector3 eyePosition = new(0f, 0f, 1000f);
                 bool useItemMaterial = props.ShouldUseItemMaterial &&
                                        Constants.ENABLE_ITEM_MATERIAL_SHADER &&
                                        GraphicsManager.Instance.ItemMaterialEffect != null;
@@ -1619,7 +1577,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             Vector3 angles = MuMainItemMetadata.InventoryRotation(definition);
-            return MuRotationConverter.ConvertToMonoGame(angles.X, angles.Y, angles.Z);
+            return MuMainInventoryDisplay.RotationMatrix(angles);
         }
 
         public static Quaternion GetInventoryOrientation(ItemDefinition definition)

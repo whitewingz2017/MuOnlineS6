@@ -1,0 +1,25 @@
+using Client.Main;
+using Client.Main.Core.Utilities;
+using Client.Data.BMD;
+using System.Text.Json;
+using System.Security.Cryptography;
+Constants.DataPath=@"C:\OpenMU\Data";
+var reader=new BMDReader(); int models=0, textures=0, conflicts=0; var missing=new List<string>();
+foreach(var file in Directory.GetFiles(@"C:\MuOnline_Source\MuMain-main\src\bin\Data\Items\Models","Group*.json")) {
+ using var json=JsonDocument.Parse(File.ReadAllText(file)); var group=json.RootElement.GetProperty("group").GetByte();
+ foreach(var row in json.RootElement.GetProperty("models").EnumerateArray()) {
+ var id=row.GetProperty("number").GetInt16(); var def=ItemDatabase.GetItemDefinition(group,id);
+ if(def==null || !row.TryGetProperty("file",out var path))continue;
+ var expected=path.GetString()!.Replace("Data/","");
+ if(!string.Equals(Path.GetFileName(expected),Path.GetFileName(def.TexturePath),StringComparison.OrdinalIgnoreCase)) {Console.WriteLine($"CUSTOM {group}:{id} {def.Name}: {def.TexturePath} vs {expected}");continue;}
+ var actual=Path.Combine(Constants.DataPath,expected); if(!File.Exists(actual)){missing.Add(expected);continue;}
+ if(group>=7 && group<=11 && !string.Equals(expected,def.TexturePath,StringComparison.OrdinalIgnoreCase)) throw new Exception($"Uncorrected armor mapping {def.Name}: {def.TexturePath}"); var bmd=await reader.Load(actual); models++;
+ foreach(var mesh in bmd.Meshes){ textures++; var name=Path.ChangeExtension(mesh.TexturePath,mesh.TexturePath.EndsWith(".jpg",StringComparison.OrdinalIgnoreCase)?"ozj":"ozt");
+ var player=Path.Combine(Path.GetDirectoryName(actual)!,name);var item=Path.Combine(Constants.DataPath,"Item",name);
+ if(File.Exists(player)&&File.Exists(item)&&!SHA256.HashData(File.ReadAllBytes(player)).SequenceEqual(SHA256.HashData(File.ReadAllBytes(item)))) {conflicts++;Console.WriteLine($"CONFLICT {group}:{id} {def.Name} {name}");}
+ }
+ }
+}
+Console.WriteLine($"AUDIT {models} item models, {textures} mesh textures, {conflicts} conflicting Item textures, {missing.Count} missing reference models");
+
+

@@ -42,6 +42,7 @@ namespace Client.Main.Controls.UI.Game.Skills
 
         private static readonly ushort[] DarkWizard =
         {
+            45,  // Lance (starting Castle Siege skill)
             17,  // Energy Ball
             4,   // Fire Ball
             11,  // Power Wave
@@ -106,6 +107,7 @@ namespace Client.Main.Controls.UI.Game.Skills
 
         private static readonly ushort[] DarkLord =
         {
+            74,  // Fire Blast (starting Castle Siege skill)
             60,  // Force
             66,  // Force Wave
             61,  // Fire Burst
@@ -118,6 +120,7 @@ namespace Client.Main.Controls.UI.Game.Skills
 
         private static readonly ushort[] Summoner =
         {
+            45,  // Lance (starting Castle Siege skill)
             214, // Drain Life
             217, // Thorns (Alice)
             218, // Berserker

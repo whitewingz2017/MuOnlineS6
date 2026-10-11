@@ -1,0 +1,21 @@
+<Project>
+  <!-- Validation only: avoid two unrelated, pre-existing server compile blockers.
+       Production sources are not changed by these substitutions. -->
+  <Target Name="IsolateStartingSkillValidation" BeforeTargets="CoreCompile">
+    <ItemGroup Condition="'$(MSBuildProjectName)' == 'MUnique.OpenMU.Persistence.EntityFramework'">
+      <Compile Remove="@(Compile)" Condition="'%(Compile.Filename)%(Compile.Extension)' == 'MapsterConfigurator.Generated.cs'" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(MSBuildProjectName)' == 'MUnique.OpenMU.GameLogic'">
+      <Compile Remove="@(Compile)" Condition="'%(Compile.Filename)%(Compile.Extension)' == 'BloodCastleArchangelTalkPlugInConfiguration.cs'" />
+      <Compile Include="C:/OpenMU/MuOnlineS6/artifacts/starting-skills/BloodCastleArchangelTalkPlugInConfiguration.cs" />
+    </ItemGroup>
+    <!-- These unrelated update sources also fail in the current checkout:
+         stale caption members and an obsolete DependsOn override. -->
+    <ItemGroup Condition="'$(MSBuildProjectName)' == 'MUnique.OpenMU.Persistence.Initialization'">
+      <Compile Remove="@(Compile)" Condition="'%(Compile.Filename)' == 'AddSelupanFallSkillUpdatePlugIn' Or '%(Compile.Filename)' == 'AddIsQuestItemFlagPlugIn' Or '%(Compile.Filename)' == 'AddKanturuMapContentUpdatePlugIn' Or '%(Compile.Filename)' == 'ConfigureCastleSiegeLifeStoneUpdatePlugIn' Or '%(Compile.Filename)' == 'ConfigureCastleSiegeParticipationUpdatePlugIn' Or '%(Compile.Filename)' == 'AddProjectileCountToTripleShotUpdatePlugIn' Or '%(Compile.Filename)' == 'FixAreaSkillsUpdatePlugIn' Or '%(Compile.Filename)' == 'ConfigureCastleSiegeEconomyUpdatePlugIn' Or '%(Compile.Filename)' == 'ConfigureCastleSiegeRegistrationUpdatePlugIn' Or '%(Compile.Filename)' == 'FixItemRequirementsPlugIn2'" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(MSBuildProjectName)' == 'MUnique.OpenMU.Persistence.Initialization.Tests'">
+      <Compile Remove="@(Compile)" Condition="'%(Compile.Filename)' != 'StartingSiegeSkillsTest' And '%(Compile.Filename)' != 'SharedTestUsings' And '%(Compile.Filename)' != 'SharedGlobalUsings' And '%(Compile.Filename)' != 'SharedAssemblyInfo' And '%(Compile.Filename)' != 'GlobalUsings' And '%(Compile.Filename)' != 'Microsoft.NET.Test.Sdk.Program'" />
+    </ItemGroup>
+  </Target>
+</Project>

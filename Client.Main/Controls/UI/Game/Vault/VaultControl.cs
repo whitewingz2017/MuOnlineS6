@@ -1190,7 +1190,7 @@ namespace Client.Main.Controls.UI.Game
             if (_hoveredItem == null || _font == null) return;
 
             var lines = ItemUiHelper.BuildTooltipLines(_hoveredItem);
-            const float scale = 0.44f;
+            float scale = ItemUiHelper.FitTooltipScale(_font, lines, 0.44f, UiScaler.VirtualSize);
 
             const int paddingX = 4;
             const int paddingY = 4;
@@ -1215,29 +1215,8 @@ namespace Client.Main.Controls.UI.Game
                 _hoveredItem.Definition.Width * VAULT_SQUARE_WIDTH,
                 _hoveredItem.Definition.Height * VAULT_SQUARE_HEIGHT);
 
-            Rectangle tooltipRect = new(mouse.X + 16, mouse.Y + 16, tooltipWidth, tooltipHeight);
-            Rectangle screenBounds = new(0, 0, UiScaler.VirtualSize.X, UiScaler.VirtualSize.Y);
-
-            if (tooltipRect.Intersects(itemRect))
-            {
-                tooltipRect.X = itemRect.X - tooltipWidth - 8;
-                tooltipRect.Y = itemRect.Y;
-
-                if (tooltipRect.X < 10 || tooltipRect.Intersects(itemRect))
-                {
-                    tooltipRect.X = itemRect.X;
-                    tooltipRect.Y = itemRect.Y - tooltipHeight - 8;
-
-                    if (tooltipRect.Y < 10)
-                    {
-                        tooltipRect.X = itemRect.X;
-                        tooltipRect.Y = itemRect.Bottom + 8;
-                    }
-                }
-            }
-
-            tooltipRect.X = Math.Clamp(tooltipRect.X, 10, Math.Max(10, screenBounds.Right - tooltipRect.Width - 10));
-            tooltipRect.Y = Math.Clamp(tooltipRect.Y, 10, Math.Max(10, screenBounds.Bottom - tooltipRect.Height - 10));
+            Rectangle tooltipRect = ItemUiHelper.GetTooltipBounds(itemRect,
+                new Point(tooltipWidth, tooltipHeight), new Rectangle(0, 0, UiScaler.VirtualSize.X, UiScaler.VirtualSize.Y));
 
             var pixel = GraphicsManager.Instance.Pixel;
             if (pixel == null) return;

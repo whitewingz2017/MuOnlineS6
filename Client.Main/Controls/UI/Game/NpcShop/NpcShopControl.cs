@@ -977,7 +977,7 @@ namespace Client.Main.Controls.UI.Game
             {
                 lines.Add(($"Buy Price: {buyPrice} Zen", Theme.TextGold));
             }
-            const float scale = 0.44f;
+            float scale = ItemUiHelper.FitTooltipScale(_font, lines, 0.44f, UiScaler.VirtualSize);
 
             const int paddingX = 4;
             const int paddingY = 4;
@@ -1002,29 +1002,8 @@ namespace Client.Main.Controls.UI.Game
                 _hoveredItem.Definition.Width * SHOP_SQUARE_WIDTH,
                 _hoveredItem.Definition.Height * SHOP_SQUARE_HEIGHT);
 
-            Rectangle tooltipRect = new(mouse.X + 16, mouse.Y + 16, tooltipWidth, tooltipHeight);
-            Rectangle screenBounds = new(0, 0, UiScaler.VirtualSize.X, UiScaler.VirtualSize.Y);
-
-            if (tooltipRect.Intersects(itemRect))
-            {
-                tooltipRect.X = itemRect.X - tooltipWidth - 8;
-                tooltipRect.Y = itemRect.Y;
-
-                if (tooltipRect.X < 10 || tooltipRect.Intersects(itemRect))
-                {
-                    tooltipRect.X = itemRect.X;
-                    tooltipRect.Y = itemRect.Y - tooltipHeight - 8;
-
-                    if (tooltipRect.Y < 10)
-                    {
-                        tooltipRect.X = itemRect.X;
-                        tooltipRect.Y = itemRect.Bottom + 8;
-                    }
-                }
-            }
-
-            tooltipRect.X = Math.Clamp(tooltipRect.X, 10, Math.Max(10, screenBounds.Right - tooltipRect.Width - 10));
-            tooltipRect.Y = Math.Clamp(tooltipRect.Y, 10, Math.Max(10, screenBounds.Bottom - tooltipRect.Height - 10));
+            Rectangle tooltipRect = ItemUiHelper.GetTooltipBounds(itemRect,
+                new Point(tooltipWidth, tooltipHeight), new Rectangle(0, 0, UiScaler.VirtualSize.X, UiScaler.VirtualSize.Y));
 
             var pixel = GraphicsManager.Instance.Pixel;
             if (pixel == null) return;
@@ -1090,7 +1069,18 @@ namespace Client.Main.Controls.UI.Game
             var svc = MuGame.Network?.GetCharacterService();
             if (svc != null)
             {
-                _ = svc.SendBuyItemFromNpcRequestAsync(slot);
+                if (UiThemeManager.IsMobilePlatform)
+                {
+                    var selectedItem = _hoveredItem;
+                    RequestDialog.Show($"Are you sure to buy this?\n{selectedItem.Definition.Name}\nBuy Price: {ItemPriceCalculator.CalculateBuyPrice(selectedItem)} Zen",
+                        onAccept: () =>
+                        {
+                            if (Visible && _items.Contains(selectedItem))
+                                _ = svc.SendBuyItemFromNpcRequestAsync(slot);
+                        }, acceptText: "Buy", rejectText: "Cancel");
+                }
+                else
+                    _ = svc.SendBuyItemFromNpcRequestAsync(slot);
             }
         }
 

@@ -247,6 +247,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private bool _isRepairMode;
         private InventoryItem _mobileSelectedItem;
         private int _mobileSelectedEquipSlot = -1;
+        private InventoryItem _mobilePendingItem;
+        private int _mobilePendingEquipSlot = -1;
+        private Point _mobilePendingStart;
         private int _repairEnableLevel = 50;
 
         public bool IsSelfRepairMode => _isRepairMode;
@@ -551,6 +554,12 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             base.Update(gameTime);
 
+            if (Scene?.Controls.GetSnapshotArray().Any(control => control is DialogControl { Visible: true }) == true)
+            {
+                _mobilePendingItem = null;
+                return;
+            }
+
             Point mousePos = MuGame.Instance.UiMouseState.Position;
             _hoveredItem = null;
             _hoveredSlot = new Point(-1, -1);
@@ -560,6 +569,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
             bool leftPressed = MuGame.Instance.UiMouseState.LeftButton == ButtonState.Pressed;
             bool leftJustPressed = leftPressed && MuGame.Instance.PrevUiMouseState.LeftButton == ButtonState.Released;
             bool leftJustReleased = !leftPressed && MuGame.Instance.PrevUiMouseState.LeftButton == ButtonState.Pressed;
+
+            if (HandleMobilePendingItem(mousePos, leftPressed, leftJustReleased))
+                return;
 
             if (leftJustPressed && HandleChromeClick())
             {
@@ -1761,6 +1773,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                         // Normal mode - pick up item
                         if (SelectBeforePickup(_hoveredItem, -1, UiThemeManager.IsMobilePlatform))
                             return;
+                        if (BeginMobileItemAction(_hoveredItem, -1, mousePos))
+                            return;
                         _pickedItemRenderer.PickUpItem(_hoveredItem);
                         _pickedItemOriginalGrid = _hoveredItem.GridPosition;
                         _pickedAtMousePos = mousePos;
@@ -1868,6 +1882,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
                             // Normal mode - pick up equipped item
                             if (SelectBeforePickup(eqItem, _hoveredEquipSlot, UiThemeManager.IsMobilePlatform))
+                                return;
+                            if (BeginMobileItemAction(eqItem, _hoveredEquipSlot, mousePos))
                                 return;
                             _pickedItemRenderer.PickUpItem(eqItem);
                             _equippedItems.Remove((byte)_hoveredEquipSlot);
@@ -2381,7 +2397,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             var builder = new StringBuilder();
-            builder.AppendLine($"Sell {displayName}?");
+            builder.AppendLine(UiThemeManager.IsMobilePlatform ? "Are you sure to sell this?" : $"Sell {displayName}?");
+            if (UiThemeManager.IsMobilePlatform)
+                builder.AppendLine(displayName);
             if (definition.IsExpensive)
             {
                 builder.AppendLine();
@@ -2668,8 +2686,105 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         private void ClearMobileSelection()
         {
+            _mobilePendingItem = null;
             _mobileSelectedItem = null;
             _mobileSelectedEquipSlot = -1;
+        }
+
+        private bool BeginMobileItemAction(InventoryItem item, int equipSlot, Point pointer)
+        {
+            if (!UiThemeManager.IsMobilePlatform)
+                return false;
+            _mobileSelectedItem = _mobilePendingItem = item;
+            _mobileSelectedEquipSlot = _mobilePendingEquipSlot = equipSlot;
+            _mobilePendingStart = pointer;
+            Scene?.SetMouseInputConsumed();
+            return true;
+        }
+
+        private bool IsCurrentItem(InventoryItem item, int equipSlot, Point grid) =>
+            equipSlot >= 0
+                ? _equippedItems.TryGetValue((byte)equipSlot, out var equipped) && ReferenceEquals(equipped, item)
+                : _items.Contains(item) && item.GridPosition == grid;
+
+        private bool HandleMobilePendingItem(Point pointer, bool pressed, bool released)
+        {
+            var item = _mobilePendingItem;
+            if (item == null)
+                return false;
+            int equipSlot = _mobilePendingEquipSlot;
+            if (!IsCurrentItem(item, equipSlot, item.GridPosition))
+            {
+                ClearMobileSelection();
+                return true;
+            }
+            Scene?.SetMouseInputConsumed();
+            if (pressed && Vector2.Distance(pointer.ToVector2(), _mobilePendingStart.ToVector2()) > 12f)
+            {
+                _pickedItemRenderer.PickUpItem(item);
+                _pickedItemOriginalGrid = equipSlot >= 0 ? new Point(-1, -1) : item.GridPosition;
+                _pickedFromEquipSlot = equipSlot;
+                _pickedAtMousePos = _mobilePendingStart;
+                _itemDragMoved = true;
+                if (equipSlot >= 0)
+                    _equippedItems.Remove((byte)equipSlot);
+                else
+                {
+                    RemoveItemFromGrid(item);
+                    _items.Remove(item);
+                }
+                ClearMobileSelection();
+                return false;
+            }
+            if (released)
+            {
+                _mobilePendingItem = null;
+                ShowMobileItemActions(item, equipSlot);
+            }
+            else if (!pressed)
+                _mobilePendingItem = null;
+            return true;
+        }
+
+        private void ShowMobileItemActions(InventoryItem item, int equipSlot)
+        {
+            Point grid = item.GridPosition;
+            byte slot = equipSlot >= 0 ? (byte)equipSlot
+                : (byte)(InventorySlotOffsetConstant + grid.Y * Columns + grid.X);
+            void Drop()
+            {
+                if (!IsCurrentItem(item, equipSlot, grid)) return;
+                string error = ItemDropPolicy.GetBlockReason(item);
+                if (item.Definition.Group == 14 && item.Definition.Id == 28 &&
+                    Scene?.World is Controls.WalkableWorldControl { WorldIndex: >= 45 and <= 50 })
+                    error = "This item cannot be dropped in Illusion Temple.";
+                if (error != null) { MessageWindow.Show(error); return; }
+                var state = _networkManager?.GetCharacterState();
+                var service = _networkManager?.GetCharacterService();
+                if (state != null && service != null)
+                    _ = service.SendDropItemRequestAsync(state.PositionX, state.PositionY, slot);
+                ClearMobileSelection();
+            }
+            if (equipSlot < 0 && item.Definition.IsConsumable() && !item.Definition.IsJewel())
+                RequestDialog.Show(BuildItemDisplayName(item),
+                    onAccept: () => { if (IsCurrentItem(item, equipSlot, grid)) UseInventoryItem(item); },
+                    acceptText: "Use", rejectText: "Cancel", onExtra: Drop, extraText: "Drop");
+            else
+                RequestDialog.Show(BuildItemDisplayName(item), onAccept: Drop, acceptText: "Drop", rejectText: "Cancel");
+        }
+
+        private void UseInventoryItem(InventoryItem item)
+        {
+            if (item.Definition?.IsConsumable() != true || item.Definition.IsUpgradeJewel()) return;
+            var state = _networkManager?.GetCharacterState();
+            var service = _networkManager?.GetCharacterService();
+            if (state == null || service == null) return;
+            if (item.Definition.IsSkillLearningConsumable() && !MuMainItemRules.MeetsRequirements(item, state)) return;
+            SoundController.Instance.PlayBuffer(item.Definition.Name?.Contains("apple", StringComparison.OrdinalIgnoreCase) == true
+                ? "Sound/pEatApple.wav" : "Sound/pDrink.wav");
+            byte slot = (byte)(InventorySlotOffsetConstant + item.GridPosition.Y * Columns + item.GridPosition.X);
+            _ = service.SendConsumeItemRequestAsync(slot);
+            ClearMobileSelection();
         }
 
         private void DrawMobileSelection(SpriteBatch spriteBatch)
@@ -2974,7 +3089,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     lines.Add(("Cannot be repaired", new Color(255, 100, 100)));
                 }
             }
-            const float scale = 0.44f;
+            float scale = ItemUiHelper.FitTooltipScale(_font, lines, 0.44f, UiScaler.VirtualSize);
 
             const int paddingX = 4;
             const int paddingY = 4;
@@ -3014,34 +3129,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             // Tooltip positioning
-            Rectangle tooltipRect = new(mousePosition.X + 16, mousePosition.Y + 16, tooltipWidth, tooltipHeight);
-            Rectangle screenBounds = new(0, 0, UiScaler.VirtualSize.X, UiScaler.VirtualSize.Y);
-
-            // Avoid overlapping the item
-            if (tooltipRect.Intersects(hoveredItemRect))
-            {
-                // Try left side
-                tooltipRect.X = hoveredItemRect.X - tooltipWidth - 8;
-                tooltipRect.Y = hoveredItemRect.Y;
-
-                if (tooltipRect.X < 10 || tooltipRect.Intersects(hoveredItemRect))
-                {
-                    // Try above
-                    tooltipRect.X = hoveredItemRect.X;
-                    tooltipRect.Y = hoveredItemRect.Y - tooltipHeight - 8;
-
-                    if (tooltipRect.Y < 10)
-                    {
-                        // Under the item
-                        tooltipRect.X = hoveredItemRect.X;
-                        tooltipRect.Y = hoveredItemRect.Bottom + 8;
-                    }
-                }
-            }
-
-            // Clamp to screen bounds
-            tooltipRect.X = Math.Clamp(tooltipRect.X, 10, Math.Max(10, screenBounds.Right - tooltipRect.Width - 10));
-            tooltipRect.Y = Math.Clamp(tooltipRect.Y, 10, Math.Max(10, screenBounds.Bottom - tooltipRect.Height - 10));
+            Rectangle tooltipRect = ItemUiHelper.GetTooltipBounds(hoveredItemRect,
+                new Point(tooltipWidth, tooltipHeight), new Rectangle(0, 0, UiScaler.VirtualSize.X, UiScaler.VirtualSize.Y));
 
             var pixel = GraphicsManager.Instance.Pixel;
             if (pixel == null) return;

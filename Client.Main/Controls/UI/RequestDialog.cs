@@ -70,6 +70,7 @@ namespace Client.Main.Controls.UI
         private readonly LabelControl _label;
         private readonly ButtonControl _acceptButton;
         private readonly ButtonControl _rejectButton;
+        private readonly ButtonControl _extraButton;
 
         private bool _infoOnly = false; // single OK button mode
 
@@ -134,6 +135,11 @@ namespace Client.Main.Controls.UI
                 disabledTextColor: Theme.TextDark);
             _rejectButton.Click += (s, e) => { Rejected?.Invoke(this, EventArgs.Empty); Close(); };
             Controls.Add(_rejectButton);
+
+            _extraButton = MakeButton("Drop", Theme.BgDarkest, Theme.BgLight, Theme.BgMid,
+                Theme.BorderInner, Theme.TextWhite, Theme.TextGold, Theme.TextDark);
+            _extraButton.Visible = false;
+            Controls.Add(_extraButton);
 
             AdjustButtonSize(_acceptButton);
             AdjustButtonSize(_rejectButton);
@@ -216,11 +222,14 @@ namespace Client.Main.Controls.UI
             }
             else
             {
-                int totalBtnsWidth = _acceptButton.ViewSize.X + _rejectButton.ViewSize.X + BTN_GAP;
+                int extraWidth = _extraButton.Visible ? _extraButton.ViewSize.X + BTN_GAP : 0;
+                int totalBtnsWidth = _acceptButton.ViewSize.X + _rejectButton.ViewSize.X + BTN_GAP + extraWidth;
                 int startX = (width - totalBtnsWidth) / 2;
                 _acceptButton.X = startX;
                 _acceptButton.Y = btnY;
-                _rejectButton.X = startX + _acceptButton.ViewSize.X + BTN_GAP;
+                _extraButton.X = startX + _acceptButton.ViewSize.X + BTN_GAP;
+                _extraButton.Y = btnY;
+                _rejectButton.X = startX + _acceptButton.ViewSize.X + BTN_GAP + extraWidth;
                 _rejectButton.Y = btnY;
             }
 
@@ -289,7 +298,9 @@ namespace Client.Main.Controls.UI
                                          Action onAccept = null,
                                          Action onReject = null,
                                          string acceptText = null,
-                                         string rejectText = null)
+                                         string rejectText = null,
+                                         Action onExtra = null,
+                                         string extraText = null)
         {
             var scene = MuGame.Instance?.ActiveScene;
             if (scene == null)
@@ -303,6 +314,14 @@ namespace Client.Main.Controls.UI
 
             var dlg = new RequestDialog { Text = text };
             dlg.SetButtonLabels(acceptText, rejectText);
+            if (onExtra != null)
+            {
+                dlg._extraButton.Visible = true;
+                dlg._extraButton.Text = extraText ?? "Drop";
+                AdjustButtonSize(dlg._extraButton);
+                dlg._extraButton.Click += (s, e) => { dlg.Close(); onExtra(); };
+                dlg.AdjustSizeAndLayout();
+            }
             if (onAccept != null) dlg.Accepted += (s, e) => onAccept();
             if (onReject != null) dlg.Rejected += (s, e) => onReject();
 

@@ -121,6 +121,11 @@ public class CursorControl : SpriteControl
 
     public override void Update(GameTime gameTime)
     {
+        if (UiThemeManager.IsMobilePlatform)
+        {
+            Visible = false;
+            return;
+        }
         if (Scene == null)
         {
             base.Update(gameTime);
@@ -285,6 +290,7 @@ public class CursorControl : SpriteControl
 
     public override void Draw(GameTime gameTime)
     {
+        if (UiThemeManager.IsMobilePlatform) return;
         if (EditorCursorMode == EditorCursorMode.Default)
         {
             base.Draw(gameTime);

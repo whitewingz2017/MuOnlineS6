@@ -59,7 +59,12 @@ namespace Client.Main.Core.Utilities
                                                             .Replace("Data/", string.Empty),
                                           item.szModelName)
                                           .Replace("\\", "/");
+                        texturePath = ResolveItemModelPath(item.ItemSubGroup, item.ItemSubIndex, texturePath);
                     }
+
+                    // MuMain draws Wizard's Ring through MODEL_EVENT + 15, not its empty item model slot.
+                    if (item.ItemSubGroup == 13 && item.ItemSubIndex == 20)
+                        texturePath = "Item/MagicRing00.bmd";
 
                     var itemName = Constants.DATA_TEXT_ENCODING
             .GetString(item.szItemName)
@@ -113,6 +118,33 @@ namespace Client.Main.Core.Utilities
             }
 
             return data;
+        }
+
+        private static string ResolveItemModelPath(int group, int id, string modelPath)
+        {
+            if (!modelPath.StartsWith("Item/", StringComparison.OrdinalIgnoreCase))
+                return modelPath;
+
+            string fileName = Path.GetFileName(modelPath);
+            if (group == 13 && id is >= 113 and <= 115)
+            {
+                // Shop necklaces also share texture names with unrelated Item assets.
+                string shopPath = $"Item/Ingameshop/{fileName}";
+                return File.Exists(Utils.GetActualPath(Path.Combine(Constants.DataPath, shopPath)))
+                    ? shopPath : modelPath;
+            }
+            if (group is < 7 or > 11)
+                return modelPath;
+
+            // MuMain opens armor models and their textures in Player, not Item.
+            // Identical texture names in Item can belong to entirely different sets
+            // (e.g. upper_09 is not the Wind Armor texture there).
+            string folder = id is >= 62 and <= 72 && fileName.StartsWith("new_", StringComparison.OrdinalIgnoreCase)
+                ? $"Player/LuckyItem/{id}" : "Player";
+            string playerPath = $"{folder}/{fileName}";
+            // Keep custom Item-only assets working when no Player equivalent exists.
+            return File.Exists(Utils.GetActualPath(Path.Combine(Constants.DataPath, playerPath)))
+                ? playerPath : modelPath;
         }
 
         #region Public API ------------------------------------------------------

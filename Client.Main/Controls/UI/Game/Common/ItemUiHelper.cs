@@ -30,6 +30,51 @@ namespace Client.Main.Controls.UI.Game.Common
 
     public static class ItemUiHelper
     {
+        public static Rectangle GetTooltipBounds(Rectangle itemRect, Point size, Rectangle screen)
+        {
+            const int margin = 10;
+            const int gap = 8;
+            int x = itemRect.Center.X - size.X / 2;
+            int above = itemRect.Top - gap - size.Y;
+            int below = itemRect.Bottom + gap;
+            int y = above >= screen.Top + margin ? above : below;
+            if (y + size.Y > screen.Bottom - margin)
+                y = itemRect.Top - screen.Top > screen.Bottom - itemRect.Bottom ? above : below;
+            return new Rectangle(
+                Math.Clamp(x, screen.Left + margin, Math.Max(screen.Left + margin, screen.Right - size.X - margin)),
+                Math.Clamp(y, screen.Top + margin, Math.Max(screen.Top + margin, screen.Bottom - size.Y - margin)),
+                size.X, size.Y);
+        }
+
+        public static float FitTooltipScale(SpriteFont font, List<(string text, Color color)> lines, float scale, Point screen)
+        {
+            // Keep even long ancient/socket tooltips inside the UI viewport.
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                float width = 0;
+                int height = 0;
+                foreach (var (text, _) in lines)
+                {
+                    width = Math.Max(width, font.MeasureString(text).X * scale);
+                    height += TooltipLineHeight(font, text, scale);
+                }
+                float fit = Math.Min((screen.X - 28f) / Math.Max(1, width),
+                                     (screen.Y - 28f) / Math.Max(1, height));
+                if (fit >= 1f) break;
+                scale *= Math.Max(0.01f, fit * 0.98f);
+            }
+            return scale;
+        }
+
+        public static bool ShowsItemCount(InventoryItem item) => item.Definition.Group switch
+        {
+            4 => item.Definition.Id is 7 or 15, // Arrow and bolt ammunition.
+            14 => item.Definition.Id is >= 0 and <= 8 or >= 35 and <= 40 or >= 46 and <= 50
+                or 70 or 71 or >= 78 and <= 82 or >= 88 and <= 90 or 94 or 100 or 133
+                or >= 153 and <= 156 || (item.Definition.Id == 21 && item.Details.Level == 3),
+            _ => false,
+        };
+
         public static int TooltipLineHeight(SpriteFont font, string text, float scale) =>
             (int)MathF.Ceiling(font.MeasureString("Q").Y * scale * (string.IsNullOrWhiteSpace(text) ? 0.55f : 1.1f));
         /// <summary>
@@ -216,7 +261,10 @@ namespace Client.Main.Controls.UI.Game.Common
             if (def.WalkSpeed > 0) lines.Add(($"Movement Speed: {def.WalkSpeed}", Color.White));
             if (def.AttackSpeed > 0) lines.Add(($"Attack Speed: {def.AttackSpeed}", Color.White));
             int maxDurability = CalculateMaxDurability(def, details, isStaff);
-            if ((isStaff ? def.MagicDurability : def.BaseDurability) > 0)
+            if (ShowsItemCount(item))
+                lines.Add(($"Number of items: {item.Durability}", def.Group == 14 &&
+                    (def.Id is 70 or 71 or >= 78 and <= 82 or >= 88 and <= 90 or 94 or 133) ? blue : Color.White));
+            else if ((isStaff ? def.MagicDurability : def.BaseDurability) > 0)
                 lines.Add(($"Durability: {item.Durability}/{maxDurability}", Color.White));
 
             var requirements = MuMainItemRules.Requirements(item);
@@ -272,7 +320,8 @@ namespace Client.Main.Controls.UI.Game.Common
 
             // Show "Right-click to use" for consumables (potions, scrolls), but not for jewels
             if (def.IsConsumable() && !def.IsJewel())
-                lines.Add(("Right-click to use", new Color(255, 215, 0)));
+                lines.Add((Client.Main.Controls.UI.UiThemeManager.IsMobilePlatform
+                    ? "Tap again for Use / Drop" : "Right-click to use", new Color(255, 215, 0)));
 
             // Add repair cost if in repair mode
             var npcShop = NpcShopControl.Instance;
