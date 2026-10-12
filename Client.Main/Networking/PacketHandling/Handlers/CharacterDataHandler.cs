@@ -160,9 +160,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 switch (_targetVersion)
                 {
                     case TargetProtocolVersion.Season6:
-                        if (packet.Length >= CharacterInformationExtended.Length)
+                        if (CharacterInformationPacketReader.TryReadExtended(packet, out var extendedInfo))
                         {
-                            var info = new CharacterInformationExtended(packet);
+                            var info = extendedInfo;
                             mapId = info.MapId; x = info.X; y = info.Y;
                             currentExp = info.CurrentExperience;
                             nextExp = info.ExperienceForNextLevel;
@@ -300,12 +300,15 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 _characterState.UpdateCurrentHealthShield(initialHp, initialSd);
                 _characterState.UpdateCurrentManaAbility(initialMana, initialAbility);
                 _characterState.UpdateInventoryZen(money);
+                EconomyTrace.Record("CharacterLogin", money);
                 _characterState.UpdateStatus(status, heroState);
                 _characterState.UpdateFruitPoints(
                     usedFruitPoints,
                     maxFruitPoints,
                     usedNegativeFruitPoints,
                     maxNegativeFruitPoints);
+                if (inventoryExpansion > 4)
+                    _logger.LogWarning("Server reported invalid inventory extension count {Count}; no extra pages will be enabled.", inventoryExpansion);
                 _characterState.InventoryExpansionState = inventoryExpansion;
                 _characterState.UpdateAttackSpeeds(attackSpeed, magicSpeed, maxAttackSpeed);
 
@@ -1315,12 +1318,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     {
                         activeScene.NotifyLocalSkillAnimation(skillId);
 
-                        int animationId = ArrowProjectileSpawner.IsArrowSkill(skillId)
-                            ? (int)activeScene.Hero.GetArrowSkillAnimation(skillId)
-                            : skillId is 44 or 47 or 76 or 232 or 337
-                                ? (int)activeScene.Hero.GetSkillAction(skillId, isInSafeZone: false)
-                                : Core.Utilities.SkillDatabase.GetSkillAnimation(skillId);
-                        string soundPath = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
+                        int animationId = skillId == ComboSkillId ? -1
+                            : (int)activeScene.Hero.GetSkillAction(skillId, isInSafeZone: false);
+                        string soundPath = Client.Data.BMD.SkillDefinitions.GetSkillSound(Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId));
 
                         // Play skill sound if available
                         if (!string.IsNullOrEmpty(soundPath) && skillId is not (48 or 356 or 360 or 363))
@@ -1503,12 +1503,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                             activeScene.Hero.SetFacingAngleZ(areaLaunchYaw.Value, immediate: true);
 
                         // Get animation from SkillDatabase
-                        int animationId = ArrowProjectileSpawner.IsArrowSkill(skillId)
-                            ? (int)activeScene.Hero.GetArrowSkillAnimation(skillId)
-                            : skillId is 44 or 47 or 76 or 232 or 337
-                                ? (int)activeScene.Hero.GetSkillAction(skillId, isInSafeZone: false)
-                                : Core.Utilities.SkillDatabase.GetSkillAnimation(skillId);
-                        string soundPath = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
+                        int animationId = skillId == ComboSkillId ? -1
+                            : (int)activeScene.Hero.GetSkillAction(skillId, isInSafeZone: false);
+                        string soundPath = Client.Data.BMD.SkillDefinitions.GetSkillSound(Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId));
 
                         // Play skill sound if available
                         if (!string.IsNullOrEmpty(soundPath) && skillId is not (48 or 356 or 360 or 363))
@@ -1616,8 +1613,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
         private static void SpawnRemoteRegisteredSkill(WalkableWorldControl world, ushort rawPlayerId,
             ushort skillId, ushort rawTargetId, Vector3? targetPosition, float? launchYaw)
         {
-            if (!Objects.Effects.Skills.SkillVisualEffectRegistry.HasEffect(skillId) ||
-                !world.TryGetWalkerById((ushort)(rawPlayerId & 0x7FFF), out var caster) || caster is not PlayerObject player)
+            // Weapon skills animate even when their visuals come from the equipped weapon.
+            if (!world.TryGetWalkerById((ushort)(rawPlayerId & 0x7FFF), out var caster) || caster is not PlayerObject player)
                 return;
             ushort targetId = (ushort)(rawTargetId & 0x7FFF);
             if (launchYaw.HasValue)
@@ -1658,7 +1655,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 player.FaceTowards(new Vector2(targetPosition.Value.X, targetPosition.Value.Y) / Constants.TERRAIN_SCALE, immediate: true);
             player.PlayAction((ushort)player.GetSkillAction(skillId, isInSafeZone: false), fromServer: true);
             player.TriggerVehicleSkillAnimation();
-            string sound = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
+            string sound = Client.Data.BMD.SkillDefinitions.GetSkillSound(Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId));
             if (!string.IsNullOrEmpty(sound))
                 SoundController.Instance.PlayBuffer(sound);
             var context = new Objects.Effects.Skills.SkillEffectContext

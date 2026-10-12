@@ -433,7 +433,7 @@ namespace Client.Main.Core.Utilities
         }
 
 
-        public static string ParseSocketOption(byte socketByte) => $"S:{socketByte}";
+        public static string ParseSocketOption(byte socketByte) => EquipmentBonusDatabase.DescribeSocket(socketByte);
 
         #endregion
 

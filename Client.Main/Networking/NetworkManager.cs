@@ -418,6 +418,8 @@ namespace Client.Main.Networking
             }
             _logger.LogInformation("Sending select character request for: {CharacterName}", characterName);
             _selectedCharacterNameForLogin = characterName;
+            // Reset before the server can announce this character's existing store.
+            _characterState.PersonalShop.Reset();
             UpdateState(ClientConnectionState.SelectingCharacter);
             await _characterService.SelectCharacterAsync(characterName);
         }

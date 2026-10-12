@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
@@ -126,7 +126,7 @@ namespace Client.Main.Controls.UI.Game
             ControlSize = new Point(WindowWidth, WindowHeight);
             ViewSize = ControlSize;
             Interactive = false;
-            Visible = false;
+            Visible = UiThemeManager.IsMobilePlatform;
         }
 
         protected override void OnThemeChanged(UiThemeChangedEventArgs e)
@@ -581,6 +581,7 @@ namespace Client.Main.Controls.UI.Game
 
         public void Hide()
         {
+            if (UiThemeManager.IsMobilePlatform) return;
             Visible = false;
             _tooltipText = null;
             if (Scene?.FocusControl == this)
@@ -598,7 +599,7 @@ namespace Client.Main.Controls.UI.Game
 
             base.Update(gameTime);
 
-            if (MuGame.Instance.Keyboard.IsKeyDown(Keys.Escape) &&
+            if (!UiThemeManager.IsMobilePlatform && MuGame.Instance.Keyboard.IsKeyDown(Keys.Escape) &&
                 MuGame.Instance.PrevKeyboard.IsKeyUp(Keys.Escape))
             {
                 Hide();
@@ -884,7 +885,7 @@ namespace Client.Main.Controls.UI.Game
 
         private void DrawOverlayCaption(SpriteBatch spriteBatch)
         {
-            if (_font == null || string.IsNullOrWhiteSpace(_worldName))
+            if (UiThemeManager.IsMobilePlatform || _font == null || string.IsNullOrWhiteSpace(_worldName))
             {
                 return;
             }
@@ -1155,6 +1156,8 @@ namespace Client.Main.Controls.UI.Game
 
         private Rectangle GetMapScreenRectangle()
         {
+            if (UiThemeManager.IsMobilePlatform)
+                return Hud.TouchMenuControl.MobileMapRectangle;
             Rectangle control = DisplayRectangle;
             return new Rectangle(
                 control.X + (int)MathF.Round(MapLeft * Scale),

@@ -33,6 +33,8 @@ namespace Client.Main.Objects.Effects
         private Vector3 _lastPosition;
 
         public Func<Vector3> SamplePoint { get; set; }
+        public bool EmissionEnabled { get; set; } = true;
+        public bool EssentialSkillVisual { get; set; }
 
         private struct TrailSample
         {
@@ -142,8 +144,8 @@ namespace Client.Main.Objects.Effects
             // Keep visibility in sync with the weapon to avoid trailing after it is hidden.
             if (parentModel != null)
             {
-                Hidden = parentModel.Hidden || parentModel.Model == null;
-                if (parentModel.LowQuality)
+                Hidden = !EmissionEnabled || parentModel.Hidden || parentModel.Model == null;
+                if (parentModel.LowQuality && !EssentialSkillVisual)
                 {
                     _samples.Clear();
                     _hasLast = false;

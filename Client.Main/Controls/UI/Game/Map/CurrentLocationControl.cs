@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 
 using System;
 using System.Threading.Tasks;
@@ -148,11 +148,13 @@ namespace Client.Main.Controls.UI.Game.Map
             UiThemeManager.CurrentId == UiThemeId.Classic ||
             (MuGame.AppSettings?.HudTheme ?? HudTheme.Hybrid) != HudTheme.ClassicPc;
 
-        private bool UseMicroHelperButtons => UseOriginalLocationBar;
+        private bool UseMicroHelperButtons => UiThemeManager.IsMobilePlatform || UseOriginalLocationBar;
 
         public Point GetBuffAnchor(int gap)
 
         {
+            if (UiThemeManager.IsMobilePlatform)
+                return new Point(12, 12);
             var rect = DisplayRectangle;
 
             return new Point(
@@ -248,7 +250,7 @@ namespace Client.Main.Controls.UI.Game.Map
                 if (_font == null)
                     return;
 
-                if (UseOriginalLocationBar)
+                if (UiThemeManager.IsMobilePlatform || UseOriginalLocationBar)
                     DrawOriginalBar(spriteBatch);
                 else
                     DrawMuMainStyleBar(spriteBatch);
@@ -272,7 +274,7 @@ namespace Client.Main.Controls.UI.Game.Map
 
             _lastVirtualSize = virtualSize;
 
-            if (UseOriginalLocationBar)
+            if (UiThemeManager.IsMobilePlatform || UseOriginalLocationBar)
             {
                 ApplyOriginalLayout(virtualSize);
                 return;
@@ -348,10 +350,11 @@ namespace Client.Main.Controls.UI.Game.Map
             float scaleY = virtualSize.Y / 768f;
             float scale = Math.Clamp(MathF.Min(scaleX, scaleY), 0.82f, 1.35f);
 
-            X = ScaleOriginal(OriginalBaseX, scale);
-            Y = ScaleOriginal(OriginalBaseY, scale);
+            if (UiThemeManager.IsMobilePlatform) scale = 1f;
+            X = UiThemeManager.IsMobilePlatform ? Hud.TouchMenuControl.MobileMapRectangle.X : ScaleOriginal(OriginalBaseX, scale);
+            Y = UiThemeManager.IsMobilePlatform ? Hud.TouchMenuControl.MobileMapRectangle.Y - 34 : ScaleOriginal(OriginalBaseY, scale);
 
-            int plateWidth = ScaleOriginal(OriginalPlateWidth, scale);
+            int plateWidth = ScaleOriginal(UiThemeManager.IsMobilePlatform ? 184 : OriginalPlateWidth, scale);
             int height = ScaleOriginal(OriginalBaseHeight, scale);
             int gap = ScaleOriginal(OriginalButtonGap, scale);
             int buttonWidth = ScaleOriginal(UseMicroHelperButtons ? OriginalButtonHeight : OriginalButtonWidth, scale);
@@ -372,7 +375,7 @@ namespace Client.Main.Controls.UI.Game.Map
 
             Rectangle rect = DisplayRectangle;
             float scale = Math.Max(0.82f, rect.Height / (float)OriginalBaseHeight);
-            int plateWidth = ScaleOriginal(OriginalPlateWidth, scale);
+            int plateWidth = ScaleOriginal(UiThemeManager.IsMobilePlatform ? 184 : OriginalPlateWidth, scale);
             var plate = new Rectangle(rect.X, rect.Y, Math.Min(plateWidth, rect.Width), rect.Height);
 
             spriteBatch.Draw(pixel, plate, ModernHudTheme.BorderOuter);

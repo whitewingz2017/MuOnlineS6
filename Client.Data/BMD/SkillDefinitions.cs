@@ -245,8 +245,14 @@ namespace Client.Data.BMD
             }
 
             // WARRIOR/KNIGHT SKILLS
+            Add(20, 61); // Lunge / Sword2
+            Add(21, 62); // Uppercut / Sword3
+            Add(23, 64); // Slash / Sword5
+            Add(18, 186); // Defense
+            Add(49, 68); // Fire Breath / Rider
+            Add(55, 65); // Fire Slash / Wheel
             Add(22, 63);    // Cyclone → PlayerAttackSkillSword4
-            Add(19, 62);    // Falling Slash → PlayerAttackSkillWheel
+            Add(19, 60); // Falling Slash / Sword1
             Add(43, 71);    // Death Stab → PlayerAttackDeathstab
             Add(44, 137);   // Crescent Moon Slash → PlayerAttackRush
             Add(47, 70);    // Impale → PlayerAttackSkillSpear (Fenrir resolved by PlayerObject)
@@ -254,20 +260,29 @@ namespace Client.Data.BMD
             Add(42, 66);    // Rageful Blow → PlayerAttackSkillFuryStrike
 
             // WIZARD/SUMMONER SKILLS
+            Add(216, 164); // Lightning Orb
+            Add(217, 156); // Reflection / Sleep
+            Add(220, 156); // Blind / Sleep
+            Add(223, 172); // Explosion summon
+            Add(224, 172); // Requiem summon
+            Add(225, 172); // Pollution summon
+            Add(233, 177); // Expansion of Wizardry
+            Add(237, 183); // Gigantic Storm
+            Add(12, 152); // Aqua Beam / Flash
             Add(6, 151);    // Teleport → PlayerSkillTeleport
             Add(10, 154);   // HellFire → PlayerSkillHell
-            Add(13, 154);   // Cometfall → PlayerSkillHell
+            // Cometfall uses the standard magic cast, not Hellfire.
             Add(14, 153);   // Inferno → PlayerSkillInferno
             Add(40, 73);    // Nova release → PlayerSkillHellStart
             Add(58, 72);    // Nova start/charge → PlayerSkillHellBegin
-            Add(63, 172);   // Summon → PlayerSkillSummon
+            Add(63, 81); // Summon party / Teleport
             Add(214, 168);  // Drain Life → PlayerSkillDrainLife
             Add(215, 160);  // Chain Lightning → PlayerSkillChainLightning
             Add(219, 156);  // Sleep → PlayerSkillSleep
             Add(230, 185);  // Lightning Shock → PlayerSkillLightningShock
             Add(221, 156);  // Weakness → PlayerSkillSleep
             Add(222, 156);  // Innovation → PlayerSkillSleep
-            Add(218, 166);  // Berserker → PlayerSkillSleep
+            Add(218, 156); // Berserker / Sleep
 
             // DARK LORD SKILLS
             // Fire Scream (78) does NOT use an animation from this table: the original
@@ -276,20 +291,15 @@ namespace Client.Data.BMD
             Add(236, 184);  // Flame Strike → PlayerSkillFlamestrike
             Add(232, 176);  // Strike of Destruction → PlayerSkillBlowOfDestruction
             Add(337, 176);  // Strike of Destruction Strength
-            Add(64, 71);    // Increase Critical Damage → PlayerSkillVitality
-            Add(65, 71);    // Electric Spike → PlayerSkillVitality
-            Add(56, 146);   // Power Slash → PlayerAttackTwoHandSwordTwo
-            Add(57, 65);    // Spiral Slash → PlayerAttackSkillWheel
+            Add(64, 146); // Critical Damage / Hand1
+            Add(65, 152); // Electric Spike / Flash
+            Add(56, 145);   // Power Slash → PlayerAttackTwoHandSwordTwo
+            Add(57, 136); // Spiral Slash / OneFlash
             Add(62, 87);    // Earthquake → PlayerAttackDarkhorse
-            Add(515, 87);   // Earth Shake I → PlayerAttackDarkhorse
-            Add(516, 87);   // Earth Shake II → PlayerAttackDarkhorse
-            Add(517, 87);   // Earth Shake III → PlayerAttackDarkhorse
-            Add(518, 87);   // Earth Shake IV → PlayerAttackDarkhorse
-            Add(519, 87);   // Earth Shake V → PlayerAttackDarkhorse
 
             // ELF SKILLS
             Add(234, 246);  // Recovery → PlayerRecoverSkill
-            Add(46, 178);   // Deep Impact → PlayerSkillMultishotBowStand
+            Add(46, 130); // Deep Impact / BowUp
             Add(235, 178);  // Multi-Shot → PlayerSkillMultishotBowStand
 
             // RAGE FIGHTER SKILLS
@@ -297,8 +307,8 @@ namespace Client.Data.BMD
             Add(261, 248);  // Beast Uppercut → PlayerSkillStamp
             Add(262, 249);  // Chain Drive → PlayerSkillGiantswing
             Add(263, 250);  // Dark Side → PlayerSkillDarksideReady
-            Add(264, 252);  // Dragon Roar → PlayerSkillDragonkick
-            Add(265, 253);  // Dragon Slasher → PlayerSkillDragonlore
+            Add(264, 253); // Dragon Roar / Dragonlore
+            Add(265, 252); // Dragon Slasher / Dragonkick
             Add(270, 254);  // Phoenix Shot → PlayerSkillPhoenixShot
             Add(48, 67);    // Swell Life → PlayerSkillVitality
             Add(356, 67);
@@ -306,7 +316,14 @@ namespace Client.Data.BMD
             Add(363, 67);
 
             // SPECIAL SKILLS
-            Add(67, 140);   // Stun → PlayerAttackStun
+            Add(67, 67);    // Stun uses the vitality cast (mounted variants in PlayerObject)
+            Add(68, 139);   // Remove stun
+            Add(69, 67);    // Greater Mana
+            Add(70, 67);    // Invisibility
+            Add(71, 139);   // Remove invisibility
+            Add(72, 67);    // Remove buffs
+            Add(73, 138);   // Death Cannon
+            Add(269, 137);  // Charge / Occupy uses Rush
             Add(76, 102);   // Plasma Storm → PlayerFenrirSkill
             Add(565, 257);  // Blood Howling → PlayerSkillBloodHowling
 
@@ -421,8 +438,8 @@ namespace Client.Data.BMD
 
             // RAGE FIGHTER SKILLS
             map[263] = "Sound/Ragefighter/Rage_Darkside.wav";    // Darkside (ID 263)
-            map[265] = "Sound/Ragefighter/Rage_Dragonlower.wav"; // Dragon Lore (ID 265)
-            map[264] = "Sound/Ragefighter/Rage_Dragonkick.wav";  // Dragon Slayer (ID 264)
+            map[265] = "Sound/Ragefighter/Rage_Dragonkick.wav"; // Dragon Lore (ID 265)
+            map[264] = "Sound/Ragefighter/Rage_Dragonlower.wav";  // Dragon Slayer (ID 264)
             map[270] = "Sound/Ragefighter/Rage_Giantswing.wav";  // Phoenix Shot (ID 270)
             map[269] = "Sound/Ragefighter/Rage_Stamp.wav";       // Charge (ID 269)
 

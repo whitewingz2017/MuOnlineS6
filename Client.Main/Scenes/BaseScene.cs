@@ -64,6 +64,11 @@ namespace Client.Main.Scenes
 
         internal bool CanReceivePointerInput(GameControl control)
         {
+            // A picked-up item must keep receiving movement/release over other windows.
+            // The inventory itself still defers to visible modal dialogs in Update.
+            if (control is Client.Main.Controls.UI.Game.Inventory.InventoryControl inventory &&
+                inventory.Visible && inventory.GetDraggedItem() != null)
+                return true;
             var owner = _pointerGestureControl ?? MouseHoverControl;
             if (owner == null || ReferenceEquals(owner, World))
                 return true;

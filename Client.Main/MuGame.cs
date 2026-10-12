@@ -1817,6 +1817,11 @@ namespace Client.Main
 
         private bool ShouldUseIntermediateRenderTarget()
         {
+            // GLES world shaders use the render-target orientation. Keep login
+            // and character selection on the same presentation path as gameplay.
+            if (OperatingSystem.IsAndroid())
+                return true;
+
             // GameScene always renders off-screen so a late render/resource failure can
             // present preserved scene color instead of flashing the backbuffer black.
             if (ActiveScene is GameScene)

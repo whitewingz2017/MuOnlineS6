@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.CompilerServices;
 using Client.Main;
 using Client.Main.Controls;
@@ -23,6 +23,15 @@ void Check(bool result, string message)
     if (!result) throw new InvalidOperationException(message);
     assertions++;
 }
+byte[] loginPacket = new byte[92];
+loginPacket[0] = 0xC3; loginPacket[1] = 92; loginPacket[2] = 0xF3; loginPacket[3] = 3;
+System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(loginPacket.AsSpan(44), 8032);
+System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(loginPacket.AsSpan(68), 55000412);
+Check(Client.Main.Core.Utilities.CharacterInformationPacketReader.TryReadExtended(loginPacket, out var loginInfo) && loginInfo.Money == 55000412 && loginInfo.CurrentMana == 8032, "Read OpenMU's 92-byte login packet as extended: Zen must not come from the mana field.");
+Check(loginPacket[1] == 92, "Reading an incoming character packet must not rewrite its header.");
+byte[] longerLogin = new byte[96]; loginPacket.CopyTo(longerLogin, 0); longerLogin[1] = 96;
+Check(Client.Main.Core.Utilities.CharacterInformationPacketReader.TryReadExtended(longerLogin, out loginInfo) && loginInfo.Money == 55000412, "Continue accepting the package's 96-byte extended login variant.");
+Check(!Client.Main.Core.Utilities.CharacterInformationPacketReader.TryReadExtended(new byte[CharacterInformation.Length], out _), "Keep standard character packets on the legacy decoder.");
 
 // No window or GraphicsDevice: exercise the real movement, registration and
 // frustum code, with only content loading and the application shell omitted.
@@ -73,6 +82,74 @@ PlayerObject Spawn(ushort id, Vector2 tile)
     world.Objects.Add(player);
     return player;
 }
+
+// Expected model actions are taken from MuMain SkillCast.cpp, WSclient.cpp and MonkSystem.cpp.
+// Exercise the public cast resolver, not just its data table: server echoes and remote casts use it too.
+var skillCaster = Spawn(0x7F0, new Vector2(127, 115));
+var expectedSkillActions = new Dictionary<ushort, int>
+{
+    [18]=186, [19]=60, [20]=61, [21]=62, [22]=63, [23]=64,
+    [6]=151, [10]=154, [12]=152, [14]=153, [40]=73, [58]=72,
+    [41]=65, [42]=66, [43]=71, [44]=137, [47]=70, [48]=67, [49]=68,
+    [55]=65, [56]=145, [57]=136, [60]=80, [61]=80, [62]=87, [63]=81,
+    [64]=146, [65]=152, [66]=80, [67]=67, [68]=139, [69]=67, [70]=67,
+    [71]=139, [72]=67, [73]=138, [74]=80, [75]=146, [78]=80,
+    [214]=168, [215]=160, [216]=164, [217]=156, [218]=156, [219]=156,
+    [220]=156, [221]=156, [222]=156, [223]=172, [224]=172, [225]=172,
+    [230]=185, [232]=176, [233]=177, [234]=246, [236]=184, [237]=183, [238]=80,
+    [260]=247, [261]=248, [262]=249, [263]=250, [264]=253, [265]=252, [269]=137, [270]=254
+};
+foreach (var (skill, action) in expectedSkillActions)
+    Check((int)skillCaster.GetSkillAction(skill, false) == action, $"Skill {skill} must use MuMain action {action}.");
+foreach (var master in Client.Main.Core.Utilities.ServerMasterSkills.All.Where(x => x.Replaced != 0))
+{
+    var baseId = Client.Main.Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(master.Number);
+    if (expectedSkillActions.TryGetValue(baseId, out int expectedAction))
+        Check((int)skillCaster.GetSkillAction(master.Number, false) == expectedAction,
+            $"Master skill {master.Number} must inherit base {baseId}'s action {expectedAction}.");
+    Check(Client.Main.Objects.Effects.Skills.SkillVisualEffectRegistry.HasEffect(master.Number) ==
+        Client.Main.Objects.Effects.Skills.SkillVisualEffectRegistry.HasEffect(baseId),
+        $"Master skill {master.Number} must inherit base {baseId}'s visual coverage.");
+}
+Check(skillCaster.GetSkillAction(13, false) is PlayerAction.PlayerSkillHand1 or PlayerAction.PlayerSkillHand2,
+    "Cometfall must use normal casting, not the Hellfire animation.");
+foreach (ushort skill in new ushort[] { 19,20,21,22,23 })
+    Check(Client.Main.Objects.Effects.Skills.SkillVisualEffectRegistry.HasEffect(skill), $"Weapon skill {skill} must have its MuMain cast flash.");
+Check(!Client.Main.Core.Utilities.WeaponSkillVisualRules.ShouldEmitTrail(PlayerAction.PlayerWalkMale, 0, true, 3), "Walking must not emit a combat weapon trail.");
+Check(Client.Main.Core.Utilities.WeaponSkillVisualRules.ShouldEmitTrail(PlayerAction.PlayerAttackSkillSword2, 0, true, 3), "Lunge must emit a right-weapon trail.");
+Check(!Client.Main.Core.Utilities.WeaponSkillVisualRules.ShouldEmitTrail(PlayerAction.PlayerAttackSkillSword2, 0, false, 3), "Lunge must not duplicate the right-weapon trail on the left hand.");
+Check(!Client.Main.Core.Utilities.WeaponSkillVisualRules.ShouldEmitTrail(PlayerAction.PlayerSkillBlowOfDestruction, 0, true, 1) &&
+    Client.Main.Core.Utilities.WeaponSkillVisualRules.ShouldEmitTrail(PlayerAction.PlayerSkillBlowOfDestruction, 0, true, 4), "Destruction trails must respect MuMain's active frames.");
+var ridingField = typeof(PlayerObject).GetField("_isRiding", BindingFlags.NonPublic | BindingFlags.Instance)!;
+var vehicleField = typeof(PlayerObject).GetField("_currentVehicleIndex", BindingFlags.NonPublic | BindingFlags.Instance)!;
+ridingField.SetValue(skillCaster, true);
+foreach (short vehicle in new short[] { 7, 8, 11 })
+{
+    vehicleField.SetValue(skillCaster, vehicle);
+    int offset = vehicle == 7 ? 1 : vehicle == 8 ? 2 : 3;
+    foreach (ushort skill in new ushort[] { 214,215,216,218,219,221,222,223,224,225 })
+    {
+        Check((int)skillCaster.GetSkillAction(skill, false) == expectedSkillActions[skill] + offset,
+            $"Summoner skill {skill} must select mount variant {offset}.");
+        Check((int)skillCaster.GetSkillAction(skill, true) == expectedSkillActions[skill],
+            $"Summoner skill {skill} must use grounded action in a safe zone.");
+    }
+}
+Check(skillCaster.GetSkillAction(329, false) == PlayerAction.PlayerFenrirAttackMagic, "Master Lunge must respect the Fenrir casting variant.");
+ridingField.SetValue(skillCaster, false);
+var remoteSkillMethod = typeof(CharacterDataHandler).GetMethod("SpawnRemoteRegisteredSkill", BindingFlags.NonPublic | BindingFlags.Static)!;
+remoteSkillMethod.Invoke(null, [world, (ushort)0x7F0, (ushort)13, (ushort)0, null, null]);
+Check((PlayerAction)skillCaster.CurrentAction is PlayerAction.PlayerSkillHand1 or PlayerAction.PlayerSkillHand2,
+    "Remote skills without an effect factory must still animate.");
+remoteSkillMethod.Invoke(null, [world, (ushort)0x7F0, (ushort)20, (ushort)0, null, null]);
+Check(skillCaster.CurrentAction == PlayerAction.PlayerAttackSkillSword2,
+    "Remote Lunge packets must select the thrust animation.");
+foreach (var effect in world.Objects.OfType<Client.Main.Objects.Effects.WeaponSkillFlashEffect>().ToArray())
+{
+    world.RemoveObject(effect);
+    effect.Dispose();
+}
+world.RemoveObject(skillCaster);
 
 var pc = Spawn(0x123, new Vector2(131, 116));
 foreach (float aspect in new[] { 16f / 9f, 20f / 9f })
@@ -321,6 +398,122 @@ scope.RemoveObjectFromScope(0x321);
 InvokeHandlerStatic("PumpPendingPlayerSpawns", world);
 Check((int)queue.GetType().GetProperty("Count")!.GetValue(queue)! == 1, "A removed player must not be resurrected by a late buffer.");
 
+// Inventory feature wire regressions: dynamic item sizes and S6 store storage offsets.
+state.InventoryExpansionState = 230;
+Check(state.InventoryExpansionState == 0, "An invalid server extension count must never unlock inventory pages.");
+state.InventoryExpansionState = 4;
+Check(state.InventoryExpansionState == 4, "Retain the maximum legitimate Season 6 expansion count.");
+var shopState = new PersonalShopState();
+shopState.PendingPrices[204] = 12345;
+shopState.ConfirmPrice(204, false);
+Check(!shopState.Prices.ContainsKey(204), "A rejected store price must not appear as confirmed.");
+shopState.PendingPrices[204] = 23456;
+shopState.ConfirmPrice(204, true);
+Check(shopState.Prices[204] == 23456 && shopState.PendingPrices.Count == 0, "Commit the acknowledged store price exactly once.");
+if (OperatingSystem.IsWindows())
+{
+    var loginStore = typeof(CharacterState).Assembly.GetType("Client.Main.Configuration.LoginDetailsStore")!;
+    var protect = loginStore.GetMethod("ProtectWindows", BindingFlags.NonPublic | BindingFlags.Static)!;
+    byte[] sample = System.Text.Encoding.UTF8.GetBytes("test-user\ntest-password");
+    var protectedBytes = (byte[])protect.Invoke(null, new object[] { sample, true })!;
+    Check(!protectedBytes.SequenceEqual(sample), "Windows remembered details are encrypted, not stored as plain text.");
+    Check(((byte[])protect.Invoke(null, new object[] { protectedBytes, false })!).SequenceEqual(sample), "Windows user-protected credentials round trip correctly without saving real login details.");
+}
+var moveState = new CharacterState(NullLoggerFactory.Instance);
+byte[] originalStoreItem = { 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 };
+moveState.AddOrUpdateInventoryItem(204, originalStoreItem);
+moveState.PersonalShop.Prices[204] = 1000;
+moveState.StashPendingInventoryMove(204, 12);
+var moveHandler = new InventoryHandler(NullLoggerFactory.Instance, moveState, null!, TargetProtocolVersion.Season6);
+byte[] rejectedMove = new byte[16];
+rejectedMove[0] = 0xC3; rejectedMove[1] = 16; rejectedMove[2] = 0x24; rejectedMove[3] = 0xFF;
+await moveHandler.HandleItemMovedOrFailedAsync(rejectedMove);
+Check(moveState.GetInventoryItems()[204].SequenceEqual(originalStoreItem), "A rejected store move must preserve the original item, not substitute failure-packet data.");
+Check(moveState.PendingMoveFromSlot == null && moveState.PersonalShop.Prices[204] == 1000, "A rejected move releases the pending operation and preserves the store price.");
+moveState.StashPendingInventoryMove(204, 12);
+byte[] confirmedMove = new byte[17];
+confirmedMove[0] = 0xC3; confirmedMove[1] = 17; confirmedMove[2] = 0x24; confirmedMove[3] = 0; confirmedMove[4] = 12;
+originalStoreItem.CopyTo(confirmedMove, 5);
+await moveHandler.HandleItemMovedOrFailedAsync(confirmedMove);
+Check(!moveState.HasInventoryItem(204) && moveState.GetInventoryItems()[12].SequenceEqual(originalStoreItem), "A confirmed store removal moves the exact item to the inventory once.");
+Check(!moveState.PersonalShop.Prices.ContainsKey(204), "Clear a removed item's price only after successful movement.");
+byte[] announcements = new byte[82];
+announcements[5] = 2;
+announcements[6] = 0x81; announcements[7] = 0x23; announcements[8] = (byte)'A';
+announcements[44] = 0x04; announcements[45] = 0x56; announcements[46] = (byte)'B';
+Check(shopState.ApplyAnnouncements(announcements, 0x123), "Accept all nearby store announcements.");
+var loginShopState = new CharacterState(NullLoggerFactory.Instance);
+loginShopState.PersonalShop.ApplyAnnouncements(announcements, 0);
+loginShopState.UpdateCoreCharacterInfo(0x123, "StoreOwner", default, 100, 1, 1, 0);
+Check(loginShopState.PersonalShop.IsOpen && loginShopState.PersonalShop.Title == "A", "Resolve an existing store announced before the character's identity is initialized.");
+loginShopState.PersonalShop.Prices[204] = 1000;
+loginShopState.UpdateCoreCharacterInfo(0x123, "StoreOwner", default, 100, 1, 1, 0);
+Check(loginShopState.PersonalShop.IsOpen && loginShopState.PersonalShop.Prices[204] == 1000, "Loading the game scene preserves the server's open store and confirmed prices.");
+loginShopState.PersonalShop.Close(0x123, 0x123);
+loginShopState.UpdateCoreCharacterInfo(0x123, "StoreOwner", default, 100, 1, 1, 0);
+Check(!loginShopState.PersonalShop.IsOpen, "Refreshing character information must not reopen a closed store.");
+Check(shopState.GetVisibleTitle(0x8123, 0x123) == "A" && shopState.GetVisibleTitle(0x456, 0x123) == "B", "Show both owner and remote titles with masked ids.");
+Check(!shopState.ApplyAnnouncements(announcements.AsSpan(0, 81), 0x123) && shopState.NearbyTitles.Count == 2, "Reject truncated announcements without partial mutation.");
+shopState.Close(0x8456, 0x123);
+Check(shopState.GetVisibleTitle(0x456, 0x123) == null && shopState.IsOpen, "Closing a remote store keeps the owner's sign.");
+shopState.Close(0x123, 0x123);
+Check(shopState.GetVisibleTitle(0x123, 0x123) == null, "Hide the owner's sign when closed.");
+shopState.Reset();
+Check(shopState.NearbyTitles.Count == 0, "Clear store titles across character sessions.");
+byte[] storeList = new byte[69];
+storeList[0] = 0xC2; storeList[2] = 69; storeList[3] = 0x3F; storeList[4] = 5;
+storeList[5] = 1; storeList[6] = 1; storeList[7] = 35; storeList[8] = (byte)'A'; storeList[18] = (byte)'S'; storeList[54] = 1;
+System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(storeList.AsSpan(55), 123456);
+storeList[63] = 204;
+byte[] plainItem = { 0x80, 1, 0, 255, 0 };
+plainItem.CopyTo(storeList, 64);
+Check(Client.Main.Core.Utilities.PlayerStorePacketReader.TryReadList(storeList, true, out var readStore) && readStore.Owner == 0x123 && readStore.Items[0].Slot == 204 && readStore.Items[0].Price == 123456, "Parse a dynamic personal-store item without confusing price bytes with item data.");
+Check(!Client.Main.Core.Utilities.PlayerStorePacketReader.TryReadList(storeList.AsSpan(0, 68), true, out _), "Reject a truncated personal-store item atomically.");
+storeList[59] = 0xF0; storeList[60] = 0xFF;
+Check(Client.Main.Core.Utilities.PlayerStorePacketReader.TryReadList(storeList, true, out readStore) && readStore.Items.Count == 0, "Never offer an account-coin item as a Zen purchase.");
+byte[] purchase = new byte[13];
+purchase[0] = 0xC1; purchase[1] = 13; purchase[2] = 0x3F; purchase[3] = 6;
+purchase[4] = 0x23; purchase[5] = 1; purchase[6] = 1; purchase[7] = 76; plainItem.CopyTo(purchase, 8);
+Check(Client.Main.Core.Utilities.PlayerStorePacketReader.TryReadPurchase(purchase, true, out byte buyResult, out byte buySlot, out var bought) && buyResult == 1 && buySlot == 76 && bought.SequenceEqual(plainItem), "Use the extended purchase result and inventory-slot fields, not the seller id or trailing item byte.");
+byte[] paddedPurchase = new byte[23];
+purchase.CopyTo(paddedPurchase, 0); paddedPurchase[1] = 23;
+Check(Client.Main.Core.Utilities.PlayerStorePacketReader.TryReadPurchase(paddedPurchase, true, out buyResult, out buySlot, out bought) && bought.SequenceEqual(plainItem), "Accept OpenMU's maximum-sized purchase buffer and trim unused serializer bytes.");
+paddedPurchase[22] = 1;
+Check(!Client.Main.Core.Utilities.PlayerStorePacketReader.TryReadPurchase(paddedPurchase, true, out _, out _, out _), "Reject unexpected nonzero bytes after a purchased item.");
+var saleState = new CharacterState(NullLoggerFactory.Instance);
+saleState.UpdateInventoryZen(100);
+saleState.AddOrUpdateInventoryItem(12, plainItem);
+saleState.StashPendingSellSlot(12);
+var saleHandler = new ShopHandler(NullLoggerFactory.Instance, saleState, null!, TargetProtocolVersion.Season6);
+byte[] salePacket = new byte[8];
+salePacket[0] = 0xC1; salePacket[1] = 8; salePacket[2] = 0x33; salePacket[3] = 1;
+System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(salePacket.AsSpan(4), 123456);
+await saleHandler.HandleNpcItemSellResultAsync(salePacket);
+Check(saleState.InventoryZen == 123456 && !saleState.HasInventoryItem(12), "Use the server-confirmed merchant balance and remove the sold item together.");
+byte[] socketItem = { 0x80, 1, 0, 255, 0x80, 0xF2, 1, 51 };
+Check(Client.Main.Core.Utilities.EquipmentBonusDatabase.GetSocketBytes(socketItem).SequenceEqual(new byte[] {1, 51}), "Extract seeds after variable item options and socket metadata.");
+Check(Client.Main.Core.Utilities.EquipmentBonusDatabase.DescribeSocket(1).Contains("+7") && Client.Main.Core.Utilities.EquipmentBonusDatabase.DescribeSocket(51).Contains("+8"), "Resolve English seed descriptions and sphere-level values from the embedded MuMain data.");
+Check(Client.Main.Core.Utilities.EquipmentBonusDatabase.DescribeSets(Array.Empty<InventoryItem>()).Contains("No ancient"), "Report empty equipment without inventing set bonuses.");
+var setHelmet = new InventoryItem(new Client.Main.Controls.UI.Game.Inventory.ItemDefinition(5, "Warrior helm", 2, 2), Point.Zero, new byte[] { 0x70, 5, 0, 255, 0x10, 1 });
+var setArmor = new InventoryItem(new Client.Main.Controls.UI.Game.Inventory.ItemDefinition(5, "Warrior armor", 2, 3), Point.Zero, new byte[] { 0x80, 5, 0, 255, 0x10, 1 });
+string singleSet = Client.Main.Core.Utilities.EquipmentBonusDatabase.DescribeSets(new[] { setHelmet });
+Check(singleSet.Contains("Warrior's (1/7") && !singleSet.Contains("Active: Strength"), "A single ancient item must not enable the two-piece set bonus.");
+string pairedSet = Client.Main.Core.Utilities.EquipmentBonusDatabase.DescribeSets(new[] { setHelmet, setArmor });
+Check(pairedSet.Contains("Warrior's (2/7") && pairedSet.Contains("Active: Strength +10"), "Activate the actual MuMain two-piece ancient bonus.");
+string duplicateSet = Client.Main.Core.Utilities.EquipmentBonusDatabase.DescribeSets(new[] { setHelmet, setHelmet });
+Check(duplicateSet.Contains("(1/7"), "Duplicate items must not falsely complete an ancient set.");
+var storeUpdate = typeof(ShopHandler).GetMethod("HandlePlayerStoreUpdateAsync")!;
+Check(storeUpdate.GetCustomAttribute<Client.Main.Core.Utilities.PacketHandlerAttribute>()!.SubCode == 0x13, "Route store updates separately from the initial list response.");
+
+var dragInventory = new Client.Main.Controls.UI.Game.Inventory.InventoryControl(null, NullLoggerFactory.Instance) { Visible = true };
+var otherWindow = new Client.Main.Controls.UI.Game.Inventory.PlayerShopControl();
+typeof(BaseScene).GetField("_pointerGestureControl", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(gameScene, otherWindow);
+var receivePointer = typeof(BaseScene).GetMethod("CanReceivePointerInput", BindingFlags.NonPublic | BindingFlags.Instance)!;
+Check(!(bool)receivePointer.Invoke(gameScene, [dragInventory])!, "An ordinary inventory must respect another window's pointer ownership.");
+dragInventory._pickedItemRenderer.PickUpItem(setHelmet);
+Check((bool)receivePointer.Invoke(gameScene, [dragInventory])!, "A held inventory item retains input when the pointer moves over a merchant window.");
+dragInventory._pickedItemRenderer.ReleaseItem();
+Check(!(bool)receivePointer.Invoke(gameScene, [dragInventory])!, "Releasing the item restores normal window pointer routing.");
 Console.WriteLine($"PASS: {assertions} remote-player visibility regression assertions.");
 }
 catch (Exception exception)

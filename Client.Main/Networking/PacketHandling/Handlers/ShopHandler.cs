@@ -15,7 +15,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
     /// <summary>
     /// Handles packets related to NPC shops (StoreItemList etc.).
     /// </summary>
-    public class ShopHandler : IGamePacketHandler
+    public partial class ShopHandler : IGamePacketHandler
     {
         private readonly ILogger<ShopHandler> _logger;
         private readonly CharacterState _characterState;
@@ -334,7 +334,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
         }
 
         /// <summary>
-        /// Handles result of sell item to NPC (0x33). Updates money is handled elsewhere; here we cleanup inventory.
+        /// Handles the authoritative sale result, including the resulting Zen balance.
         /// </summary>
         [PacketHandler(0x33, PacketRouter.NoSubCode)]
         public Task HandleNpcItemSellResultAsync(Memory<byte> packet)
@@ -342,7 +342,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             try
             {
                 var res = new NpcItemSellResult(packet);
+                EconomyTrace.Record(res.Success ? "MerchantSaleSuccess" : "MerchantSaleFailed", res.Money, packet.Span);
                 _logger.LogInformation("NpcItemSellResult: Success={Success}, Money={Money}", res.Success, res.Money);
+                _characterState.UpdateInventoryZen(res.Money);
                 if (res.Success)
                 {
                     if (_characterState.TryConsumePendingSellSlot(out byte soldSlot))

@@ -1,3 +1,4 @@
+using System.Linq;
 #nullable enable
 using System;
 using System.Collections.Generic;
@@ -24,8 +25,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private readonly List<ShopItemEntry> _items = new();
         private SpriteFont? _font;
 
-        private const int ItemSlotSize = 48;
-        private const int GridCols = 4;
+        private const int ItemSlotSize = 40;
+        private const int GridCols = 8;
         private const int TitleHeight = 36;
         private const int FooterHeight = 32;
 
@@ -60,8 +61,12 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 });
             }
 
+            Align = ControlAlign.HorizontalCenter | ControlAlign.VerticalCenter;
             Visible = true;
+            BringToFront();
         }
+
+        public void CloseIfOwner(ushort owner) { if ((owner & 0x7FFF) == (_ownerId & 0x7FFF)) CloseShop(); }
 
         public void CloseShop()
         {
@@ -108,6 +113,13 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 spriteBatch.Draw(pixel, itemRect, ModernHudTheme.SlotBg * Alpha);
                 spriteBatch.Draw(pixel, new Rectangle(itemRect.X, itemRect.Y, itemRect.Width, 1), ModernHudTheme.BorderInner * Alpha);
 
+                var definition = Client.Main.Core.Utilities.ItemDatabase.GetItemDefinition(_items[i].ItemData);
+                if (definition != null)
+                {
+                    var item = new InventoryItem(definition, Point.Zero, _items[i].ItemData);
+                    var texture = (MuGame.Instance.ActiveScene as Client.Main.Scenes.GameScene)?.InventoryControl?.ResolveAuxiliaryItemTexture(item, itemRect.Width, itemRect.Height - 12);
+                    if (texture != null) spriteBatch.Draw(texture, new Rectangle(itemRect.X, itemRect.Y, itemRect.Width, itemRect.Height - 12), Color.White);
+                }
                 // Price text
                 string price = _items[i].Price.ToString("N0");
                 var priceSize = _font.MeasureString(price) * 0.4f;
@@ -118,7 +130,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             // Footer: close button hint
-            string footer = "Click item to buy  •  Press ESC to close";
+            string footer = "Click item to buy | Click here to close";
             var footerSize = _font.MeasureString(footer) * 0.45f;
             float fx = rect.X + (rect.Width - footerSize.X) / 2f;
             float fy = rect.Bottom - FooterHeight + 8;
@@ -130,6 +142,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             base.Update(gameTime);
 
             if (!Visible) return;
+            if (Scene?.Controls.GetSnapshotArray().Any(c => c is DialogControl { Visible: true }) == true) return;
 
             // Close on ESC
             var kb = MuGame.Instance.Keyboard;
@@ -138,12 +151,14 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 CloseShop();
 
             bool leftJustPressed = MuGame.Instance.UiMouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed &&
-                                   MuGame.Instance.PrevMouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released;
+                                   MuGame.Instance.PrevUiMouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released;
             if (!leftJustPressed)
                 return;
 
             Point mousePos = MuGame.Instance.UiMouseState.Position;
             Rectangle rect = DisplayRectangle;
+            if (rect.Contains(mousePos)) Scene?.SetMouseInputConsumed();
+            if (new Rectangle(rect.X, rect.Bottom - FooterHeight, rect.Width, FooterHeight).Contains(mousePos)) { CloseShop(); return; }
             int gridX = rect.X + 12;
             int gridY = rect.Y + TitleHeight;
             for (int i = 0; i < _items.Count; i++)
@@ -158,7 +173,11 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
                 if (itemRect.Contains(mousePos))
                 {
-                    BuyRequested?.Invoke(_ownerId, _ownerName, _items[i].Slot);
+                    var entry = _items[i];
+                    ushort owner = _ownerId;
+                    string name = _ownerName;
+                    RequestDialog.Show($"Buy {Client.Main.Core.Utilities.ItemDatabase.GetItemName(entry.ItemData)} for {entry.Price:N0} Zen?",
+                        onAccept: () => BuyRequested?.Invoke(owner, name, entry.Slot), acceptText: "Buy", rejectText: "Cancel");
                     return;
                 }
             }

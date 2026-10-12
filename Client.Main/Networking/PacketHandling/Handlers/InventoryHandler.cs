@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.Network.Packets.ServerToClient;
 using Client.Main.Core.Utilities;
 using System;
@@ -65,6 +65,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     return Task.CompletedTask;
                 }
                 var moneyUpdate = new InventoryMoneyUpdate(packet);
+                EconomyTrace.Record("InventoryMoneyUpdate", moneyUpdate.Money, packet.Span);
                 _logger.LogInformation("Inventory Zen Updated: {Amount}", moneyUpdate.Money);
                 _characterState.UpdateInventoryZen(moneyUpdate.Money);
             }
@@ -182,6 +183,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         if (packet.Length >= InventoryMoneyUpdate.Length)
                         {
                             var moneyUpdate = new InventoryMoneyUpdate(packet);
+                            EconomyTrace.Record("PickupMoneyUpdate", moneyUpdate.Money, packet.Span);
                             bool hadPendingPickup = _characterState.PendingPickupRawId.HasValue;
                             _characterState.UpdateInventoryZen(moneyUpdate.Money);
                             if (hadPendingPickup)
@@ -394,7 +396,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     if (_characterState.TryConsumePendingInventoryMove(out var fromSlot, out _))
                     {
                         // Restore the item at original location
-                        _characterState.AddOrUpdateInventoryItem(fromSlot, itemData);
+                        // A rejected move did not change the authoritative inventory. Failure
+                        // packets can contain an empty placeholder, never replace the real item with it.
+                        _characterState.RaiseInventoryChanged();
                         _logger.LogWarning("Item move failed. Restored item at slot {From}", fromSlot);
                         // Inform user
                         MuGame.ScheduleOnMainThread(() =>
@@ -510,6 +514,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         {
                             if (fromSlot != toSlot)
                             {
+                                _characterState.PersonalShop.Prices.Remove(fromSlot);
+                                _characterState.PersonalShop.Prices.Remove(toSlot);
                                 _characterState.RemoveInventoryItem(fromSlot);
                             }
                             _characterState.AddOrUpdateInventoryItem(toSlot, itemData);

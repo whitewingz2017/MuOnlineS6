@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.Network;
 using Client.Main.Networking.PacketHandling;
 using System;
@@ -1769,12 +1769,7 @@ namespace Client.Main.Networking.Services
             _logger.LogInformation("Closing personal shop.");
             try
             {
-                await _connectionManager.Connection.SendAsync(() =>
-                {
-                    var len = PlayerShopClose.Length;
-                    _connectionManager.Connection.Output.GetMemory(len).Slice(0, len);
-                    return len;
-                });
+                await _connectionManager.Connection.SendPlayerShopCloseAsync();
                 _logger.LogInformation("Personal shop close request sent.");
             }
             catch (Exception ex)
@@ -1797,15 +1792,7 @@ namespace Client.Main.Networking.Services
             _logger.LogInformation("Setting shop item price: slot={Slot}, price={Price}", itemSlot, price);
             try
             {
-                await _connectionManager.Connection.SendAsync(() =>
-                {
-                    var len = PlayerShopSetItemPrice.Length;
-                    var packet = new PlayerShopSetItemPrice(
-                        _connectionManager.Connection.Output.GetMemory(len).Slice(0, len));
-                    packet.ItemSlot = itemSlot;
-                    packet.Price = price;
-                    return len;
-                });
+                await _connectionManager.Connection.SendPlayerShopSetItemPriceAsync(itemSlot, price);
             }
             catch (Exception ex)
             {

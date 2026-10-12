@@ -1,4 +1,4 @@
-using Client.Main.Content;
+﻿using Client.Main.Content;
 using Client.Main.Controls;
 using Client.Main.Data;
 using Client.Main.Models;
@@ -1541,6 +1541,62 @@ namespace Client.Main.Objects.Player
 
         public PlayerAction GetSkillAction(ushort skillId, bool isInSafeZone)
         {
+            // Resolve the server's replacement chain before selecting mount or weapon variants.
+            skillId = Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId);
+            if (ArrowProjectileSpawner.IsArrowSkill(skillId))
+                return GetArrowSkillAnimation(skillId);
+
+            if (skillId is 214 or 215 or 216 or 217 or 218 or 219 or 220 or 221 or 222 or 223 or 224 or 225)
+            {
+                int baseAction = skillId switch
+                {
+                    214 => (int)PlayerAction.PlayerSkillDrainLife,
+                    215 => (int)PlayerAction.PlayerSkillChainLightning,
+                    216 => (int)PlayerAction.PlayerSkillLightningOrb,
+                    223 or 224 or 225 => (int)PlayerAction.PlayerSkillSummon,
+                    _ => (int)PlayerAction.PlayerSkillSleep
+                };
+                int mountOffset = !_isRiding || isInSafeZone ? 0
+                    : _currentVehicleIndex == 7 ? 1
+                    : _currentVehicleIndex == 8 ? 2
+                    : IsFenrirVehicle(_currentVehicleIndex) ? 3 : 0;
+                return (PlayerAction)(baseAction + mountOffset);
+            }
+
+            if (skillId == 49)
+                return World is WalkableWorldControl riderWorld && GetCurrentMovementMode(riderWorld) == MovementMode.Fly
+                    ? PlayerAction.PlayerSkillRiderFly : PlayerAction.PlayerSkillRider;
+
+            if (skillId == 63)
+                return !_isRiding || isInSafeZone ? PlayerAction.PlayerAttackTeleport
+                    : IsFenrirVehicle(_currentVehicleIndex) ? PlayerAction.PlayerFenrirAttackDarklordTeleport
+                    : PlayerAction.PlayerAttackRideTeleport;
+
+            if (skillId is 64 or 75)
+                return _isRiding && !isInSafeZone && IsFenrirVehicle(_currentVehicleIndex) ? PlayerAction.PlayerFenrirAttackMagic
+                    : _isRiding && !isInSafeZone && _currentVehicleIndex == 0 ? PlayerAction.PlayerAttackRideAttackMagic
+                    : PlayerAction.PlayerSkillHand1;
+
+            if (skillId is >= 67 and <= 72)
+            {
+                if (_isRiding && !isInSafeZone)
+                {
+                    if (_currentVehicleIndex == 0) return PlayerAction.PlayerAttackRideAttackMagic;
+                    if (_currentVehicleIndex == 7) return PlayerAction.PlayerSkillRider;
+                    if (_currentVehicleIndex == 8) return PlayerAction.PlayerSkillRiderFly;
+                    if (IsFenrirVehicle(_currentVehicleIndex)) return PlayerAction.PlayerFenrirAttackMagic;
+                }
+                return skillId is 68 or 71 ? PlayerAction.PlayerAttackRemoval : PlayerAction.PlayerSkillVitality;
+            }
+
+            if (skillId is >= 19 and <= 23 && _isRiding && !isInSafeZone && IsFenrirVehicle(_currentVehicleIndex))
+                return PlayerAction.PlayerFenrirAttackMagic;
+
+            if (skillId == 65 && _isRiding && !isInSafeZone && IsFenrirVehicle(_currentVehicleIndex))
+                return PlayerAction.PlayerFenrirAttackDarklordFlash;
+
+            if (skillId is 266 or 267 or 268)
+                return MuGame.Random.Next(2) == 0 ? PlayerAction.PlayerSkillAttUpOurforces : PlayerAction.PlayerSkillHpUpOurforces;
             if (skillId == 47)
                 return _isRiding && !isInSafeZone && IsFenrirVehicle(_currentVehicleIndex)
                     ? PlayerAction.PlayerFenrirAttackSpear : PlayerAction.PlayerAttackSkillSpear;
@@ -1553,13 +1609,13 @@ namespace Client.Main.Objects.Player
                 return (PlayerAction)((IsRageFighterClass(CharacterClass) ? 262 : 102) + offset);
             }
 
-            // Fire Burst (61/508/514) and Fire Scream (78/518) use the Dark Lord strike
+            // Dark Lord attacks use the strike
             // family rather than the generic magic cast. SourceMain5.2 sets
             // PLAYER_ATTACK_STRIKE / PLAYER_ATTACK_RIDE_STRIKE /
             // PLAYER_FENRIR_ATTACK_DARKLORD_STRIKE for both skills (ZzzCharacter.cpp,
             // WSclient.cpp), which is why they are not part of the SkillDefinitions
             // animation table.
-            if (skillId is 61 or 508 or 514 or 78 or 518)
+            if (skillId is 60 or 61 or 66 or 74 or 78 or 238)
             {
                 if (_isRiding && !isInSafeZone)
                 {
@@ -3156,7 +3212,17 @@ namespace Client.Main.Objects.Player
 
         public PlayerAction GetArrowSkillAnimation(ushort skillId)
         {
-            if (skillId is not (46 or 235 or 411 or 431))
+            skillId = Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId);
+            if (skillId == 46)
+            {
+                bool crossbow = ArrowProjectileEffect.UsesCrossbow(this);
+                bool riding = _isRiding;
+                bool flying = HasEquippedWings;
+                return crossbow
+                    ? riding ? PlayerAction.PlayerAttackRideCrossbowUp : flying ? PlayerAction.PlayerAttackFlyCrossbowUp : PlayerAction.PlayerAttackCrossbowUp
+                    : riding ? PlayerAction.PlayerAttackRideBowUp : flying ? PlayerAction.PlayerAttackFlyBowUp : PlayerAction.PlayerAttackBowUp;
+            }
+            if (skillId != 235)
                 return GetAttackAnimation(false);
 
             bool useCrossbow = ArrowProjectileEffect.UsesCrossbow(this);
@@ -3688,6 +3754,19 @@ namespace Client.Main.Objects.Player
         {
             base.DrawAfter(gameTime);
             DrawPartyHealthBar();
+            DrawPersonalStoreSign();
+        }
+
+        private void DrawPersonalStoreSign()
+        {
+            var state = MuGame.Network?.GetCharacterState();
+            if (state == null) return;
+            string title = state.PersonalShop.GetVisibleTitle(NetworkId, state.Id);
+            if (title == null) return;
+            var font = GraphicsManager.Instance.Font;
+            if (font == null || !Client.Main.Helpers.OverheadNameplateRenderer.TryProject(BoundingBoxWorld, 70f, out var screen)) return;
+            Client.Main.Helpers.OverheadNameplateRenderer.EnqueueNameplate(font, screen,
+                $"Personal Store\n{title}\n{Name}", null, Constants.RENDER_SCALE, isStore: true);
         }
 
         private void DrawPartyHealthBar()

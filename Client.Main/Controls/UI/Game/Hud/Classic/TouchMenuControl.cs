@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Client.Main.Controllers;
 using Client.Main.Helpers;
@@ -10,21 +10,22 @@ using Microsoft.Xna.Framework.Input;
 
 namespace Client.Main.Controls.UI.Game.Hud
 {
-    /// <summary>PNG mobile menu arranged in three columns, with separate map and chat shortcuts.</summary>
+    /// <summary>Mobile minimap shortcuts with a collapsible function menu.</summary>
     public sealed class TouchMenuControl : UIControl
     {
         private const int Size = 48;
         private const int Step = 64;
         private const int RightMargin = 16;
         private const int TopMargin = 12;
-        private sealed record MenuEntry(string Icon, int Column, int Row, Action OnTap);
+        private sealed record MenuEntry(string Icon, int Column, int Row, Action OnTap, bool AlwaysVisible = false);
+        public static Rectangle MobileMapRectangle => new(UiScaler.VirtualSize.X - RightMargin - 240, TopMargin + 34, 240, 160);
         private readonly MenuEntry[] _entries;
         private readonly Texture2D[] _textures;
         private readonly Rectangle[] _rects;
         private Texture2D _menuTexture, _mapTexture, _chatTexture;
         private Rectangle _menuRect, _mapRect, _chatRect;
-        private bool _open = true;
-        private float _menuProgress = 1f;
+        private bool _open;
+        private float _menuProgress;
         private float _chatProgress;
         private static float Ease(float value) => value * value * (3f - 2f * value);
         private static float Advance(float value, bool open, float seconds) =>
@@ -40,21 +41,21 @@ namespace Client.Main.Controls.UI.Game.Hud
             AutoViewSize = false;
             _entries = new[]
             {
-                new MenuEntry("recharge", 0, 0, null),
-                new MenuEntry("benefits", 1, 0, null),
-                new MenuEntry("ranking", 0, 1, null),
-                new MenuEntry("character", 1, 1, () => (Scene as GameScene)?.ToggleClassicCharacterInfo()),
-                new MenuEntry("inventory", 2, 1, () => (Scene as GameScene)?.ToggleClassicInventory()),
+                new MenuEntry("inventory", 0, 0, () => (Scene as GameScene)?.ToggleClassicInventory(), true),
+                new MenuEntry("character", 1, 0, () => (Scene as GameScene)?.ToggleClassicCharacterInfo(), true),
+                new MenuEntry("mail", 2, 0, () => MessageWindow.Show("Inbox is not available yet."), true),
+                new MenuEntry("recharge", 0, 1, null),
+                new MenuEntry("benefits", 1, 1, null),
+                new MenuEntry("ranking", 2, 1, null),
                 new MenuEntry("quest", 0, 2, null),
                 new MenuEntry("skill", 1, 2, OpenImprint),
                 new MenuEntry("master_skill", 2, 2, OpenMastery),
                 new MenuEntry("events", 0, 3, null),
                 new MenuEntry("friends", 1, 3, null),
                 new MenuEntry("guild", 2, 3, null),
-                new MenuEntry("mail", 1, 4, null),
-                new MenuEntry("party", 2, 4, () => (Scene as GameScene)?.ToggleClassicParty()),
-                new MenuEntry("settings", 1, 5, OpenSettings),
-                new MenuEntry("exit", 2, 5, ConfirmAndQuit),
+                new MenuEntry("party", 0, 4, () => (Scene as GameScene)?.ToggleClassicParty()),
+                new MenuEntry("settings", 1, 4, OpenSettings),
+                new MenuEntry("exit", 2, 4, ConfirmAndQuit),
             };
             _textures = new Texture2D[_entries.Length];
             _rects = new Rectangle[_entries.Length];
@@ -114,18 +115,19 @@ namespace Client.Main.Controls.UI.Game.Hud
         private void LayoutRects()
         {
             int rightX = UiScaler.VirtualSize.X - RightMargin - Size;
-            _menuRect = new Rectangle(rightX, TopMargin, Size, Size);
-            _mapRect = new Rectangle(16, 42, Size, Size);
+            _mapRect = MobileMapRectangle;
+            int shortcutsY = _mapRect.Bottom + 8;
+            _menuRect = new Rectangle(rightX, shortcutsY, Size, Size);
             int chatX = UiScaler.VirtualSize.X / 2 - 174;
             int chatY = UiScaler.VirtualSize.Y - 125; // control for chat positioning, not the chat window itself
             _chatRect = new Rectangle(chatX - (int)MathF.Round((Size + 8) * Ease(_chatProgress)), chatY, Size, Size);
             for (int i = 0; i < _entries.Length; i++)
             {
-                int targetX = rightX - (2 - _entries[i].Column) * Step;
-                int targetY = TopMargin + _entries[i].Row * Step;
-                float progress = Ease(_menuProgress);
+                int targetX = rightX - (3 - _entries[i].Column) * Step;
+                int targetY = shortcutsY + _entries[i].Row * Step;
+                float progress = _entries[i].AlwaysVisible ? 1f : Ease(_menuProgress);
                 _rects[i] = new Rectangle((int)MathF.Round(MathHelper.Lerp(rightX, targetX, progress)),
-                    (int)MathF.Round(MathHelper.Lerp(TopMargin, targetY, progress)), Size, Size);
+                    (int)MathF.Round(MathHelper.Lerp(shortcutsY, targetY, progress)), Size, Size);
             }
             if (Scene is GameScene scene && scene.ChatInput != null && UiThemeManager.CurrentId == UiThemeId.Classic)
             {
@@ -140,8 +142,8 @@ namespace Client.Main.Controls.UI.Game.Hud
         public override bool ContainsPointerPoint(Point point)
         {
             if (_menuRect.Contains(point) || _mapRect.Contains(point) || _chatRect.Contains(point)) return true;
-            if (_open || _menuProgress > 0f)
-                foreach (var rect in _rects) if (rect.Contains(point)) return true;
+            for (int i = 0; i < _entries.Length; i++)
+                if ((_entries[i].AlwaysVisible || _open || _menuProgress > 0f) && _rects[i].Contains(point)) return true;
             return false;
         }
         public override void Update(GameTime gameTime)
@@ -165,9 +167,8 @@ namespace Client.Main.Controls.UI.Game.Hud
             if (_menuRect.Contains(mouse.Position)) { _open = !_open; return; }
             if (_mapRect.Contains(mouse.Position)) { MuGame.ScheduleOnMainThread(() => (Scene as GameScene)?.ToggleMobileMap()); return; }
             if (_chatRect.Contains(mouse.Position)) { MuGame.ScheduleOnMainThread(() => (Scene as GameScene)?.OpenMobileChat()); return; }
-            if (_open)
-                for (int i = 0; i < _entries.Length; i++)
-                    if (_rects[i].Contains(mouse.Position))
+            for (int i = 0; i < _entries.Length; i++)
+                    if ((_entries[i].AlwaysVisible || _open) && _rects[i].Contains(mouse.Position))
                     {
                         var action = _entries[i].OnTap;
                         if (action != null) MuGame.ScheduleOnMainThread(action);
@@ -187,8 +188,10 @@ namespace Client.Main.Controls.UI.Game.Hud
                 {
                     if (texture != null && !texture.IsDisposed) sb.Draw(texture, rect, Color.White * (Alpha * opacity));
                 }
-                DrawIcon(_menuTexture, _menuRect); DrawIcon(_mapTexture, _mapRect); DrawIcon(_chatTexture, _chatRect);
-                if (_menuProgress > 0f) for (int i = 0; i < _entries.Length; i++) DrawIcon(_textures[i], _rects[i], Ease(_menuProgress));
+                DrawIcon(_menuTexture, _menuRect); DrawIcon(_chatTexture, _chatRect);
+                for (int i = 0; i < _entries.Length; i++)
+                    if (_entries[i].AlwaysVisible || _menuProgress > 0f)
+                        DrawIcon(_textures[i], _rects[i], _entries[i].AlwaysVisible ? 1f : Ease(_menuProgress));
             }
         }
     }

@@ -1,4 +1,4 @@
-using Client.Main.Controllers;
+﻿using Client.Main.Controllers;
 using Client.Main.Graphics;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -11,8 +11,9 @@ namespace Client.Main.Helpers
     {
         private readonly struct QueuedNameplate
         {
-            public QueuedNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale)
+            public QueuedNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore)
             {
+                IsStore = isStore;
                 Font = font;
                 Screen = screen;
                 Name = name;
@@ -20,6 +21,7 @@ namespace Client.Main.Helpers
                 RenderScale = renderScale;
             }
 
+            public bool IsStore { get; }
             public SpriteFont Font { get; }
             public Vector3 Screen { get; }
             public string Name { get; }
@@ -97,12 +99,12 @@ namespace Client.Main.Helpers
             s_queue.Clear();
         }
 
-        public static void EnqueueNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale)
+        public static void EnqueueNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore = false)
         {
             if (font == null || string.IsNullOrWhiteSpace(name))
                 return;
 
-            s_queue.Add(new QueuedNameplate(font, screen, name, healthFraction, renderScale));
+            s_queue.Add(new QueuedNameplate(font, screen, name, healthFraction, renderScale, isStore));
         }
 
         public static void FlushQueuedNameplates(SpriteBatch spriteBatch)
@@ -134,7 +136,7 @@ namespace Client.Main.Helpers
                         entry.Screen,
                         entry.Name,
                         entry.HealthFraction,
-                        entry.RenderScale);
+                        entry.RenderScale, entry.IsStore);
                 }
             }
             finally
@@ -148,7 +150,7 @@ namespace Client.Main.Helpers
             }
         }
 
-        public static void DrawNameplate(SpriteBatch spriteBatch, SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale)
+        public static void DrawNameplate(SpriteBatch spriteBatch, SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore = false)
         {
             if (spriteBatch == null || font == null || string.IsNullOrEmpty(name))
                 return;
@@ -216,10 +218,24 @@ namespace Client.Main.Helpers
             Vector2 textPos = new(nameRect.X + padX, nameRect.Y + padY);
 
             spriteBatch.Draw(pixel, nameRect, null, Theme.BgDarkest * 0.85f, 0f, Vector2.Zero, SpriteEffects.None, depth);
-            DrawBorder(spriteBatch, pixel, nameRect, Theme.BorderOuter * 0.9f, depth);
+            DrawBorder(spriteBatch, pixel, nameRect, isStore ? Theme.AccentDim : Theme.BorderOuter * 0.9f, depth);
 
-            spriteBatch.DrawString(font, name, textPos + new Vector2(1f, 1f), Color.Black * 0.7f, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
-            spriteBatch.DrawString(font, name, textPos, Theme.TextWhite, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
+            if (isStore)
+            {
+                float y = textPos.Y;
+                foreach (string line in name.Split('\n'))
+                {
+                    Vector2 pos = new(screen.X - font.MeasureString(line).X * nameScale / 2f, y);
+                    spriteBatch.DrawString(font, line, pos + Vector2.One, Color.Black * 0.7f, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
+                    spriteBatch.DrawString(font, line, pos, Theme.TextGold, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
+                    y += font.LineSpacing * nameScale;
+                }
+            }
+            else
+            {
+                spriteBatch.DrawString(font, name, textPos + Vector2.One, Color.Black * 0.7f, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
+                spriteBatch.DrawString(font, name, textPos, Theme.TextWhite, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
+            }
 
             if (hasBar)
             {

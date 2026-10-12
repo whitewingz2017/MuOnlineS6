@@ -1,4 +1,4 @@
-using Client.Main.Content;
+﻿using Client.Main.Content;
 using Client.Main.Controllers;
 using Client.Main.Controls.UI.Common;
 using Client.Main.Controls.UI.Game.Common;
@@ -21,14 +21,12 @@ namespace Client.Main.Controls.UI.Game.Character
 {
     public class CharacterInfoWindowControl : UIControl, IUiTexturePreloadable
     {
-        private static int WINDOW_WIDTH => UiThemeManager.CurrentId == UiThemeId.Season6
-            ? UiThemeManager.Current.Metrics.CharacterWindowSize.X : 280;
-        private static int WINDOW_HEIGHT => UiThemeManager.CurrentId == UiThemeId.Season6
-            ? UiThemeManager.Current.Metrics.CharacterWindowSize.Y : 520;
+        private static int WINDOW_WIDTH => IsSeason6 ? CharacterLayout.PanelW : 280;
+        private static int WINDOW_HEIGHT => IsSeason6 ? CharacterLayout.PanelH : 520;
         private const int STAT_BOX_WIDTH = 170;
         private const int BTN_STAT_COUNT = 5;
 
-        private static bool IsSeason6 => UiThemeManager.CurrentId == UiThemeId.Season6;
+        private static bool IsSeason6 => UiThemeManager.IsMobilePlatform || UiThemeManager.CurrentId == UiThemeId.Season6;
 
         private static readonly float[] s_classicStatRowY =
         {
@@ -41,11 +39,11 @@ namespace Client.Main.Controls.UI.Game.Character
 
         private static readonly float[] s_season6StatRowY =
         {
-            330f,
-            388f,
-            446f,
-            504f,
-            562f
+            230f,
+            310f,
+            405f,
+            490f,
+            575f
         };
 
         private static float[] s_statRowY => IsSeason6 ? s_season6StatRowY : s_classicStatRowY;
@@ -288,17 +286,17 @@ namespace Client.Main.Controls.UI.Game.Character
             _buttons.Clear();
 
             float statBoxLeft = GetStatBoxLeft();
-            float statValueLeft = statBoxLeft + 70f;
+            float statValueLeft = IsSeason6 ? 82f : statBoxLeft + 70f;
             float statValueYoffset = -2f;
-            float statDetailYOffset = 15f;
+            float statDetailYOffset = IsSeason6 ? 24f : 15f;
 
-            _nameText = CreateText(new Vector2(WINDOW_WIDTH / 2f, IsSeason6 ? 58f : 7f), 13f, ModernHudTheme.TextWhite, TextAlignment.Center);
-            _classText = CreateText(new Vector2(WINDOW_WIDTH / 2f, IsSeason6 ? 73f : 25f), 11f, ModernHudTheme.TextGold, TextAlignment.Center);
-            _levelText = CreateText(new Vector2(IsSeason6 ? 32f : 26f, IsSeason6 ? 141f : 61f), 11f, ModernHudTheme.TextWhite);
-            _expText = CreateText(new Vector2(IsSeason6 ? 32f : 26f, IsSeason6 ? 160f : 79f), 10f, ModernHudTheme.TextGray);
-            _fruitProbText = CreateText(new Vector2(IsSeason6 ? 32f : 26f, IsSeason6 ? 179f : 97f), 10f, ModernHudTheme.SecondaryBright);
-            _fruitStatsText = CreateText(new Vector2(IsSeason6 ? 32f : 26f, IsSeason6 ? 256f : 115f), 10f, ModernHudTheme.SecondaryBright);
-            _statPointsText = CreateText(new Vector2(IsSeason6 ? 32f : 158f, IsSeason6 ? 246f : 61f), 11f, ModernHudTheme.Warning);
+            _nameText = CreateText(new Vector2(WINDOW_WIDTH / 2f, IsSeason6 ? 48f : 7f), 13f, ModernHudTheme.TextWhite, TextAlignment.Center);
+            _classText = CreateText(new Vector2(WINDOW_WIDTH / 2f, IsSeason6 ? 94f : 25f), 11f, ModernHudTheme.TextGold, TextAlignment.Center);
+            _levelText = CreateText(new Vector2(IsSeason6 ? 32f : 26f, IsSeason6 ? 94f : 61f), 11f, ModernHudTheme.TextWhite);
+            _expText = CreateText(new Vector2(IsSeason6 ? 32f : 26f, IsSeason6 ? 116f : 79f), 10f, ModernHudTheme.TextGray);
+            _fruitProbText = CreateText(new Vector2(IsSeason6 ? 32f : 26f, IsSeason6 ? 140f : 97f), 10f, ModernHudTheme.SecondaryBright);
+            _fruitStatsText = CreateText(new Vector2(IsSeason6 ? 32f : 26f, IsSeason6 ? 160f : 115f), 10f, ModernHudTheme.SecondaryBright);
+            _statPointsText = CreateText(new Vector2(IsSeason6 ? 32f : 158f, IsSeason6 ? 190f : 61f), 11f, ModernHudTheme.Warning);
 
             for (int i = 0; i < BTN_STAT_COUNT; i++)
             {
@@ -328,15 +326,15 @@ namespace Client.Main.Controls.UI.Game.Character
             {
                 int statIndex = i;
                 var bounds = new Rectangle(
-                    WINDOW_WIDTH - 70,
+                    IsSeason6 ? 158 : WINDOW_WIDTH - 70,
                     (int)(s_statRowY[i] - 2f),
-                    16,
-                    15);
+                    IsSeason6 ? 22 : 16,
+                    IsSeason6 ? 22 : 15);
 
                 Rectangle? normal = null;
                 Rectangle? hover = null;
                 Rectangle? pressed = null;
-                if (_statIncreaseButtonTexture != null)
+                if (!IsSeason6 && _statIncreaseButtonTexture != null)
                 {
                     int frameCount = DetermineFrameCount(_statIncreaseButtonTexture);
                     int frameHeight = Math.Max(1, _statIncreaseButtonTexture.Height / frameCount);
@@ -381,9 +379,19 @@ namespace Client.Main.Controls.UI.Game.Character
 
             _masterButton = CreateButton(CreateBottomBounds(170, _buttonMasterTexture), _buttonMasterTexture, CreateButtonFrames(_buttonMasterTexture, out var masterHover, out var masterPressed), masterHover, masterPressed, () =>
             {
-                _logger.LogInformation("Master Level button clicked.");
+                if (Scene is Client.Main.Scenes.GameScene gameScene)
+                {
+                    var tree = gameScene.ClassicMasteryTree;
+                    tree?.Toggle();
+                    if (tree?.Visible == true) { tree.BringToFront(); Scene.FocusControl = tree; }
+                }
                 SoundController.Instance.PlayBuffer("Sound/iButtonClick.wav");
             });
+            if (IsSeason6)
+            {
+                _petButton.BaseBounds = new Rectangle(182, 184, 64, 26);
+                _masterButton.BaseBounds = new Rectangle(250, 184, 76, 26);
+            }
         }
 
         private CharacterInfoTextEntry CreateText(Vector2 basePosition, float fontSize, Color color, TextAlignment alignment = TextAlignment.Left)
@@ -597,25 +605,26 @@ namespace Client.Main.Controls.UI.Game.Character
                     ModernHudTheme.BgDark, ModernHudTheme.BgDarkest);
             }
 
-            if (IsUsableTexture(_s6Rect))
+            void Card(Rectangle r)
             {
-                DrawNineSlice(spriteBatch, _s6Rect,
-                    new Rectangle(CharacterLayout.CardX, CharacterLayout.HeaderY, CharacterLayout.CardW, CharacterLayout.HeaderH));
-                DrawNineSlice(spriteBatch, _s6Rect,
-                    new Rectangle(CharacterLayout.CardX, CharacterLayout.PointsY, CharacterLayout.CardW, CharacterLayout.PointsH));
-                DrawNineSlice(spriteBatch, _s6Rect,
-                    new Rectangle(CharacterLayout.CardX, CharacterLayout.StatsY, CharacterLayout.CardW, CharacterLayout.StatsH));
+                spriteBatch.Draw(pixel, r, new Color(12, 10, 8, 235));
+                if (IsUsableTexture(_s6Rect)) DrawNineSlice(spriteBatch, _s6Rect, r);
+                else DrawCharacterCard(spriteBatch, r);
             }
-            else
+            Card(new Rectangle(18, 84, WINDOW_WIDTH - 36, 132));
+            SpriteFont font = GraphicsManager.Instance.Font;
+            for (int i = 0; i < BTN_STAT_COUNT; i++)
             {
-                DrawCharacterCard(spriteBatch, new Rectangle(CharacterLayout.CardX, CharacterLayout.HeaderY, CharacterLayout.CardW, CharacterLayout.HeaderH));
-                DrawCharacterCard(spriteBatch, new Rectangle(CharacterLayout.CardX, CharacterLayout.PointsY, CharacterLayout.CardW, CharacterLayout.PointsH));
-                DrawCharacterCard(spriteBatch, new Rectangle(CharacterLayout.CardX, CharacterLayout.StatsY, CharacterLayout.CardW, CharacterLayout.StatsH));
+                int top = (int)s_statRowY[i] - 8;
+                int bottom = i + 1 < BTN_STAT_COUNT ? (int)s_statRowY[i + 1] - 12 : WINDOW_HEIGHT - 18;
+                Card(new Rectangle(18, top, WINDOW_WIDTH - 36, bottom - top));
+                if (font == null) continue;
+                string label = i == 4 && !_lastIsDarkLordFamily ? "" : s_statShortNames[i];
+                spriteBatch.DrawString(font, label, new Vector2(30, s_statRowY[i]), new Color(190, 185, 110),
+                    0f, Vector2.Zero, 11f / Constants.BASE_FONT_SIZE, SpriteEffects.None, 0f);
+                if (i < 4 || _lastIsDarkLordFamily)
+                    spriteBatch.Draw(pixel, new Rectangle(80, (int)s_statRowY[i] - 1, 74, 20), Color.Black * 0.5f);
             }
-
-            if (IsUsableTexture(_s6DarkCard))
-                spriteBatch.Draw(_s6DarkCard, new Rectangle(CharacterLayout.CardX + 4, CharacterLayout.StatsY + 4,
-                    CharacterLayout.CardW - 8, CharacterLayout.StatsH - 8), Color.White);
         }
 
         private void DrawCharacterCard(SpriteBatch spriteBatch, Rectangle rect)
@@ -815,7 +824,7 @@ namespace Client.Main.Controls.UI.Game.Character
             float controlScale = Scale;
             if (IsSeason6)
             {
-                for (int i = 0; i < BTN_STAT_COUNT; i++)
+                for (int i = 0; i < _buttons.Count; i++)
                 {
                     var button = _buttons[i];
                     if (!button.Visible)
@@ -824,16 +833,16 @@ namespace Client.Main.Controls.UI.Game.Character
                     Rectangle rect = GetButtonRectangle(button, controlScale);
                     bool highlighted = (_hoveredButtonIndex == i || _pressedButtonIndex == i) && button.Enabled;
                     UiDrawHelper.DrawPanel(spriteBatch, rect,
-                        highlighted ? ModernHudTheme.AccentDim : ModernHudTheme.BgLight,
+                        highlighted ? new Color(150, 55, 20) : new Color(80, 20, 10),
                         highlighted ? ModernHudTheme.Accent : ModernHudTheme.BorderInner,
                         ModernHudTheme.BorderOuter);
                     if (GraphicsManager.Instance.Font != null)
                     {
-                        const string plus = "+";
+                        string plus = ReferenceEquals(button, _petButton) ? "Pet" : ReferenceEquals(button, _masterButton) ? "Master" : "+";
                         float scale = 0.42f * controlScale;
                         Vector2 size = GraphicsManager.Instance.Font.MeasureString(plus) * scale;
                         Vector2 pos = new(rect.Center.X - size.X / 2f, rect.Center.Y - size.Y / 2f);
-                        spriteBatch.DrawString(GraphicsManager.Instance.Font, plus, pos, ModernHudTheme.TextWhite,
+                        spriteBatch.DrawString(GraphicsManager.Instance.Font, plus, pos, button.Enabled ? ModernHudTheme.TextGold : ModernHudTheme.TextGray,
                             0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
                     }
                 }
@@ -939,8 +948,8 @@ namespace Client.Main.Controls.UI.Game.Character
             var baseRect = button.BaseBounds;
             int x = DisplayRectangle.X + (int)MathF.Round(baseRect.X * controlScale);
             int y = DisplayRectangle.Y + (int)MathF.Round(baseRect.Y * controlScale);
-            int width = (int)MathF.Round(button.FrameSize.X * controlScale);
-            int height = (int)MathF.Round(button.FrameSize.Y * controlScale);
+            int width = (int)MathF.Round(baseRect.Width * controlScale);
+            int height = (int)MathF.Round(baseRect.Height * controlScale);
             return new Rectangle(x, y, width, height);
         }
 
@@ -1002,7 +1011,7 @@ namespace Client.Main.Controls.UI.Game.Character
             }
 
             _nameText.Text = snapshot.Name;
-            _classText.Text = $"({CharacterClassDatabase.GetClassName(snapshot.Class)})";
+            _classText.Text = IsSeason6 ? $"Class: {CharacterClassDatabase.GetClassName(snapshot.Class)}" : $"({CharacterClassDatabase.GetClassName(snapshot.Class)})";
 
             if (snapshot.MasterLevel > 0)
             {
@@ -1023,8 +1032,8 @@ namespace Client.Main.Controls.UI.Game.Character
             {
                 _levelText.Text = $"Level: {snapshot.Level}";
                 _expText.Text = $"Exp: {snapshot.Experience} / {snapshot.ExperienceForNextLevel}";
-                _statPointsText.Visible = snapshot.LevelUpPoints > 0;
-                _statPointsText.Text = snapshot.LevelUpPoints > 0 ? $"Points: {snapshot.LevelUpPoints}" : string.Empty;
+                _statPointsText.Visible = IsSeason6 || snapshot.LevelUpPoints > 0;
+                _statPointsText.Text = $"Points: {snapshot.LevelUpPoints}";
             }
 
             ushort usedFruitPoints = snapshot.Level > 9 ? snapshot.UsedFruitPoints : (ushort)0;
@@ -1052,7 +1061,7 @@ namespace Client.Main.Controls.UI.Game.Character
                 _strDetail1Text.Visible = true;
                 _strDetail1Text.Text = $"Attack Damage: {snapshot.PhysicalMin}~{snapshot.PhysicalMax}";
                 _strDetail2Text.Visible = true;
-                _strDetail2Text.Text = $"Attack Speed: +{snapshot.AttackSpeed}";
+                _strDetail2Text.Text = IsSeason6 ? $"Attack rate: {snapshot.PvMAttackRate}" : $"Attack Speed: +{snapshot.AttackSpeed}";
             }
             else
             {
@@ -1066,7 +1075,7 @@ namespace Client.Main.Controls.UI.Game.Character
             _agiDetail1Text.Visible = true;
             _agiDetail1Text.Text = $"Defense: +{snapshot.Defense}";
             _agiDetail2Text.Visible = true;
-            _agiDetail2Text.Text = $"Attack Rate: {snapshot.PvPAttackRate}%";
+            _agiDetail2Text.Text = IsSeason6 ? $"Attack speed: {snapshot.AttackSpeed}" : $"Attack Rate: {snapshot.PvPAttackRate}%";
             _agiDetail3Text.Visible = true;
             _agiDetail3Text.Text = $"Defense Rate: {snapshot.PvPDefenseRate}%";
 
@@ -1107,7 +1116,7 @@ namespace Client.Main.Controls.UI.Game.Character
             {
                 if (_statButtons[i] != null)
                 {
-                    _statButtons[i].Visible = hasLevelUpPoints;
+                    _statButtons[i].Visible = IsSeason6 || hasLevelUpPoints;
                     _statButtons[i].Enabled = hasLevelUpPoints;
                 }
             }
@@ -1115,23 +1124,23 @@ namespace Client.Main.Controls.UI.Game.Character
             // Leadership button visible only for Dark Lord family with available points
             if (_statButtons[4] != null)
             {
-                _statButtons[4].Visible = isDarkLordFamily && hasLevelUpPoints;
+                _statButtons[4].Visible = isDarkLordFamily && (IsSeason6 || hasLevelUpPoints);
                 _statButtons[4].Enabled = isDarkLordFamily && hasLevelUpPoints;
             }
 
             if (_masterButton != null)
             {
                 bool masterActive = snapshot.MasterLevel > 0 && snapshot.CanBeMaster;
-                _masterButton.Visible = masterActive;
-                _masterButton.Enabled = masterActive;
+                _masterButton.Visible = IsSeason6 || masterActive;
+                _masterButton.Enabled = snapshot.CanBeMaster;
             }
 
-            _exitButton.Visible = true;
+            _exitButton.Visible = !IsSeason6;
             _exitButton.Enabled = true;
-            _questButton.Visible = true;
+            _questButton.Visible = !IsSeason6;
             _questButton.Enabled = true;
             _petButton.Visible = true;
-            _petButton.Enabled = true;
+            _petButton.Enabled = !IsSeason6;
         }
 
         private void OnStatButtonClicked(int statIndex)

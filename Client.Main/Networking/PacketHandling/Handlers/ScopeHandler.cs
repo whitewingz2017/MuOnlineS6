@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.Network.Packets.ServerToClient;
 using Client.Main.Core.Utilities;
 using Client.Main.Core.Models;
@@ -2285,6 +2285,11 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         continue;
                     }
 
+                    lock (_playerLifecycleLock)
+                    {
+                        if (IsCurrentPlayerSpawnGeneration(masked, removal.PlayerRemovalGeneration) && !IsCurrentPlayerScope(masked))
+                            _characterState.PersonalShop.NearbyTitles.Remove(masked);
+                    }
                     // ---- 1) Player --------------------------------------------------
                     // Out-of-scope packets are processed asynchronously. Do not let an old
                     // removal callback delete a player that has already re-entered scope.
@@ -2307,6 +2312,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
 
                             // The lifecycle lock makes the generation/scope check and removal
                             // one operation relative to a re-entry packet.
+                            _characterState.PersonalShop.NearbyTitles.Remove(masked);
                             WorldMutationQueue.RemoveAndDispose(world, player);
                         }
                         continue;

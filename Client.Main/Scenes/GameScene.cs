@@ -1,4 +1,4 @@
-// GameScene.cs
+﻿// GameScene.cs
 using Client.Main.Configuration;
 using Client.Main.Controls;
 using Client.Main.Controls.UI;
@@ -129,6 +129,7 @@ namespace Client.Main.Scenes
         internal ChatInputBoxControl ChatInput => _chatInput;
         public ChatLogWindow ChatLog => _chatLog;
         public InventoryControl InventoryControl => _inventoryControl;
+        public PlayerShopControl PlayerStore { get; private set; }
         public TradeControl TradeControl => TradeControl.Instance;
         public PauseMenuControl PauseMenu => _pauseMenu;
         public UiLayoutRuntimeControl RuntimeUiLayout { get; private set; }
@@ -308,6 +309,11 @@ namespace Client.Main.Scenes
             // Phase 2: inventory and common windows.
             _inventoryControl = new InventoryControl(MuGame.Network, MuGame.AppLoggerFactory);
             Controls.Add(_inventoryControl);
+            _inventoryControl.Auxiliary = new InventoryAuxiliaryControl(MuGame.Network, _inventoryControl);
+            Controls.Add(_inventoryControl.Auxiliary);
+            PlayerStore = new PlayerShopControl();
+            PlayerStore.BuyRequested += (owner, name, slot) => _ = MuGame.Network.GetCharacterService().SendPlayerShopItemBuyRequestAsync(owner, name, slot);
+            Controls.Add(PlayerStore);
             _inventoryControl.HookEvents();
             _windowCloseController = new GameSceneWindowCloseController(_inventoryControl, _logger);
 
@@ -325,8 +331,8 @@ namespace Client.Main.Scenes
             _fpsLabel = new LabelControl
             {
                 Text = "FPS: --",
-                Align = ControlAlign.Top | ControlAlign.Right,
-                Margin = new Margin { Top = 5, Right = 5 },
+                Align = UiThemeManager.IsMobilePlatform ? ControlAlign.Bottom | ControlAlign.Left : ControlAlign.Top | ControlAlign.Right,
+                Margin = UiThemeManager.IsMobilePlatform ? new Margin { Bottom = 27, Left = 220 } : new Margin { Top = 5, Right = 5 },
                 FontSize = 10,
                 TextColor = Color.LightGreen
             };
@@ -335,8 +341,8 @@ namespace Client.Main.Scenes
             _pingLabel = new LabelControl
             {
                 Text = "Ping: --",
-                Align = ControlAlign.Top | ControlAlign.Right,
-                Margin = new Margin { Top = 22, Right = 5 },
+                Align = UiThemeManager.IsMobilePlatform ? ControlAlign.Bottom | ControlAlign.Left : ControlAlign.Top | ControlAlign.Right,
+                Margin = UiThemeManager.IsMobilePlatform ? new Margin { Bottom = 6, Left = 220 } : new Margin { Top = 22, Right = 5 },
                 FontSize = 10,
                 TextColor = Color.White
             };
@@ -1534,7 +1540,7 @@ namespace Client.Main.Scenes
             if (_classicTouchMenu != null)
             {
                 if (classic && !_classicTouchMenu.Visible)
-                    _classicTouchMenu.Open();
+                    _classicTouchMenu.Close();
                 _classicTouchMenu.Visible = classic;
                 _classicTouchMenu.Interactive = classic;
                 if (!classic)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -49,7 +49,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         // ═══════════════════════════════════════════════════════════════
         private static bool IsSeason6 => UiThemeManager.CurrentId == UiThemeId.Season6;
         private static int WINDOW_WIDTH => IsSeason6 ? Hud.InventoryLayout.PanelW : 396;
-        private static int WINDOW_HEIGHT => IsSeason6 ? Hud.InventoryLayout.PanelH : 700;
+        private static int WINDOW_HEIGHT => IsSeason6 ? Hud.InventoryLayout.PanelH : 740;
 
         private static int HEADER_HEIGHT => IsSeason6 ? Hud.InventoryLayout.DragBarH : 52;
         private const int SECTION_SPACING = 16;
@@ -220,6 +220,10 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private Rectangle _gridRect;
         private Rectangle _gridFrameRect;
         private Rectangle _footerRect;
+        private readonly Rectangle _socketOptionRect = new(24, 338, 90, 30);
+        private readonly Rectangle _setOptionRect = new(118, 338, 84, 30);
+        private readonly Rectangle _repairOptionRect = new(206, 338, 92, 30);
+        private bool _repairOptionHovered;
         private Rectangle _zenFieldRect;
         private Rectangle _zenIconRect;
         private Rectangle _closeButtonRect;
@@ -253,6 +257,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private int _repairEnableLevel = 50;
 
         public bool IsSelfRepairMode => _isRepairMode;
+        public InventoryAuxiliaryControl Auxiliary { get; set; }
+        internal Texture2D ResolveAuxiliaryItemTexture(InventoryItem item, int width, int height) => ResolveItemTexture(item, width, height);
 
         public readonly PickedItemRenderer _pickedItemRenderer;
 
@@ -493,6 +499,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             Visible = false;
+            Auxiliary?.Hide();
             if (NpcShopControl.Instance is { Visible: true } shop)
                 shop.Visible = false;
             if (Scene?.FocusControl == this)
@@ -530,6 +537,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         public Point GetSlotAtScreenPositionPublic(Point screenPos) => GetSlotAtScreenPosition(screenPos);
 
         public bool CanPlaceAt(Point gridSlot, InventoryItem item) => CanPlaceItem(item, gridSlot);
+        internal bool FindFreeBagSlot(InventoryItem item, out Point slot) => TryFindFirstFreeSlot(item, out slot);
 
         public override void Update(GameTime gameTime)
         {
@@ -562,6 +570,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 return;
             }
 
+            if (Auxiliary?.IsDraggingItem == true || _networkManager?.GetCharacterState()?.PendingMoveFromSlot != null)
+            { Scene?.SetMouseInputConsumed(); return; }
             Point mousePos = MuGame.Instance.UiMouseState.Position;
             _hoveredItem = null;
             _hoveredSlot = new Point(-1, -1);
@@ -768,7 +778,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             // Zen text - positioned inside zen field
             _zenText = CreateText(new Vector2(_zenFieldRect.X + 8, _zenFieldRect.Y + _zenFieldRect.Height * 0.5f - 6f),
-                                  12f, Theme.TextGold);
+                                  12f, IsSeason6 ? new Color(220, 40, 25) : Theme.TextGold);
             _zenText.Visible = false;
         }
 
@@ -795,7 +805,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         {
             if (_zenText != null)
             {
-                _zenText.Text = $"Zen: {ZenAmount:N0}";
+                _zenText.Text = IsSeason6 ? $"{ZenAmount:N0}" : $"Zen: {ZenAmount:N0}";
             }
         }
 
@@ -866,20 +876,11 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 _footerRect = new Rectangle(PANEL_PADDING, Hud.InventoryLayout.FooterY,
                     WINDOW_WIDTH - PANEL_PADDING * 2, WINDOW_HEIGHT - Hud.InventoryLayout.FooterY - 8);
                 _zenIconRect = new Rectangle(32, Hud.InventoryLayout.MoneyY, 26, 26);
-                _zenFieldRect = new Rectangle(57, Hud.InventoryLayout.MoneyY, 210, 30);
+                _zenFieldRect = new Rectangle(57, Hud.InventoryLayout.MoneyY, 136, 30);
                 _closeButtonRect = new Rectangle(Hud.InventoryLayout.CloseX, Hud.InventoryLayout.CloseY,
                     Hud.InventoryLayout.CloseW, Hud.InventoryLayout.CloseH);
-                const int footerButtonSize = 32;
-                _footerRightButtonRect = new Rectangle(
-                    _footerRect.Right - footerButtonSize - 8,
-                    _footerRect.Y + 9,
-                    footerButtonSize,
-                    footerButtonSize);
-                _footerLeftButtonRect = new Rectangle(
-                    _footerRightButtonRect.X - footerButtonSize - 10,
-                    _footerRightButtonRect.Y,
-                    footerButtonSize,
-                    footerButtonSize);
+                _footerLeftButtonRect = new Rectangle(199, Hud.InventoryLayout.MoneyY, 88, 30);
+                _footerRightButtonRect = new Rectangle(291, Hud.InventoryLayout.MoneyY, 80, 30);
                 _beamRect = Rectangle.Empty;
                 return;
             }
@@ -896,7 +897,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             int gridTotalWidth = Columns * INVENTORY_SQUARE_WIDTH;
             int gridTotalHeight = Rows * INVENTORY_SQUARE_HEIGHT;
             int gridX = (WINDOW_WIDTH - gridTotalWidth) / 2;
-            int minGridY = _paperdollPanelRect.Bottom + Math.Max(SECTION_SPACING / 2, 4);
+            int minGridY = _paperdollPanelRect.Bottom + 48;
             int gridY = minGridY;
 
             int footerHeight = 50;
@@ -920,13 +921,13 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             // Zen display
             _zenIconRect = new Rectangle(_footerRect.X + 12, _footerRect.Y + 14, 22, 22);
-            _zenFieldRect = new Rectangle(_zenIconRect.Right + 10, _footerRect.Y + 10, 160, 30);
+            _zenFieldRect = new Rectangle(_zenIconRect.Right + 10, _footerRect.Y + 10, 136, 30);
 
             // Buttons
             int btnSize = 38;
             _closeButtonRect = new Rectangle(WINDOW_WIDTH - btnSize - 12, 10, btnSize, btnSize);
-            _footerLeftButtonRect = new Rectangle(_footerRect.Right - btnSize * 2 - 20, _footerRect.Y + 6, btnSize, btnSize);
-            _footerRightButtonRect = new Rectangle(_footerRect.Right - btnSize - 8, _footerRect.Y + 6, btnSize, btnSize);
+            _footerLeftButtonRect = new Rectangle(199, _footerRect.Y + 10, 88, 30);
+            _footerRightButtonRect = new Rectangle(291, _footerRect.Y + 10, 80, 30);
 
             // Beam rect not used in new design
             _beamRect = Rectangle.Empty;
@@ -1494,6 +1495,16 @@ namespace Client.Main.Controls.UI.Game.Inventory
             // Coin icon
             Rectangle iconRect = _zenIconRect;
 
+            if (IsSeason6)
+            {
+                foreach (var offset in new[] { new Point(8, 6), new Point(17, 13), new Point(6, 20) })
+                {
+                    DrawFilledCircle(spriteBatch, iconRect.X + offset.X, iconRect.Y + offset.Y, 6, new Color(190, 112, 0));
+                    DrawFilledCircle(spriteBatch, iconRect.X + offset.X, iconRect.Y + offset.Y - 2, 5, new Color(255, 205, 20));
+                }
+            }
+            else
+            {
             // Coin outer
             DrawFilledCircle(spriteBatch, iconRect.X + iconRect.Width / 2, iconRect.Y + iconRect.Height / 2,
                              iconRect.Width / 2, Theme.AccentDim);
@@ -1503,6 +1514,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
             // Coin highlight
             DrawFilledCircle(spriteBatch, iconRect.X + iconRect.Width / 2 - 2, iconRect.Y + iconRect.Height / 2 - 2,
                              iconRect.Width / 4, Theme.AccentBright * 0.6f);
+
+            }
 
             // Zen field background
             DrawPanel(spriteBatch, _zenFieldRect, Theme.SlotBg);
@@ -1558,7 +1571,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 _equippedItems[slotIndex] = invItem;
             }
 
-            foreach (var entry in characterItems.Where(e => e.Key >= InventorySlotOffsetConstant))
+            foreach (var entry in characterItems.Where(e => e.Key >= InventorySlotOffsetConstant && e.Key < InventorySlotOffsetConstant + Columns * Rows))
             {
                 byte slotIndex = entry.Key;
                 byte[] itemData = entry.Value;
@@ -1626,6 +1639,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             var leftRect = Translate(_footerLeftButtonRect);
             var rightRect = Translate(_footerRightButtonRect);
 
+            _repairOptionHovered = Translate(_repairOptionRect).Contains(mousePos);
             _closeHovered = closeRect.Contains(mousePos);
             _leftFooterHovered = leftRect.Contains(mousePos);
             _rightFooterHovered = rightRect.Contains(mousePos);
@@ -1633,6 +1647,25 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         private bool HandleChromeClick()
         {
+            if ((_repairOptionHovered || _leftFooterHovered || _rightFooterHovered ||
+                Translate(_socketOptionRect).Contains(MuGame.Instance.UiMouseState.Position) ||
+                Translate(_setOptionRect).Contains(MuGame.Instance.UiMouseState.Position)))
+            {
+                // Opening another bag must never turn the release of a held item into a world drop.
+                if ((_leftFooterHovered || _rightFooterHovered) && _pickedItemRenderer.Item != null)
+                {
+                    RestorePickedItemToOriginalLocation();
+                    ReleasePickedItem();
+                }
+                if (_repairOptionHovered) ToggleRepairMode();
+                else if (_leftFooterHovered) Auxiliary?.Open(true);
+                else if (_rightFooterHovered) Auxiliary?.Open(false);
+                else if (Translate(_socketOptionRect).Contains(MuGame.Instance.UiMouseState.Position))
+                    ShowBonusPages(EquipmentBonusDatabase.DescribeSockets(_equippedItems.Values));
+                else ShowBonusPages(EquipmentBonusDatabase.DescribeSets(_equippedItems.Values, _networkManager?.GetCharacterState()));
+                Scene?.SetMouseInputConsumed();
+                return true;
+            }
             if (_closeHovered)
             {
                 Hide();
@@ -1652,6 +1685,17 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             return false;
+        }
+
+        private void ShowBonusPages(string description, int page = 0)
+        {
+            var lines = description.Split('\n');
+            const int pageSize = 10;
+            int pages = Math.Max(1, (lines.Length + pageSize - 1) / pageSize);
+            string text = string.Join("\n", lines.Skip(page * pageSize).Take(pageSize));
+            if (pages == 1) RequestDialog.ShowInfo(text);
+            else RequestDialog.Show($"{text}\nPage {page + 1}/{pages}", onAccept: () => { }, acceptText: "Close", rejectText: "Close",
+                onExtra: () => ShowBonusPages(description, (page + 1) % pages), extraText: "Next");
         }
 
         private void HandleInventoryInteraction(Point mousePos, bool leftJustPressed, bool leftJustReleased)
@@ -1924,8 +1968,14 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             byte slotIndex = _pickedFromEquipSlot >= 0
                 ? (byte)_pickedFromEquipSlot
-                : (byte)(InventorySlotOffsetConstant + (item.GridPosition.Y * Columns) + item.GridPosition.X);
+                : (byte)(InventorySlotOffsetConstant + (_pickedItemOriginalGrid.Y * Columns) + _pickedItemOriginalGrid.X);
 
+            if (Auxiliary?.AcceptFromInventory(item, slotIndex, MuGame.Instance.UiMouseState.Position) == true)
+            {
+                ReleasePickedItem();
+                _networkManager?.GetCharacterState()?.RaiseInventoryChanged();
+                return;
+            }
             var shop = NpcShopControl.Instance;
             if (shop != null && shop.Visible && shop.DisplayRectangle.Contains(MuGame.Instance.UiMouseState.Position))
             {
@@ -2415,7 +2465,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
             var builder = new StringBuilder();
             builder.AppendLine("Are you sure to sell this?");
             builder.AppendLine(displayName);
-            builder.AppendLine($"Sell Price: {ItemPriceCalculator.CalculateSellPrice(item)} Zen");
+            builder.AppendLine($"Estimated sell price: {ItemPriceCalculator.CalculateSellPrice(item):N0} Zen");
+            builder.AppendLine("The server determines the final sale price.");
             if (definition.IsExpensive)
             {
                 builder.AppendLine();
@@ -2952,9 +3003,11 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             DrawCloseButton(spriteBatch);
-            DrawFooterButton(spriteBatch, _footerLeftButtonRect, "X", _leftFooterHovered);
-            string buttonText = (_networkManager?.GetCharacterState()?.Level >= _repairEnableLevel) ? "R" : "+";
-            DrawFooterButton(spriteBatch, _footerRightButtonRect, buttonText, _rightFooterHovered);
+            DrawFooterButton(spriteBatch, _socketOptionRect, "Socket option", Translate(_socketOptionRect).Contains(MuGame.Instance.UiMouseState.Position));
+            DrawFooterButton(spriteBatch, _setOptionRect, "Set option", Translate(_setOptionRect).Contains(MuGame.Instance.UiMouseState.Position));
+            DrawFooterButton(spriteBatch, _repairOptionRect, _isRepairMode ? "Repair: ON" : "Repair", _repairOptionHovered);
+            DrawFooterButton(spriteBatch, _footerLeftButtonRect, "Personal store", _leftFooterHovered);
+            DrawFooterButton(spriteBatch, _footerRightButtonRect, "Expanded", _rightFooterHovered);
         }
 
         private void DrawSeason6Chrome(SpriteBatch spriteBatch)
@@ -2969,29 +3022,33 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 DrawCloseButton(spriteBatch);
             }
 
-            DrawSeason6Button(spriteBatch, _footerLeftButtonRect, "X", _leftFooterHovered, _s6ButtonDark);
-            string buttonText = (_networkManager?.GetCharacterState()?.Level >= _repairEnableLevel) ? "R" : "+";
-            DrawSeason6Button(spriteBatch, _footerRightButtonRect, buttonText, _rightFooterHovered, _s6ButtonGold);
+            DrawSeason6Button(spriteBatch, _socketOptionRect, "Socket option", false, _s6ButtonDark, true);
+            DrawSeason6Button(spriteBatch, _setOptionRect, "Set option", false, _s6ButtonDark, true);
+            bool canRepair = _networkManager?.GetCharacterState()?.Level >= _repairEnableLevel;
+            DrawSeason6Button(spriteBatch, _repairOptionRect, _isRepairMode ? "Repair: ON" : "Repair",
+                _repairOptionHovered, _s6ButtonDark, canRepair);
+            DrawSeason6Button(spriteBatch, _footerLeftButtonRect, "Personal store", _leftFooterHovered, _s6ButtonDark, true);
+            DrawSeason6Button(spriteBatch, _footerRightButtonRect, "Expanded", _rightFooterHovered, _s6ButtonDark, true);
         }
 
         private void DrawSeason6Button(SpriteBatch spriteBatch, Rectangle localRect, string text,
-                                       bool hovered, Texture2D texture)
+                                       bool hovered, Texture2D texture, bool enabled = true)
         {
             var rect = Translate(localRect);
             if (IsUsableTexture(texture))
-                spriteBatch.Draw(texture, FitTexture(texture, rect), Color.White);
+                spriteBatch.Draw(texture, rect, enabled ? Color.White : Color.Gray);
             else
                 DrawFooterButton(spriteBatch, localRect, text, hovered);
 
             if (_font == null)
                 return;
 
-            float scale = 0.42f;
+            float scale = Math.Min(0.42f, (rect.Width - 8f) / Math.Max(1f, _font.MeasureString(text).X));
             Vector2 size = _font.MeasureString(text) * scale;
             Vector2 pos = new(rect.X + (rect.Width - size.X) / 2f, rect.Y + (rect.Height - size.Y) / 2f);
             spriteBatch.DrawString(_font, text, pos + Vector2.One, Color.Black * 0.55f,
                 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-            spriteBatch.DrawString(_font, text, pos, Theme.TextWhite,
+            spriteBatch.DrawString(_font, text, pos, enabled ? Theme.TextWhite : Color.Gray,
                 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
         }
 
@@ -3071,8 +3128,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
             // Text
             if (_font != null)
             {
-                float scale = 0.55f;
-                Vector2 size = _font.MeasureString(text) * scale;
+                Vector2 measured = _font.MeasureString(text);
+                float scale = Math.Min(0.55f, Math.Min((rect.Width - 8f) / Math.Max(1f, measured.X), (rect.Height - 4f) / Math.Max(1f, measured.Y)));
+                Vector2 size = measured * scale;
                 Vector2 pos = new(rect.X + (rect.Width - size.X) / 2, rect.Y + (rect.Height - size.Y) / 2);
 
                 spriteBatch.DrawString(_font, text, pos + new Vector2(1, 1), Color.Black * 0.6f,

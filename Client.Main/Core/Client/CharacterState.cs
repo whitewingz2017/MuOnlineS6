@@ -84,6 +84,7 @@ namespace Client.Main.Core.Client
     /// </summary>
     public class CharacterState
     {
+        public PersonalShopState PersonalShop { get; } = new();
         private readonly ILogger<CharacterState> _logger;
 
         /// <summary>
@@ -174,7 +175,12 @@ namespace Client.Main.Core.Client
 
         // Inventory and Money
         private readonly ConcurrentDictionary<byte, byte[]> _inventoryItems = new();
-        public byte InventoryExpansionState { get; set; } = 0;
+        private byte _inventoryExpansionState;
+        public byte InventoryExpansionState
+        {
+            get => _inventoryExpansionState;
+            set => _inventoryExpansionState = value <= 4 ? value : (byte)0;
+        }
         public uint InventoryZen { get; set; } = 0;
         public event Action MoneyChanged;
         private byte? _pendingSellSlot;
@@ -1116,6 +1122,7 @@ namespace Client.Main.Core.Client
             _logger.LogInformation("Updating CORE CharacterState for: {Name}, Level: {Level}, Class: {Class}", name, level, characterClass);
 
             if (id != 0 && id != 0xFFFF) this.Id = id;
+            PersonalShop.ResolveOwner(this.Id);
             this.Name = name;
             this.Class = characterClass;
             this.Level = level;
@@ -2103,7 +2110,7 @@ namespace Client.Main.Core.Client
         private string ParseSocketOption(byte socketByte)
         {
             // TODO: Implement mapping from socketByte value to actual Seed Sphere name/effect
-            return $"S:{socketByte}"; // Placeholder
+            return EquipmentBonusDatabase.DescribeSocket(socketByte);
         }
     }
 }

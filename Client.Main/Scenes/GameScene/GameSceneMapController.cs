@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using System.Diagnostics.CodeAnalysis;
 using Client.Main.Controllers;
@@ -127,6 +127,7 @@ namespace Client.Main.Scenes
             }
 
             _isChangingWorld = true;
+            MuGame.Network?.GetCharacterState()?.PersonalShop.NearbyTitles.Clear();
             WorldControl previousWorld = _scene.World;
             WorldControl nextWorld = null;
 

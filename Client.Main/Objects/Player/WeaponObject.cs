@@ -1,4 +1,6 @@
 using Client.Data;
+using Client.Main.Models;
+using Client.Main.Core.Utilities;
 using Client.Main;
 using Client.Main.Content;
 using Client.Main.Objects.Effects;
@@ -43,7 +45,7 @@ namespace Client.Main.Objects.Player
             RenderShadow = true;
             LinkParentAnimation = true;
 
-            if (Constants.ENABLE_WEAPON_TRAIL)
+            // Skill trails remain available on mobile Low quality; emission is action-gated.
             {
                 _trail = new WeaponTrailEffect
                 {
@@ -103,6 +105,13 @@ namespace Client.Main.Objects.Player
                 RefreshTrailColor();
             }
 
+            if (_trail != null && Parent is PlayerObject player)
+            {
+                var action = (PlayerAction)player.CurrentAction;
+                _trail.EssentialSkillVisual = WeaponSkillVisualRules.IsWeaponSkill(action);
+                _trail.EmissionEnabled = WeaponSkillVisualRules.ShouldEmitTrail(action, ItemGroup, IsRightHand, player.CurrentFrame)
+                    && (Constants.ENABLE_WEAPON_TRAIL || _trail.EssentialSkillVisual);
+            }
             base.Update(gameTime);
             // Force invalidation is now handled at parent level in ModelObject.Update()
         }

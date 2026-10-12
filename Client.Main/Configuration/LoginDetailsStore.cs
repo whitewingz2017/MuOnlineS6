@@ -1,13 +1,13 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 
 namespace Client.Main.Configuration;
 
 /// <summary>Opt-in credentials encrypted with a non-exportable Android Keystore key.</summary>
-internal static class LoginDetailsStore
+internal static partial class LoginDetailsStore
 {
-    public static bool Supported => OperatingSystem.IsAndroid();
+    public static bool Supported => OperatingSystem.IsAndroid() || OperatingSystem.IsWindows();
 
     public static (string Username, string Password)? Load()
     {
@@ -30,6 +30,7 @@ internal static class LoginDetailsStore
             try { Clear(); } catch { }
         }
 #endif
+        if (OperatingSystem.IsWindows()) return LoadWindows();
         return null;
     }
 
@@ -45,6 +46,7 @@ internal static class LoginDetailsStore
         File.WriteAllBytes(PathName + ".tmp", data);
         File.Move(PathName + ".tmp", PathName, true);
 #endif
+        if (OperatingSystem.IsWindows()) SaveWindows(username, password);
     }
 
     public static void Clear()
@@ -53,6 +55,7 @@ internal static class LoginDetailsStore
         File.Delete(PathName);
         File.Delete(PathName + ".tmp");
 #endif
+        if (OperatingSystem.IsWindows()) ClearWindows();
     }
 
 #if ANDROID

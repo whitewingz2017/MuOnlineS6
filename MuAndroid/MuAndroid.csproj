@@ -11,7 +11,7 @@
     <NoWarn>$(NoWarn);XA0141;XA4211</NoWarn>
 
     <OutputType>Exe</OutputType>
-    <ApplicationId>MuMono.MuMono</ApplicationId>
+    <ApplicationId>TwinMu.TwinMu</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 
