@@ -46,6 +46,7 @@ namespace Client.Main.Scenes
         // or the player clicks with LMB.
         private Core.Client.SkillEntryState _persistentSkill;
         private WalkerObject _persistentSkillTarget;
+        private bool _persistentSkillFromTouch;
         private readonly Dictionary<ushort, double> _nextSkillAllowedMs = new();
         private byte _nextAreaSkillAnimationCounter;
         private bool _novaCharging;
@@ -66,6 +67,25 @@ namespace Client.Main.Scenes
         {
             UpdatePendingSkill();
             UpdateNovaState();
+            if (_persistentSkillFromTouch)
+            {
+                if (MuGame.Network is { IsConnected: false } || _scene.Hero == null || _scene.Hero.IsDead ||
+                    _scene.World is not WalkableWorldControl world ||
+                    !HasValidPersistentSkill(_persistentSkill))
+                {
+                    ClearPersistentSkill();
+                    return;
+                }
+
+                if (world.Terrain != null && world.Terrain.RequestTerrainFlag(
+                    (int)_scene.Hero.Location.X, (int)_scene.Hero.Location.Y).HasFlag(TWFlags.SafeZone))
+                {
+                    ClearPersistentSkill();
+                    return;
+                }
+
+                UsePersistentSkill(_persistentSkill, _persistentSkillTarget, world);
+            }
         }
 
         public void CancelPersistentTarget()
@@ -122,6 +142,14 @@ namespace Client.Main.Scenes
                 return;
 
             if (IsMouseOverUi())
+                return;
+
+            if (rightJustPressed)
+                _scene.DisableAutoAttack();
+
+            // Touch repetition is driven by Update, independently of the desktop
+            // selected slot and the finger's position after releasing the button.
+            if (_persistentSkillFromTouch && !leftPressed && !rightPressed)
                 return;
 
             // ── SourceMain: LMB always aborts skill casting / clears locked target ───
@@ -497,11 +525,6 @@ namespace Client.Main.Scenes
                 return false;
             }
 
-            if (SkillCastRules.IgnoresTargetRange(skill.SkillId, hasTarget: true))
-            {
-                return false;
-            }
-
             if (target is MonsterObject monster)
                 return !monster.IsDead && monster.World == _scene.World;
 
@@ -521,11 +544,14 @@ namespace Client.Main.Scenes
                 return false;
             }
 
-            return CanLockSkillTarget(_persistentSkill, _persistentSkillTarget);
+            return _persistentSkillFromTouch
+                ? CanRepeatTouchSkill(_persistentSkill, _persistentSkillTarget as MonsterObject)
+                : CanLockSkillTarget(_persistentSkill, _persistentSkillTarget);
         }
 
         private void SetPersistentSkill(Core.Client.SkillEntryState skill, WalkerObject target)
         {
+            _persistentSkillFromTouch = false;
             _persistentSkill = skill;
             _persistentSkillTarget = target;
             ClearPendingSkill();
@@ -533,6 +559,7 @@ namespace Client.Main.Scenes
 
         private void ClearPersistentSkill()
         {
+            _persistentSkillFromTouch = false;
             _persistentSkill = null;
             _persistentSkillTarget = null;
             ClearPendingSkill();
@@ -543,7 +570,9 @@ namespace Client.Main.Scenes
             WalkerObject target,
             WalkableWorldControl world)
         {
-            if (!CanLockSkillTarget(skill, target))
+            if (!(_persistentSkillFromTouch
+                ? CanRepeatTouchSkill(skill, target as MonsterObject)
+                : CanLockSkillTarget(skill, target)))
             {
                 ClearPersistentSkill();
                 return;
@@ -822,6 +851,24 @@ namespace Client.Main.Scenes
         /// Target skills use the nearest monster, area skills use that monster's position,
         /// and self skills target the player's own character.
         /// </summary>
+        internal bool StartSkillFromTouchHotbar(Core.Client.SkillEntryState skill, MonsterObject target)
+        {
+            ClearPersistentSkill();
+            if (CanRepeatTouchSkill(skill, target))
+            {
+                SetPersistentSkill(skill, target);
+                _persistentSkillFromTouch = true;
+            }
+
+            return CastSkillFromHotbar(skill, target);
+        }
+
+        private bool CanRepeatTouchSkill(Core.Client.SkillEntryState skill, MonsterObject target) =>
+            skill != null && target != null && !target.IsDead && target.World == _scene.World &&
+            skill.SkillId != TeleportSkillId && skill.SkillId != NovaSkillId &&
+            !SkillDatabase.IsSelfSkill(skill.SkillId) && !SkillCastRules.IsFriendlyTargetSkill(skill.SkillId) &&
+            !IsDarkRavenCommandSkill(skill.SkillId);
+
         internal bool CastSkillFromHotbar(Core.Client.SkillEntryState skill, MonsterObject target)
         {
             var hero = _scene.Hero;

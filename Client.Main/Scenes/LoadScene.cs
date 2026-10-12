@@ -325,9 +325,11 @@ namespace Client.Main.Scenes
         {
             Type nextSceneType;
 
+#if DEBUG
             if (OperatingSystem.IsAndroid())
                 nextSceneType = typeof(ServerConfigScene);
             else
+#endif
                 nextSceneType = Constants.ENTRY_SCENE == typeof(LoadScene)
                     ? typeof(LoginScene)
                     : Constants.ENTRY_SCENE;

@@ -175,6 +175,7 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         private void DriveMovement(HeroObject hero, Vector2 screenDir)
         {
+            (Scene as GameScene)?.CancelAutoAttack();
             // Only one neighboring tile is requested. While held, the completion
             // callback supplies the next tile before the animation can become idle.
             if (hero.IsMoving || hero.MovementIntent)

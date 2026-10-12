@@ -18,12 +18,12 @@ public static class InventoryLayout
     public static int EquipmentX { get; set; } = 16;
     public static int EquipmentY { get; set; } = 91;
     public static int EquipmentW { get; set; } = 364;
-    public static int EquipmentH { get; set; } = 314;
+    public static int EquipmentH { get; set; } = 264;
 
     public static int PaperdollX { get; set; } = 38;
     public static int PaperdollY { get; set; } = 98;
     public static int PaperdollW { get; set; } = 319;
-    public static int PaperdollH { get; set; } = 284;
+    public static int PaperdollH { get; set; } = 240;
 
     public static int PetX { get; set; } = 24;
     public static int PetY { get; set; } = 99;
@@ -90,14 +90,14 @@ public static class InventoryLayout
     // Keep the cell/column defaults before calculating GridX. Static field
     // initializers run top-to-bottom; calculating GridX before these values
     // would use their zero defaults and shift the whole grid to the right.
-    public static int GridY { get; set; } = 408;
+    public static int GridY { get; set; } = 366;
     public static int GridFrameX { get; set; } = 16;
-    public static int GridFrameY { get; set; } = 404;
+    public static int GridFrameY { get; set; } = 362;
     public static int GridFrameW { get; set; } = 364;
-    public static int GridFrameH { get; set; } = 292;
+    public static int GridFrameH { get; set; } = 284;
     public static int GridCellSize { get; set; } = 34;
     public static int GridCols { get; set; } = 8;
-    public static int GridRows { get; set; } = 7;
+    public static int GridRows { get; set; } = 8;
     public static int GridX { get; set; } = (PanelW - GridCols * GridCellSize) / 2;
 
     public static int MoneyY { get; set; } = 659;

@@ -550,8 +550,8 @@ namespace Client.Main.Controls.UI.SelectCharacter
 
         private static string GetPreviewModel(CharacterClassNumber characterClass) => characterClass switch
         {
-            CharacterClassNumber.DarkKnight => "NewFace01",
-            CharacterClassNumber.DarkWizard => "NewFace02",
+            CharacterClassNumber.DarkWizard => "NewFace01",
+            CharacterClassNumber.DarkKnight => "NewFace02",
             CharacterClassNumber.FairyElf => "NewFace03",
             CharacterClassNumber.MagicGladiator => "NewFace04",
             CharacterClassNumber.DarkLord => "NewFace05",
@@ -823,8 +823,8 @@ namespace Client.Main.Controls.UI.SelectCharacter
         {
             int spiderIndex = SelectedClass switch
             {
-                CharacterClassNumber.DarkKnight => 0,
-                CharacterClassNumber.DarkWizard => 1,
+                CharacterClassNumber.DarkWizard => 0,
+                CharacterClassNumber.DarkKnight => 1,
                 CharacterClassNumber.FairyElf => 2,
                 CharacterClassNumber.MagicGladiator => 3,
                 CharacterClassNumber.DarkLord => 4,

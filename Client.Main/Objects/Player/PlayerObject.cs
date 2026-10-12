@@ -3074,7 +3074,8 @@ namespace Client.Main.Objects.Player
             float rangeTiles = GetAttackRangeTiles();
             if (Vector2.Distance(Location, target.Location) > rangeTiles)
             {
-                MoveTo(target.Location);
+                if (!IsMoving && !MovementIntent)
+                    MoveTo(target.Location, stopWithinRange: rangeTiles);
                 return;
             }
 

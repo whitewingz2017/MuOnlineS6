@@ -1051,7 +1051,7 @@ namespace Client.Main.Controls.UI.Game
 
             // Prevent input when a modal dialog is open (e.g., sell confirmation)
             if (IsModalDialogOpen()) return;
-            if (Scene?.FocusControl != this) return;
+            if (Scene?.MouseHoverControl != this && !IsMouseOver) return;
 
             // Ignore shop clicks while dragging an item from inventory/vault (so a sell drop doesn't auto-buy a shop item)
             if (InventoryControl.Instance?.GetDraggedItem() != null || VaultControl.Instance?.GetDraggedItem() != null) return;
@@ -1069,18 +1069,13 @@ namespace Client.Main.Controls.UI.Game
             var svc = MuGame.Network?.GetCharacterService();
             if (svc != null)
             {
-                if (UiThemeManager.IsMobilePlatform)
-                {
-                    var selectedItem = _hoveredItem;
-                    RequestDialog.Show($"Are you sure to buy this?\n{selectedItem.Definition.Name}\nBuy Price: {ItemPriceCalculator.CalculateBuyPrice(selectedItem)} Zen",
-                        onAccept: () =>
-                        {
-                            if (Visible && _items.Contains(selectedItem))
-                                _ = svc.SendBuyItemFromNpcRequestAsync(slot);
-                        }, acceptText: "Buy", rejectText: "Cancel");
-                }
-                else
-                    _ = svc.SendBuyItemFromNpcRequestAsync(slot);
+                var selectedItem = _hoveredItem;
+                RequestDialog.Show($"Are you sure to buy this?\n{selectedItem.Definition.Name}\nBuy Price: {ItemPriceCalculator.CalculateBuyPrice(selectedItem)} Zen",
+                    onAccept: () =>
+                    {
+                        if (Visible && _items.Contains(selectedItem))
+                            _ = svc.SendBuyItemFromNpcRequestAsync(slot);
+                    }, acceptText: "Buy", rejectText: "Cancel");
             }
         }
 

@@ -1,4 +1,5 @@
 ﻿using Client.Main.Models;
+using Client.Main.Configuration;
 using Client.Main.Controls.UI.Common;
 using Client.Main.Controllers;
 using Client.Main.Controls.UI.Game.Common;
@@ -23,7 +24,10 @@ namespace Client.Main.Controls.UI.Login
         private readonly TextFieldControl _passwordInput;
         private readonly OkButton _okButton;
         private readonly ButtonControl _classicOkButton;
-        private readonly OkButton _classicCancelButton;
+        private readonly ButtonControl _classicCancelButton;
+        private readonly RememberLoginCheckBox _rememberLogin;
+        private bool _rememberDetails;
+        public bool RememberDetails => _rememberDetails;
         public bool CanGoBack
         {
             get => _classicCancelButton.Interactive;
@@ -156,13 +160,30 @@ namespace Client.Main.Controls.UI.Login
             _classicOkButton.Click += OkButton_Click;
             Controls.Add(_classicOkButton);
 
-            _classicCancelButton = new OkButton
-            {
-                TexturePath = "Interface/newui_button_cancel.OZT",
-                AutoViewSize = false
-            };
+            _classicCancelButton = CreateClassicButton("Cancel", new Color(65, 50, 45));
             _classicCancelButton.Click += CancelButton_Click;
             Controls.Add(_classicCancelButton);
+
+            _rememberLogin = new RememberLoginCheckBox();
+            _rememberLogin.Click += (s, e) =>
+            {
+                _rememberDetails = !_rememberDetails;
+                _rememberLogin.Checked = _rememberDetails;
+                if (!_rememberDetails)
+                {
+                    try { LoginDetailsStore.Clear(); }
+                    catch { MessageWindow.Show("Unable to clear saved login details. Please try again."); }
+                }
+            };
+            Controls.Add(_rememberLogin);
+            var saved = LoginDetailsStore.Load();
+            if (saved.HasValue)
+            {
+                _userInput.Value = saved.Value.Username;
+                _passwordInput.Value = saved.Value.Password;
+                _rememberDetails = true;
+                _rememberLogin.Checked = true;
+            }
 
             ApplyThemeLayout();
         }
@@ -193,7 +214,7 @@ namespace Client.Main.Controls.UI.Login
             bool classic = !LoginUiTheme.UseModernLayout;
             ControlSize = classic
                 ? new Point(LoginLayout.PanelWidth, LoginLayout.PanelHeight)
-                : new Point(300, 200);
+                : new Point(360, 300);
 
             _serverNameLabel.TextColor = classic ? ModernHudTheme.TextGold : new Color(241, 188, 37);
             _titleLabel.TextColor = classic ? ModernHudTheme.TextWhite : Color.WhiteSmoke;
@@ -240,31 +261,41 @@ namespace Client.Main.Controls.UI.Login
                 _line1.X = 10;
                 _line1.Y = 40;
                 _line2.X = 10;
-                _line2.Y = 150;
+                _line2.Y = 218;
                 _userLabel.X = 20;
-                _userLabel.Y = 90;
+                _userLabel.Y = 93;
                 _passwordLabel.X = 20;
-                _passwordLabel.Y = 120;
-                _userInput.X = 100;
-                _userInput.Y = 87;
-                _passwordInput.X = 100;
-                _passwordInput.Y = 117;
-                _userInput.ViewSize = new Point(176, 14);
-                _passwordInput.ViewSize = new Point(176, 14);
-                _userInput.Skin = TextFieldSkin.NineSlice;
-                _passwordInput.Skin = TextFieldSkin.NineSlice;
-                _okButton.Align = ControlAlign.None;
-                _okButton.X = 83;
-                _okButton.Y = 160;
-                _classicCancelButton.X = 155;
-                _classicCancelButton.Y = 160;
-                _classicCancelButton.ViewSize = new Point(54, 30);
+                _passwordLabel.Y = 141;
+                _userInput.X = 105;
+                _userInput.Y = 84;
+                _passwordInput.X = 105;
+                _passwordInput.Y = 132;
+                _userInput.ViewSize = new Point(230, 38);
+                _passwordInput.ViewSize = new Point(230, 38);
+                _userInput.FontSize = 16;
+                _passwordInput.FontSize = 16;
+                _userInput.Skin = TextFieldSkin.Flat;
+                _passwordInput.Skin = TextFieldSkin.Flat;
+                _userInput.BackgroundColor = _passwordInput.BackgroundColor = new Color(12, 12, 16, 235);
+                _userInput.BorderColor = _passwordInput.BorderColor = ModernHudTheme.BorderInner;
+                _userInput.BorderThickness = _passwordInput.BorderThickness = 1;
+                _classicOkButton.X = 64;
+                _classicOkButton.Y = 234;
+                _classicOkButton.ViewSize = new Point(108, 42);
+                _classicCancelButton.X = 188;
+                _classicCancelButton.Y = 234;
+                _classicCancelButton.ViewSize = new Point(108, 42);
             }
 
-            _okButton.Visible = !classic;
-            _okButton.Interactive = !classic;
-            _classicOkButton.Visible = classic;
-            _classicOkButton.Interactive = classic;
+            _rememberLogin.X = 30;
+            _rememberLogin.Y = classic ? 210 : 180;
+            _rememberLogin.ViewSize = new Point(ControlSize.X - 60, 32);
+            _rememberLogin.Visible = LoginDetailsStore.Supported;
+            _rememberLogin.Interactive = LoginDetailsStore.Supported;
+            _okButton.Visible = false;
+            _okButton.Interactive = false;
+            _classicOkButton.Visible = true;
+            _classicOkButton.Interactive = true;
             _classicCancelButton.Visible = true;
             _line1.Visible = !classic;
             _line2.Visible = !classic;
@@ -303,6 +334,7 @@ namespace Client.Main.Controls.UI.Login
             _passwordInput.Draw(gameTime);
             _classicOkButton.Draw(gameTime);
             _classicCancelButton.Draw(gameTime);
+            _rememberLogin.Draw(gameTime);
         }
 
         // Public Methods

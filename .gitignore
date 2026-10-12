@@ -17,3 +17,6 @@
 # OS files
 Thumbs.db
 .DS_Store
+/MGUI
+*.apk
+/artifacts

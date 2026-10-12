@@ -208,7 +208,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             {
                 Scene.SetMouseInputConsumed();
                 SkillEntryState skill = hitSkill < skills.Count ? skills[hitSkill] : null;
-                if (skill != null)
+                if (skill != null && justPressed)
                     CastSkill(gs, skill);
                 else if (justPressed)
                     gs.ModernHud?.BeginSkillAssignment(hitSkill);
@@ -216,12 +216,14 @@ namespace Client.Main.Controls.UI.Game.Hud
             else if (justPressed && _resetRect.Contains(p))
             {
                 Scene.SetMouseInputConsumed();
+                gs.CancelAutoAttack();
                 gs.ModernHud?.ResetActiveSkillSet();
             }
             else if (down && _holdingAttack && _attackRect.Contains(p))
             {
                 Scene.SetMouseInputConsumed();
-                DoAttack(gs);
+                if (justPressed)
+                    DoAttack(gs);
             }
             else if (down && (_attackRect.Contains(p) || _resetRect.Contains(p) || hitSkill >= 0))
             {
@@ -231,17 +233,19 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         private void DoAttack(GameScene gs)
         {
-            if (gs.Hero == null || gs.Hero.IsMoving || gs.Hero.MovementIntent)
+            if (gs.Hero == null)
                 return;
+            gs.CancelAutoAttack();
             var target = FindNearestMonster(gs, gs.Hero.GetAttackRangeTiles());
             if (target != null)
-                gs.Hero.Attack(target);
+                gs.TryStartAutoAttack(target);
         }
 
         private void CastSkill(GameScene gs, SkillEntryState skill)
         {
+            gs.CancelAutoAttack();
             var target = FindNearestMonster(gs, gs.SkillController?.GetCastRange(skill.SkillId, hasTarget: true) ?? 0f);
-            gs.SkillController?.CastSkillFromHotbar(skill, target);
+            gs.SkillController?.StartSkillFromTouchHotbar(skill, target);
         }
 
         private static MonsterObject FindNearestMonster(GameScene gs, float range)

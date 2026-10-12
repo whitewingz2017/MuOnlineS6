@@ -1,3 +1,4 @@
+using Client.Main.Configuration;
 using Client.Main.Controllers; // Needed for SoundController
 using Client.Main.Controls.UI;
 using Client.Main.Controls.UI.Login;
@@ -425,6 +426,15 @@ namespace Client.Main.Scenes
                     MessageWindow.Show("Please enter Username and Password.");
                     return;
                 }
+                try
+                {
+                    if (_loginDialog.RememberDetails) LoginDetailsStore.Save(username, password);
+                    else LoginDetailsStore.Clear();
+                }
+                catch
+                {
+                    MessageWindow.Show("Unable to save login details on this device. You can still log in.");
+                }
                 _logger.LogInformation("Login attempt from dialog for user: {Username}", username);
                 _ = _networkManager.SendLoginRequestAsync(username, password);
             }
@@ -437,8 +447,6 @@ namespace Client.Main.Scenes
 
         private async void LoginDialog_CancelAttempt(object sender, EventArgs e)
         {
-            // Wait for a completed game-server connection; do not race a pending
-            // server switch or an authentication response.
             if (_returningToServerSelection ||
                 _networkManager.CurrentState != ClientConnectionState.ConnectedToGameServer)
                 return;
@@ -670,7 +678,10 @@ namespace Client.Main.Scenes
             {
                 _loginDialog.Visible = true;
                 _loginDialog.BringToFrontBelowMessages();
-                _loginDialog.FocusUsername();
+                // Mobile opens a native input dialog on focus. Let the user tap
+                // a field so that Cancel remains immediately accessible.
+                if (!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS())
+                    _loginDialog.FocusUsername();
             }
 
             // Proactively hide server selection UI right away to avoid overlap if the

@@ -39,7 +39,7 @@ Constants.ENABLE_CROWD_SPATIAL_CULLING = true;
 
 void InvokeWorld(string name, params object[] arguments) =>
     typeof(WorldControl).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(world, arguments);
-bool InSnapshot(PlayerObject player) => (bool)typeof(WorldControl)
+bool InSnapshot(WalkerObject player) => (bool)typeof(WorldControl)
     .GetMethod("IsObjectVisibleInSnapshot", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(world, [player])!;
 int Sector(PlayerObject player)
 {
@@ -103,7 +103,7 @@ for (int frame = 0; frame < 120; frame++)
 }
 Check(!InSnapshot(pc) && pc.Position.X == 10050,
     "The old visible-only update must reproduce the invisible player stuck at its old location.");
-var movementPump = typeof(WorldControl).GetMethod("UpdateCulledPlayerMovement", BindingFlags.NonPublic | BindingFlags.Instance)!;
+var movementPump = typeof(WorldControl).GetMethod("UpdateCulledWalkerMovement", BindingFlags.NonPublic | BindingFlags.Instance)!;
 for (int frame = 0; frame < 1500 && !InSnapshot(pc); frame++)
 {
     movementPump.Invoke(world, [new GameTime(TimeSpan.FromSeconds(frame / 60d), TimeSpan.FromSeconds(1d / 60d))]);
@@ -141,6 +141,126 @@ movementPump.Invoke(world, [new GameTime(TimeSpan.FromSeconds(60), TimeSpan.From
 Check(pc.Position == hiddenPosition && pc.Hidden, "Hidden roots must not be moved or activated by the culling fix.");
 world.RemoveObject(pc);
 Check(world.FindPlayerById(0x123) == null, "Removal must still unregister the remote player.");
+
+// Monsters crossing the culling boundary must follow their network path too;
+// otherwise they can attack on the server while remaining invisible on the client.
+var approachingMonster = new TestMonster { NetworkId = 0x345, World = world, Location = new Vector2(100, 115) };
+typeof(WorldObject).GetProperty(nameof(WorldObject.Status))!.SetValue(approachingMonster, GameControlStatus.Ready);
+approachingMonster.MoveTargetPosition = approachingMonster.TargetPosition;
+approachingMonster.Position = approachingMonster.TargetPosition;
+world.Objects.Add(approachingMonster);
+CameraAt(new Vector2(127, 115), 20f / 9f);
+Recull();
+Check(!InSnapshot(approachingMonster), "Approaching monster must start outside the view.");
+approachingMonster.MoveTo(new Vector2(131, 116), sendToServer: false, usePathfinding: false);
+for (int frame = 0; frame < 1500 && !InSnapshot(approachingMonster); frame++)
+{
+    movementPump.Invoke(world, [new GameTime(TimeSpan.FromSeconds(65 + frame / 60d), TimeSpan.FromSeconds(1d / 60d))]);
+    Recull();
+}
+Check(InSnapshot(approachingMonster), "A monster walking toward the hero must enter view without a camera movement.");
+Vector3 monsterVisiblePosition = approachingMonster.Position;
+movementPump.Invoke(world, [new GameTime(TimeSpan.FromSeconds(95), TimeSpan.FromSeconds(.1))]);
+Check(approachingMonster.Position == monsterVisiblePosition, "Visible monsters must not advance twice.");
+approachingMonster.Hidden = true;
+movementPump.Invoke(world, [new GameTime(TimeSpan.FromSeconds(96), TimeSpan.FromSeconds(1))]);
+Check(approachingMonster.Position == monsterVisiblePosition, "Hidden/loading monsters must remain isolated from movement updates.");
+world.RemoveObject(approachingMonster);
+approachingMonster.Hidden = false;
+movementPump.Invoke(world, [new GameTime(TimeSpan.FromSeconds(97), TimeSpan.FromSeconds(1))]);
+Check(approachingMonster.Position == monsterVisiblePosition, "Removed monsters must no longer be simulated.");
+
+// Local login publication must recover independently of movement or camera changes.
+var hero = new HeroObject(default) { World = world, Location = new Vector2(143, 119), Hidden = true };
+typeof(WorldObject).GetProperty(nameof(WorldObject.Status))!.SetValue(hero, GameControlStatus.Ready);
+world.Walker = hero;
+var gameScene = (GameScene)RuntimeHelpers.GetUninitializedObject(typeof(GameScene));
+typeof(GameScene).GetField("_hero", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(gameScene, hero);
+typeof(BaseScene).GetProperty(nameof(BaseScene.World))!.SetValue(gameScene, world);
+bool RepairHero() => (bool)typeof(GameScene).GetMethod("EnsureHeroRenderPublication", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(gameScene, null)!;
+world.Visible = false;
+Check(!RepairHero() && hero.Hidden && !world.Objects.Contains(hero), "Hidden loading worlds must not publish the local hero.");
+world.Visible = true;
+Check(RepairHero(), "Activated gameplay must republish a ready local hero missing from Objects.");
+Recull();
+Check(!hero.Hidden && InSnapshot(hero), "Recovered hero must be unhidden and enter the visibility snapshot.");
+Check(!RepairHero(), "Healthy hero publication must not trigger repeated repairs.");
+hero.Hidden = true;
+Check(RepairHero(), "A stale hidden flag after login must recover without movement.");
+Recull();
+InvokeWorld("RemoveVisibleObject", hero);
+Check(RepairHero(), "A local hero omitted from the cached snapshot must recover.");
+Recull();
+Check(InSnapshot(hero), "Snapshot recovery must restore the hero to rendering.");
+world.Walker = null;
+hero.Hidden = true;
+Check(!RepairHero() && hero.Hidden, "A hero detached for a world transition must remain hidden.");
+world.RemoveObject(hero);
+
+// A mobile skill tap retains its own slot/target while an animation blocks the
+// first cast. Releasing the pointer must not depend on the desktop selected slot.
+hero.Hidden = false;
+hero.CurrentAction = PlayerAction.PlayerAttackFist;
+hero.Position = new Vector3(14350, 11950, 0);
+hero.MoveTargetPosition = hero.TargetPosition;
+var skillControllerType = typeof(GameScene).Assembly.GetType("Client.Main.Scenes.GameSceneSkillController")!;
+var hud = RuntimeHelpers.GetUninitializedObject(typeof(Client.Main.Controls.UI.Game.Hud.ModernBottomHud));
+var skillController = Activator.CreateInstance(skillControllerType, gameScene, hud, NullLogger.Instance,
+    new Func<PlayerObject, bool>(_ => false))!;
+typeof(GameScene).GetField("_skillController", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(gameScene, skillController);
+var touchSkill = new SkillEntryState { SkillId = 4 };
+var touchTarget = new TestMonster { World = world, Location = hero.Location };
+var touchStart = skillControllerType.GetMethod("StartSkillFromTouchHotbar", BindingFlags.NonPublic | BindingFlags.Instance)!;
+var touchFlag = skillControllerType.GetField("_persistentSkillFromTouch", BindingFlags.NonPublic | BindingFlags.Instance)!;
+var lockedTarget = skillControllerType.GetField("_persistentSkillTarget", BindingFlags.NonPublic | BindingFlags.Instance)!;
+touchStart.Invoke(skillController, [touchSkill, touchTarget]);
+Check((bool)touchFlag.GetValue(skillController)! && ReferenceEquals(lockedTarget.GetValue(skillController), touchTarget),
+    "A mobile skill tap must retain its target even when the first cast is animation-blocked.");
+skillControllerType.GetMethod("Update")!.Invoke(skillController, null);
+Check((bool)touchFlag.GetValue(skillController)!, "The next pointer-independent update must retain mobile skill repetition.");
+typeof(GameScene).GetMethod("CancelAutoAttack", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(gameScene, null);
+Check(!(bool)touchFlag.GetValue(skillController)! && lockedTarget.GetValue(skillController) == null,
+    "Movement/action cancellation must clear mobile skill repetition.");
+touchStart.Invoke(skillController, [touchSkill, touchTarget]);
+touchTarget.World = new TestWorld();
+skillControllerType.GetMethod("Update")!.Invoke(skillController, null);
+Check(!(bool)touchFlag.GetValue(skillController)!, "Changing the target's world must end mobile skill repetition.");
+
+// Offensive area skills retain a monster target on desktop, just like mobile.
+var canLock = skillControllerType.GetMethod("CanLockSkillTarget", BindingFlags.NonPublic | BindingFlags.Instance)!;
+touchTarget.World = world;
+Check((bool)canLock.Invoke(skillController, [new SkillEntryState { SkillId = 10 }, touchTarget])!,
+    "Hellfire must retain a monster target after RMB release despite ignoring target range.");
+Check((bool)canLock.Invoke(skillController, [new SkillEntryState { SkillId = 14 }, touchTarget])!,
+    "Inferno must retain a monster target after RMB release.");
+Check(!(bool)canLock.Invoke(skillController, [new SkillEntryState { SkillId = 18 }, touchTarget])!,
+    "Self buffs must remain single-use.");
+var layout = typeof(Client.Main.Controls.UI.Game.Hud.InventoryLayout);
+int Layout(string name) => (int)layout.GetProperty(name)!.GetValue(null)!;
+Check(Layout("GridCols") * Layout("GridRows") == 64,
+    "The base inventory must expose all 64 server-supported bag cells.");
+Check(Layout("GridY") + Layout("GridRows") * Layout("GridCellSize") <= Layout("FooterY"),
+    "The final inventory row must not overlap Zen or footer controls.");
+Check(Layout("MoneyY") + 30 <= Layout("PanelH"), "The full Zen field must fit in the inventory panel.");
+
+// Repeated attacks must preserve an asynchronous approach instead of cancelling
+// and recreating pathfinding on every 75ms combat tick.
+var intent = typeof(WalkerObject).GetField("_movementIntent", BindingFlags.NonPublic | BindingFlags.Instance)!;
+var moveVersion = typeof(WalkerObject).GetField("_moveRequestVersion", BindingFlags.NonPublic | BindingFlags.Instance)!;
+intent.SetValue(hero, true);
+touchTarget.Location = hero.Location + new Vector2(10, 0);
+var initialMoveVersion = moveVersion.GetValue(hero);
+var startAttack = typeof(GameScene).GetMethod("TryStartAutoAttack", BindingFlags.NonPublic | BindingFlags.Instance)!;
+Check((bool)startAttack.Invoke(gameScene, [touchTarget])!, "A normal attack tap must retain its target during approach.");
+var autoTarget = typeof(GameScene).GetField("_autoAttackTarget", BindingFlags.NonPublic | BindingFlags.Instance)!;
+var repeatAttack = typeof(GameScene).GetMethod("UpdateAutoAttack", BindingFlags.NonPublic | BindingFlags.Instance)!;
+for (int i = 0; i < 4; i++)
+    repeatAttack.Invoke(gameScene, [new GameTime(TimeSpan.FromSeconds(i), TimeSpan.FromMilliseconds(100))]);
+Check(ReferenceEquals(autoTarget.GetValue(gameScene), touchTarget), "Released-input attack ticks must retain the same live monster.");
+Check(Equals(initialMoveVersion, moveVersion.GetValue(hero)), "Combat retries must not restart an approach with movement pending.");
+typeof(GameScene).GetMethod("CancelAutoAttack", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(gameScene, null);
+Check(autoTarget.GetValue(gameScene) == null, "Movement or another combat action must cancel normal attack repetition.");
+intent.SetValue(hero, false);
 
 // Preserve previous generation/map protections in the authoritative scope manager.
 var state = new CharacterState(NullLoggerFactory.Instance);
@@ -214,6 +334,7 @@ sealed class TestWorld : WalkableWorldControl
     public TestWorld() : base(1) { Status = GameControlStatus.Ready; }
     public void SetStatus(GameControlStatus status) => Status = status;
 }
+sealed class TestMonster : MonsterObject { }
 sealed class TestScene : BaseScene
 {
     public TestScene(WorldControl world) { World = world; Controls.Add(world); }

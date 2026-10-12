@@ -294,6 +294,14 @@ namespace Client.Main.Networking
 
             try
             {
+                // This is an intentional server switch. A delayed disconnect event
+                // from the old game server must not reset the new connection.
+                if (_connectionManager.IsConnected)
+                {
+                    var oldConnection = _connectionManager.Connection;
+                    oldConnection.PacketReceived -= HandlePacketAsync;
+                    oldConnection.Disconnected -= HandleDisconnectAsync;
+                }
                 await _connectionManager.DisconnectAsync();
             }
             catch (Exception ex)

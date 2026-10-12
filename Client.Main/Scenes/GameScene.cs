@@ -686,6 +686,7 @@ namespace Client.Main.Scenes
                 }
                 if (worldInstance is WalkableWorldControl initializedWalkable)
                     _scopeImportController?.EnsureWalkerNetworkId(initializedWalkable, charState.Id, "after hero publication");
+                worldInstance.ActivateObjectForRendering(_hero, forceFullVisibilityRebuild: true);
 
                 // Phase 5: queue each scope category in a separate frame. Remote objects load
                 // asynchronously and are published only after their own assets are ready.
@@ -736,6 +737,7 @@ namespace Client.Main.Scenes
                 _ = QueueWorldActivationAfterLoadingFrame(() =>
                 {
                     _hero.SnapToTerrainHeight();
+                    worldInstance.ActivateObjectForRendering(_hero, forceFullVisibilityRebuild: true);
                     worldInstance.Visible = true;
                     _modernHud.Visible = true;
                     _mapController?.UpdateLoadProgress("Game ready!", 1.0f);
@@ -819,6 +821,27 @@ namespace Client.Main.Scenes
         }
 
         // ─────────────────────────── Update Loop ───────────────────────────
+        internal bool EnsureHeroRenderPublication()
+        {
+            // A respawn/map transition deliberately hides the hero. Repair only the
+            // fully activated gameplay world, never its hidden loading shell.
+            if (_initialWorldLoadInProgress || _mapController?.IsChangingWorld == true ||
+                _pendingWorldActivation != null || _initialWorldActivationCooldown ||
+                World is not WalkableWorldControl world || !world.Visible ||
+                world.Status != GameControlStatus.Ready || _hero?.Status != GameControlStatus.Ready ||
+                !ReferenceEquals(_hero.World, world) || !ReferenceEquals(world.Walker, _hero))
+                return false;
+
+            if (world.Objects.Contains(_hero) && !_hero.Hidden && world.IsObjectVisibleInSnapshot(_hero))
+                return false;
+
+            if (!world.Objects.Contains(_hero))
+                world.Objects.Add(_hero);
+
+            _logger?.LogWarning("Restoring local character render publication in world {WorldIndex}.", world.WorldIndex);
+            return world.ActivateObjectForRendering(_hero, forceFullVisibilityRebuild: true);
+        }
+
         public override void Update(GameTime gameTime)
         {
             if (Status != GameControlStatus.Ready)
@@ -842,6 +865,7 @@ namespace Client.Main.Scenes
             var currentKeyboardState = MuGame.Instance.Keyboard;
             var previousKeyboardState = MuGame.Instance.PrevKeyboard;
 
+            EnsureHeroRenderPublication();
             base.Update(gameTime);
             if (Status != GameControlStatus.Ready)
                 return;

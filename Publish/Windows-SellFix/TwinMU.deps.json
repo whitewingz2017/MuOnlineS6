@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v10.0": {},
     ".NETCoreApp,Version=v10.0/win-x64": {
-      "MuMono/1.0.0": {
+      "TwinMU/1.0.0": {
         "dependencies": {
           "Client.Main": "1.0.0",
           "MonoGame.Framework.WindowsDX": "3.8.5",
@@ -15,7 +15,7 @@
           "runtimepack.Microsoft.WindowsDesktop.App.Runtime.win-x64": "10.0.12"
         },
         "runtime": {
-          "MuMono.dll": {}
+          "TwinMU.dll": {}
         }
       },
       "runtimepack.Microsoft.NETCore.App.Runtime.win-x64/10.0.12": {
@@ -1943,7 +1943,7 @@
     }
   },
   "libraries": {
-    "MuMono/1.0.0": {
+    "TwinMU/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

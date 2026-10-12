@@ -527,7 +527,7 @@ namespace Client.Main.Controls
             }
 
             UpdateVisibleObjects(time);
-            UpdateCulledPlayerMovement(time);
+            UpdateCulledWalkerMovement(time);
             FlushSpatialUpdates();
             UpdatePassProfiler.AddWorldVisibility(visibilityStarted);
 
@@ -2564,16 +2564,19 @@ namespace Client.Main.Controls
             _dirtyVisibilityResultScratch = new byte[capacity];
         }
 
-        private void UpdateCulledPlayerMovement(GameTime time)
+        private void UpdateCulledWalkerMovement(GameTime time)
         {
             // Keep simulation independent of camera visibility, without evaluating
-            // off-screen bones, equipment, lighting or draw resources. Visible players
+            // off-screen bones, equipment, lighting or draw resources. Visible walkers
             // already advanced through UpdateVisibleObjects and must not move twice.
-            for (int i = 0; i < _players.Count; i++)
+            // Monsters must advance too: the server can move one into attack range
+            // while its stale client position is still outside the visibility snapshot.
+            for (int i = 0; i < _walkers.Count; i++)
             {
-                var player = _players[i];
-                if (player.Visible && !_visibleObjectIndices.ContainsKey(player))
-                    player.UpdateMovementWhileCulled(time);
+                var walker = _walkers[i];
+                if (walker.Visible && walker is not MonsterObject { IsDead: true } &&
+                    !_visibleObjectIndices.ContainsKey(walker))
+                    walker.UpdateMovementWhileCulled(time);
             }
         }
 

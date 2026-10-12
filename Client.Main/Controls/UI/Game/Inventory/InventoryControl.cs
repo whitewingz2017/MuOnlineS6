@@ -493,6 +493,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             Visible = false;
+            if (NpcShopControl.Instance is { Visible: true } shop)
+                shop.Visible = false;
             if (Scene?.FocusControl == this)
             {
                 Scene.FocusControl = null;
@@ -793,7 +795,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         {
             if (_zenText != null)
             {
-                _zenText.Text = ZenAmount.ToString();
+                _zenText.Text = $"Zen: {ZenAmount:N0}";
             }
         }
 
@@ -864,7 +866,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 _footerRect = new Rectangle(PANEL_PADDING, Hud.InventoryLayout.FooterY,
                     WINDOW_WIDTH - PANEL_PADDING * 2, WINDOW_HEIGHT - Hud.InventoryLayout.FooterY - 8);
                 _zenIconRect = new Rectangle(32, Hud.InventoryLayout.MoneyY, 26, 26);
-                _zenFieldRect = new Rectangle(57, Hud.InventoryLayout.MoneyY, 143, 30);
+                _zenFieldRect = new Rectangle(57, Hud.InventoryLayout.MoneyY, 210, 30);
                 _closeButtonRect = new Rectangle(Hud.InventoryLayout.CloseX, Hud.InventoryLayout.CloseY,
                     Hud.InventoryLayout.CloseW, Hud.InventoryLayout.CloseH);
                 const int footerButtonSize = 32;
@@ -1228,6 +1230,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 spriteBatch.Draw(_s6BottomBar, FitTexture(_s6BottomBar, _footerRect), Color.White);
             else
                 DrawPanel(spriteBatch, _footerRect, Theme.BgMid);
+
+            DrawZenDisplay(spriteBatch);
 
         }
 
@@ -1767,6 +1771,18 @@ namespace Client.Main.Controls.UI.Game.Inventory
                                     SoundController.Instance.PlayBuffer("Sound/iButton.wav");
                                 }
                             }
+                            return;
+                        }
+
+                        // Mobile taps sell directly; Windows uses drag-to-shop.
+                        if (UiThemeManager.IsMobilePlatform && npcShop is { Visible: true, IsRepairMode: false })
+                        {
+                            var item = _hoveredItem;
+                            byte slot = (byte)(InventorySlotOffsetConstant + item.GridPosition.Y * Columns + item.GridPosition.X);
+                            RemoveItemFromGrid(item);
+                            _items.Remove(item);
+                            ShowSellConfirmation(item, slot, item.GridPosition, -1);
+                            Scene?.SetMouseInputConsumed();
                             return;
                         }
 
@@ -2397,9 +2413,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             var builder = new StringBuilder();
-            builder.AppendLine(UiThemeManager.IsMobilePlatform ? "Are you sure to sell this?" : $"Sell {displayName}?");
-            if (UiThemeManager.IsMobilePlatform)
-                builder.AppendLine(displayName);
+            builder.AppendLine("Are you sure to sell this?");
+            builder.AppendLine(displayName);
+            builder.AppendLine($"Sell Price: {ItemPriceCalculator.CalculateSellPrice(item)} Zen");
             if (definition.IsExpensive)
             {
                 builder.AppendLine();
@@ -2408,7 +2424,13 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             RequestDialog.Show(
                 builder.ToString(),
-                onAccept: () => ExecuteSellToNpc(slotIndex),
+                onAccept: () =>
+                {
+                    if (NpcShopControl.Instance is { Visible: true })
+                        ExecuteSellToNpc(slotIndex);
+                    else
+                        RestoreItemAfterCancelledSell(item, originalGrid, fromEquipSlot);
+                },
                 onReject: () => RestoreItemAfterCancelledSell(item, originalGrid, fromEquipSlot),
                 acceptText: "Sell",
                 rejectText: "Cancel");

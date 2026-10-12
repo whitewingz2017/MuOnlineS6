@@ -223,9 +223,9 @@ namespace Client.Main.Scenes
                     // Re-sample the destination terrain at the exact activation point. This
                     // also updates the camera target before the first visible gameplay frame.
                     _scene.Hero.SnapToTerrainHeight();
+                    nextWorld.ActivateObjectForRendering(_scene.Hero, forceFullVisibilityRebuild: true);
                     nextWorld.PrepareInitialVisibilitySnapshot();
                     nextWorld.Visible = true;
-                    _scene.Hero.Hidden = false;
                     CharacterSpawnEffect.Start(_scene.Hero);
                 }, $"MapChange.{worldType.Name}.Activate", cleanupLoadingUi: false);
 
