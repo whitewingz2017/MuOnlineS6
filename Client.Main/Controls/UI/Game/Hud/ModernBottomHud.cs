@@ -1640,20 +1640,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             UiDrawHelper.DrawVerticalGradient(sb, track,
                 new Color(12, 14, 20, 245), new Color(6, 8, 12, 250));
 
-            // Calculate EXP percentage
-            double expPercent = 0;
-            if (_state.ExperienceForNextLevel > 0)
-            {
-                ushort currentLevel = _state.Level;
-                ulong prevLevelExp = currentLevel > 1
-                    ? (ulong)((currentLevel - 1 + 9) * (currentLevel - 1) * (currentLevel - 1) * 10)
-                    : 0;
-                ulong expInCurrentLevel = _state.Experience >= prevLevelExp ? _state.Experience - prevLevelExp : 0;
-                ulong expNeededForLevel = _state.ExperienceForNextLevel >= prevLevelExp
-                    ? _state.ExperienceForNextLevel - prevLevelExp : 1;
-                expPercent = expNeededForLevel > 0 ? (expInCurrentLevel / (double)expNeededForLevel) * 100.0 : 0.0;
-            }
-
+            double expPercent = Client.Main.Core.Utilities.ExperienceProgress.For(_state) * 100;
             float pct = MathHelper.Clamp((float)(expPercent / 100.0), 0f, 1f);
             int fillW = (int)(track.Width * pct);
 

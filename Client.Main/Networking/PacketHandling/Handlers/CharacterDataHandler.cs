@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.Network.Packets;
 using MUnique.OpenMU.Network.Packets.ServerToClient;
 using System;
@@ -545,7 +545,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 // Apply updates
                 // Calculate new experience requirement for next level
                 // Formula: ExpForNextLevel = (newLevel + 9) * newLevel * newLevel * 10
-                ulong nextExp = (ulong)((newLevel + 9) * newLevel * newLevel * 10);
+                ulong nextExp = Client.Main.Core.Utilities.ExperienceProgress.LevelStart(newLevel + 1);
                 _characterState.UpdateLevelAndExperience(newLevel, _characterState.Experience, nextExp, newPoints);
                 _characterState.UpdateMaximumHealthShield(maxHp, maxSd);
                 _characterState.UpdateMaximumManaAbility(maxMana, maxAbility);

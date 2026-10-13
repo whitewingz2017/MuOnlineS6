@@ -1,4 +1,4 @@
-﻿using Client.Main.Content;
+using Client.Main.Content;
 using Client.Main.Controllers;
 using Client.Main.Controls;
 using Client.Main.Models;
@@ -94,7 +94,7 @@ namespace Client.Main.Objects.Monsters
             public PhoenixBodyObject()
             {
                 // MonsterObject uses this animation speed for the Phoenix root.
-                AnimationSpeed = 6f;
+                AnimationSpeed = 25f;
             }
 
             public override void Update(GameTime gameTime)

@@ -191,7 +191,7 @@ namespace Client.Main.Controllers
 
             if (_owner.Status == GameControlStatus.Disposed) return;
             if (GetAnimationType((ushort)_owner.CurrentAction) == AnimationType.Death
-                && !_owner.IsAlive()) return;
+                && (_owner is MonsterObject || !_owner.IsAlive())) return;
 
             ushort idle;
             if (_returnActionOverride.HasValue)
@@ -203,6 +203,8 @@ namespace Client.Main.Controllers
                 idle = _owner switch
                 {
                     PlayerObject p => p.GetCorrectIdleAction(),
+                    // Hit/attack playback does not cancel server movement.
+                    MonsterObject monster when monster.IsMoving => (ushort)MonsterActionType.Walk,
                     _ => (ushort)MonsterActionType.Stop1
                 };
             }

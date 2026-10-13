@@ -337,6 +337,7 @@ namespace Client.Main.Objects
         private void UpdateMovement(GameTime gameTime)
         {
             BeforeUpdatePosition(gameTime);
+            SynchronizeMonsterLocomotion();
             bool wasMoving = IsMoving;
             UpdatePosition(gameTime);
 
@@ -347,6 +348,17 @@ namespace Client.Main.Objects
                 var next = _currentPath.Dequeue();
                 MoveTowards(next, gameTime);
             }
+        }
+
+        internal void SynchronizeMonsterLocomotion()
+        {
+            // MuMain MoveMonsterClient calls SetPlayerWalk on every moving tick.
+            // Damage does not stop ordinary monsters, so Shock must not lock their pose.
+            if (this is MonsterObject monster && !monster.IsDead && IsMoving &&
+                CurrentAction != (int)MonsterActionType.Die &&
+                CurrentAction != (int)MonsterActionType.Walk &&
+                CurrentAction != (int)MonsterActionType.Appear)
+                PlayAction((ushort)MonsterActionType.Walk);
         }
 
         private void NotifyMovementStepCompleted(bool wasMoving)
@@ -375,6 +387,17 @@ namespace Client.Main.Objects
                 }
             }
 
+            // MuMain ReceiveAction cancels movement before a monster attack.
+            if (fromServer && this is MonsterObject &&
+                actionIndex is (ushort)MonsterActionType.Attack1 or (ushort)MonsterActionType.Attack2 or
+                    (ushort)MonsterActionType.Attack3 or (ushort)MonsterActionType.Attack4)
+            {
+                // ReceiveAction snaps to the server target tile before stopping.
+                // Otherwise the fractional rendered position can still interpolate
+                // back to the tile centre and immediately cancel the attack pose.
+                Position = TargetPosition;
+                StopMovement();
+            }
             _serverControlledAnimation = fromServer;
             _animationController?.PlayAnimation(actionIndex, fromServer);
         }

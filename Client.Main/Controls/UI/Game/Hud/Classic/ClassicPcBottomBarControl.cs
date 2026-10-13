@@ -271,15 +271,16 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
             if (texture == null)
                 return;
 
-            double current = _state.Level >= 400 ? _state.MasterExperience : _state.Experience;
-            double next = _state.Level >= 400 ? _state.MasterExperienceForNextLevel : _state.ExperienceForNextLevel;
-            float ratio = next > 0 ? MathHelper.Clamp((float)(current / next), 0f, 1f) : 0f;
-            int width = ScaleValue(629);
+            double progress = Client.Main.Core.Utilities.ExperienceProgress.For(_state);
+            double ratio = Client.Main.Core.Utilities.ExperienceProgress.Segment(progress);
+            var font = GraphicsManager.Instance.Font;
+            if (font != null)
+                sprite.DrawString(font, Client.Main.Core.Utilities.ExperienceProgress.Digit(progress).ToString(),
+                    new Vector2(rect.Right - ScaleValue(12), rect.Top + ScaleValue(ReferenceExpY) - ScaleValue(5)), Color.White,
+                    0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
+            int filledWidth = (int)(ScaleValue(629) * ratio);
             int height = ScaleValue(4);
-            int filledWidth = (int)(width * ratio);
-            if (filledWidth <= 0)
-                return;
-
+            if (filledWidth <= 0) return;
             Rectangle source = new(0, 0, Math.Max(1, (int)(texture.Width * ratio)), texture.Height);
             Rectangle destination = new(rect.Left + ScaleValue(2), rect.Top + ScaleValue(ReferenceExpY), filledWidth, height);
             sprite.Draw(texture, destination, source, Color.White);

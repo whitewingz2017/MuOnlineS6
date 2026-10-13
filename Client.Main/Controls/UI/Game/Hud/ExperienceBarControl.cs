@@ -49,17 +49,7 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         private void UpdateExpLabel()
         {
-            // Calculate experience requirement for previous level
-            ushort currentLevel = _characterState.Level;
-            ulong prevLevelExp = currentLevel > 1 ? (ulong)((currentLevel - 1 + 9) * (currentLevel - 1) * (currentLevel - 1) * 10) : 0;
-
-            // Calculate experience range for current level
-            ulong expInCurrentLevel = _characterState.Experience - prevLevelExp;
-            ulong expNeededForLevel = _characterState.ExperienceForNextLevel - prevLevelExp;
-
-            // Calculate percentage (0-100%)
-            double expPercent = expNeededForLevel > 0 ? (expInCurrentLevel / (double)expNeededForLevel) * 100.0 : 0.0;
-
+            double expPercent = Client.Main.Core.Utilities.ExperienceProgress.For(_characterState) * 100;
             _expLabel.Text = $"EXP: {expPercent:F1}%";
         }
     }

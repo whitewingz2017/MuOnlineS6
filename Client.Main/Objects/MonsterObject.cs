@@ -67,7 +67,9 @@ namespace Client.Main.Objects
         public MonsterObject() : base()
         {
             Interactive = true;
-            AnimationSpeed = 6f;
+            // Action PlaySpeed values are frame increments at the original 25 Hz
+            // simulation rate, just like the player rig. Convert them to seconds.
+            AnimationSpeed = 6f; //25f
             // SourceMain5.2 CreateCharacterPointer: o->Scale = 0.9f default for every
             // character/monster; per-monster cases in CreateMonster override it.
             Scale = 0.9f;

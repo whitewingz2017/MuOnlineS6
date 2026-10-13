@@ -211,20 +211,15 @@ namespace Client.Main.Controls.UI.Game.Hud
             }
 
             // ── EXP: barra de progresso (trilho + fill dourado uniforme) ─
-            float expRate = _state.ExperienceForNextLevel > 0
-                ? MathHelper.Clamp((float)(_state.Experience / (double)_state.ExperienceForNextLevel), 0f, 1f) : 0f;
-            // Depois do 400 o char upa MASTER LEVEL: a barra e o % passam a contar o Master EXP.
+            float expRate = (float)Client.Main.Core.Utilities.ExperienceProgress.For(_state);
             bool masterMode = _state.Level >= 400;
-            if (masterMode && _state.MasterExperienceForNextLevel > 0)
-                expRate = MathHelper.Clamp(
-                    (float)(_state.MasterExperience / (double)_state.MasterExperienceForNextLevel), 0f, 1f);
             // trilho (estado vazio): interior cinza-escuro com borda visível
             if (BottomBarLayout.ExpEnabled)
             {
             sb.Draw(pixel, expRect, new Color(88, 84, 70));                       // borda
             sb.Draw(pixel, new Rectangle(expRect.X + 1, expRect.Y + 1, expRect.Width - 2, expRect.Height - 2),
                 new Color(38, 36, 30));                                           // interior
-            int expFillW = (int)((expRect.Width - 2) * expRate);
+            int expFillW = (int)((expRect.Width - 2) * Client.Main.Core.Utilities.ExperienceProgress.Segment(expRate));
             if (expFillW > 0)
             {
                 // preenchimento: OURO ENVELHECIDO/bronze combinando com os ícones do HUD,
@@ -251,7 +246,7 @@ namespace Client.Main.Controls.UI.Game.Hud
                 string nv = $"Lv.{_state.Level}";
                 string ml = masterMode ? $"ML.{_state.MasterLevel}" : null;
                 string expLbl = masterMode ? "Master EXP " : "EXP ";
-                string pct = $"{expRate * 100f:0.0}%";
+                string pct = $"{expRate * 100f:0.0}%  [{Client.Main.Core.Utilities.ExperienceProgress.Digit(expRate)}]";
                 SpriteFont levelFont = GraphicsManager.GetUiFont(BottomBarLayout.LevelFont, out float levelScale);
                 SpriteFont expFont = GraphicsManager.GetUiFont(BottomBarLayout.ExpTextFont, out float expScale);
                 if (levelFont == null || expFont == null)

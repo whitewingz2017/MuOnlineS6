@@ -863,6 +863,45 @@ namespace Client.Main.Scenes
             return CastSkillFromHotbar(skill, target);
         }
 
+        internal bool CastAimedTouchSkill(Core.Client.SkillEntryState skill, Vector2 screenOffset)
+        {
+            ClearPersistentSkill();
+            var hero = _scene.Hero;
+            if (skill == null || hero == null || hero.IsDead || _scene.World == null)
+                return false;
+            if (SkillDatabase.IsSelfSkill(skill.SkillId) || IsDarkRavenCommandSkill(skill.SkillId))
+                return CastSkillFromHotbar(skill, null);
+            // Match the movement joystick's isometric axes with continuous aiming.
+            Vector2 direction = new(screenOffset.X + screenOffset.Y, screenOffset.X - screenOffset.Y);
+            if (direction.LengthSquared() < 0.0001f) return false;
+            direction.Normalize();
+            float range = GetCastRange(skill.SkillId, hasTarget: false);
+            Vector2 location = hero.Location + direction * (MathF.Max(1f, range - 0.5f) * MathHelper.Clamp(screenOffset.Length(), 0f, 1f));
+            location = Vector2.Clamp(location, Vector2.Zero, new Vector2(Constants.TERRAIN_SIZE - 1));
+            WalkerObject target = null;
+            float best = 2.25f;
+            bool friendly = SkillCastRules.IsFriendlyTargetSkill(skill.SkillId);
+            void Consider(WalkerObject candidate)
+            {
+                if (candidate == null || candidate == hero || candidate is MonsterObject { IsDead: true } || candidate is PlayerObject { IsDead: true } || !candidate.Visible || candidate.World != _scene.World) return;
+                if (candidate is PlayerObject player && !friendly && !_isDuelAttackTarget(player)) return;
+                if (candidate is MonsterObject && friendly) return;
+                float distance = Vector2.DistanceSquared(location, candidate.Location);
+                if (distance <= best && IsInSkillRange(candidate.Location, skill.SkillId))
+                {
+                    best = distance;
+                    target = candidate;
+                }
+            }
+            foreach (var monster in _scene.World.Monsters) Consider(monster);
+            foreach (var player in _scene.World.Players) Consider(player);
+            hero.FaceTowards(location, immediate: true);
+            if (SkillDatabase.IsAreaSkill(skill.SkillId))
+                return UseAreaSkill(skill, target?.NetworkId ?? (ushort)0, location);
+            if (target is PlayerObject playerTarget) return UseSkillOnPlayerTarget(skill, playerTarget);
+            return target is MonsterObject monsterTarget && UseSkillOnTarget(skill, monsterTarget);
+        }
+
         private bool CanRepeatTouchSkill(Core.Client.SkillEntryState skill, MonsterObject target) =>
             skill != null && target != null && !target.IsDead && target.World == _scene.World &&
             skill.SkillId != TeleportSkillId && skill.SkillId != NovaSkillId &&

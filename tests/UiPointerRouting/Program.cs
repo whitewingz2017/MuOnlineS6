@@ -16,6 +16,24 @@ try
 {
     int checks = 0;
     void Check(bool value, string message) { if (!value) throw new Exception(message); checks++; }
+    if (args.Contains("--experience-only"))
+    {
+        foreach (int level in new[] { 1, 2, 31, 255, 256, 257, 399 })
+        {
+            ulong start = Client.Main.Core.Utilities.ExperienceProgress.LevelStart(level);
+            ulong next = Client.Main.Core.Utilities.ExperienceProgress.LevelStart(level + 1);
+            Check(Client.Main.Core.Utilities.ExperienceProgress.Ratio(start, next, start) == 0, $"Level {level} did not start at zero.");
+            Check(Client.Main.Core.Utilities.ExperienceProgress.Ratio(next, next, start) == 1, $"Level {level} did not end at 100%.");
+            Check(Math.Abs(Client.Main.Core.Utilities.ExperienceProgress.Ratio(start + (next - start) / 2, next, start) - 0.5) < 0.001, $"Level {level} midpoint is incorrect.");
+        }
+        Check(Client.Main.Core.Utilities.ExperienceProgress.LevelStart(257) == 173680400UL, "High-level EXP formula differs from MuMain.");
+        Check(Client.Main.Core.Utilities.ExperienceProgress.Digit(0.75) == 7, "MuMain EXP digit is incorrect.");
+        Check(Client.Main.Core.Utilities.ExperienceProgress.Segment(0.75) == 0.5, "MuMain EXP segment is incorrect.");
+        Check(Client.Main.Core.Utilities.ExperienceProgress.Digit(1) == 9 && Client.Main.Core.Utilities.ExperienceProgress.Segment(1) == 1, "Full EXP bar overflowed.");
+        Check(Client.Main.Core.Utilities.ExperienceProgress.Ratio(0, 100, 50) == 0, "EXP underflowed.");
+        Console.WriteLine($"PASS: {checks} EXP progress checks.");
+        return;
+    }
     await Client.Main.Core.Utilities.SkillDatabase.Initialize();
     var rosterType = typeof(GameScene).Assembly.GetType("Client.Main.Controls.UI.Game.Skills.ClassSkillRoster")!;
     var rosterFor = rosterType.GetMethod("For", BindingFlags.Static | BindingFlags.Public)!;
@@ -215,6 +233,60 @@ try
     monster.PlayAction((ushort)MonsterActionType.Attack1);
     damageReaction.Invoke(monster, [1u]);
     Check(monster.CurrentAction == (int)MonsterActionType.Attack1, "A normal monster attack was interrupted by a hit reaction.");
+    var animationController = new Client.Main.Controllers.AnimationController(monster);
+    monster.MoveTargetPosition = monster.TargetPosition + new Microsoft.Xna.Framework.Vector3(100f, 0f, 0f);
+    foreach (var action in new[] { MonsterActionType.Shock, MonsterActionType.Attack1, MonsterActionType.Attack2 })
+    {
+        animationController.PlayAnimation((ushort)action, false);
+        animationController.NotifyAnimationCompleted();
+        Check(monster.CurrentAction == (int)MonsterActionType.Walk,
+            $"Moving monster did not resume walking after {action}.");
+    }
+    monster.MoveTargetPosition = monster.TargetPosition;
+    animationController.PlayAnimation((ushort)MonsterActionType.Shock, false);
+    animationController.NotifyAnimationCompleted();
+    Check(monster.CurrentAction == (int)MonsterActionType.Stop1,
+        "Stationary monster did not return to idle after damage.");
+    int monsterTypesChecked = 0;
+    foreach (var type in typeof(Client.Main.Objects.MonsterObject).Assembly.GetTypes()
+        .Where(t => !t.IsAbstract && t.Namespace?.StartsWith("Client.Main.Objects.Monsters", StringComparison.Ordinal) == true && typeof(Client.Main.Objects.MonsterObject).IsAssignableFrom(t)))
+    {
+        var instance = (Client.Main.Objects.MonsterObject)Activator.CreateInstance(type)!;
+        Check(instance.AnimationSpeed == 25f, $"{type.Name} does not use the original 25 Hz animation clock.");
+        var controller = new Client.Main.Controllers.AnimationController(instance);
+        foreach (var action in new[] { MonsterActionType.Shock, MonsterActionType.Attack1, MonsterActionType.Attack2, MonsterActionType.Appear })
+        {
+            instance.MoveTargetPosition = instance.TargetPosition + new Vector3(100f, 0f, 0f);
+            controller.PlayAnimation((ushort)action, false);
+            controller.NotifyAnimationCompleted();
+            Check(instance.CurrentAction == (int)MonsterActionType.Walk, $"{type.Name} slides after {action}.");
+            instance.MoveTargetPosition = instance.TargetPosition;
+            controller.PlayAnimation((ushort)action, false);
+            controller.NotifyAnimationCompleted();
+            Check(instance.CurrentAction == (int)MonsterActionType.Stop1, $"{type.Name} keeps walking after {action} while stationary.");
+        }
+        var synchronize = walkerType.GetMethod("SynchronizeMonsterLocomotion", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        instance.MoveTargetPosition = instance.TargetPosition + new Vector3(100f, 0f, 0f);
+        instance.PlayAction((ushort)MonsterActionType.Shock);
+        synchronize.Invoke(instance, null);
+        Check(instance.CurrentAction == (int)MonsterActionType.Walk, $"{type.Name} retained hit pose while moving.");
+        Check(!instance.IsOneShotPlaying, $"{type.Name} retained the hit animation lock while walking.");
+        instance.Position = instance.TargetPosition + new Vector3(12f, 7f, 0f);
+        instance.PlayAction((ushort)MonsterActionType.Attack1, fromServer: true);
+        Check(!instance.MovementIntent && !instance.IsMoving, $"{type.Name} moved during a server attack.");
+        Check(instance.CurrentAction == (int)MonsterActionType.Attack1, $"{type.Name} lost its attack pose.");
+        controller.PlayAnimation((ushort)MonsterActionType.Die, false);
+        typeof(Client.Main.Objects.MonsterObject).GetField("_isFading", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(instance, true);
+        controller.NotifyAnimationCompleted();
+        Check(instance.CurrentAction == (int)MonsterActionType.Die, $"{type.Name} resumed walking after death.");
+        monsterTypesChecked++;
+    }
+    Console.WriteLine($"Checked animation transitions for {monsterTypesChecked} concrete monster types.");
+    if (args.Contains("--monster-animation-only"))
+    {
+        Console.WriteLine($"PASS: {checks} checks, including moving and stationary monster animation recovery.");
+        return;
+    }
     var login = new Client.Main.Controls.UI.Login.LoginDialog();
     var back = (OkButton)typeof(Client.Main.Controls.UI.Login.LoginDialog)
         .GetField("_classicCancelButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(login)!;

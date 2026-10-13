@@ -1,4 +1,4 @@
-﻿// GameScene.cs
+// GameScene.cs
 using Client.Main.Configuration;
 using Client.Main.Controls;
 using Client.Main.Controls.UI;
@@ -347,6 +347,9 @@ namespace Client.Main.Scenes
                 TextColor = Color.White
             };
             Controls.Add(_pingLabel);
+#if ANDROID
+            Controls.Add(new Client.Main.Controls.UI.Game.Hud.BatteryStatusControl());
+#endif
 
             await MuGame.YieldToNextFrameAsync(
                 "GameScene.BuildShell.Hud",

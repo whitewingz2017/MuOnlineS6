@@ -32,6 +32,7 @@ namespace MuAndroid
     {
         private Client.Main.MuGame _game;
         private View _view;
+        private AndroidAppUpdater _appUpdater;
 
         /// <summary>
         /// Gets the current MainActivity instance.
@@ -271,6 +272,8 @@ namespace MuAndroid
                 HideSystemUI();
 
                 _game.Run();
+                _appUpdater = new AndroidAppUpdater(this);
+                _ = _appUpdater.CheckAsync();
             }
             catch (Exception ex)
             {
@@ -286,6 +289,12 @@ namespace MuAndroid
         /// <summary>
         /// Configures immersive fullscreen mode. Must be called after SetContentView.
         /// </summary>
+        protected override void OnResume()
+        {
+            base.OnResume();
+            _appUpdater?.ResumeInstall();
+        }
+
         private void HideSystemUI()
         {
             if (Build.VERSION.SdkInt >= BuildVersionCodes.R)

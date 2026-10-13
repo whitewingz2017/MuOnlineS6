@@ -26,6 +26,11 @@ namespace Client.Main.Controls.UI.Game.Hud
         private const string AttackTexPath = "Interface/DH/Attack.png";
         private bool _holdingAttack;
         private int _heldSkill = -1;
+        private Vector2 _aimOrigin;
+        private Vector2 _aimOffset;
+        private bool _aimDragged;
+        private const float AimRadius = 72f;
+        private SkillEntryState _aimSkill;
         private const string SkillFrameTexPath = "Interface/DH/mi_skill_frame.OZP";
         private const string SkillGlowTexPath = "Interface/DH/mi_skill_glow.OZP";
         // Skill Settings socket stack: silver ring from bg_allShow, ty_bg_skillBg disc,
@@ -159,6 +164,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             {
                 _holdingAttack = false;
                 _heldSkill = -1;
+                _aimSkill = null;
                 return;
             }
 
@@ -169,6 +175,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             {
                 _holdingAttack = false;
                 _heldSkill = -1;
+                _aimSkill = null;
                 _attackPressed = false;
                 _pressedSkill = -1;
                 return;
@@ -193,6 +200,28 @@ namespace Client.Main.Controls.UI.Game.Hud
             }
             if (down && hitSkill >= 0) _pressedSkill = hitSkill;
 
+            if (_heldSkill >= 0 && _aimSkill != null)
+            {
+                Scene.SetMouseInputConsumed();
+                _pressedSkill = _heldSkill;
+                _aimOffset = p.ToVector2() - _aimOrigin;
+                _aimDragged |= _aimOffset.LengthSquared() > 12f * 12f;
+                if (_aimOffset.LengthSquared() > AimRadius * AimRadius)
+                    _aimOffset = Vector2.Normalize(_aimOffset) * AimRadius;
+                if (!down)
+                {
+                    gs.CancelAutoAttack();
+                    if (_aimDragged)
+                        gs.SkillController?.CastAimedTouchSkill(_aimSkill, _aimOffset / AimRadius);
+                    else
+                        CastSkill(gs, _aimSkill);
+                    _heldSkill = -1;
+                    _aimSkill = null;
+                    _pressedSkill = -1;
+                }
+                return;
+            }
+
             if (!down)
             {
                 _holdingAttack = false;
@@ -204,13 +233,18 @@ namespace Client.Main.Controls.UI.Game.Hud
                 _holdingAttack = hitSkill < 0 && _attackRect.Contains(p);
             }
 
-            if (down && hitSkill >= 0 && _heldSkill == hitSkill)
+            if (justPressed && hitSkill >= 0)
             {
                 Scene.SetMouseInputConsumed();
-                SkillEntryState skill = hitSkill < skills.Count ? skills[hitSkill] : null;
-                if (skill != null && justPressed)
-                    CastSkill(gs, skill);
-                else if (justPressed)
+                _aimSkill = hitSkill < skills.Count ? skills[hitSkill] : null;
+                if (_aimSkill != null)
+                {
+                    gs.CancelAutoAttack();
+                    _aimOrigin = p.ToVector2();
+                    _aimOffset = Vector2.Zero;
+                    _aimDragged = false;
+                }
+                else
                     gs.ModernHud?.BeginSkillAssignment(hitSkill);
             }
             else if (justPressed && _resetRect.Contains(p))
@@ -369,6 +403,11 @@ namespace Client.Main.Controls.UI.Game.Hud
                 }
                 else if (pixel != null)
                     DrawDisc(sb, pixel, Mid(rect), rect.Width / 2f - 2f, new Color(22, 20, 18) * (0.80f * a));
+            }
+            if (_heldSkill >= 0 && _aimSkill != null && pixel != null)
+            {
+                DrawDisc(sb, pixel, _aimOrigin, AimRadius, new Color(50, 150, 220) * 0.22f);
+                DrawDisc(sb, pixel, _aimOrigin + _aimOffset, 14f, new Color(150, 220, 255) * 0.85f);
             }
             // Restaura o batch padrão da cena (PointClamp) pros próximos controles.
             sb.End();
