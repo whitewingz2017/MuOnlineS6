@@ -34,11 +34,23 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      # Keep the SDK/workload/Xcode versions together; latest workloads can require
+      # an Xcode version not installed on the hosted image.
+      - name: Pin iOS toolchain for this cloud build
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          with open('global.json', 'w') as file:
+              json.dump({'sdk': {'version': '10.0.100', 'rollForward': 'disable', 'allowPrerelease': False}}, file)
+          PY
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.100'
+      - name: Select matching Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.0.1.app/Contents/Developer
       - name: Install Apple workload
-        run: dotnet workload install ios
+        run: dotnet workload install ios --version 10.0.100
       - name: Show Apple toolchain
         run: xcodebuild -version
       - uses: actions/download-artifact@v4
