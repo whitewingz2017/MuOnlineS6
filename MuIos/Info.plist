@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>MuIos</string>
+	<string>TwinMU</string>
 	<key>CFBundleIconFiles</key>
 	<array>
 		<string>GameThumbnail.png</string>
@@ -22,7 +22,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>MuIos</string>
+	<string>TwinMU</string>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UIStatusBarHidden</key>

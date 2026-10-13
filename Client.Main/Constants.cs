@@ -286,7 +286,9 @@ namespace Client.Main
             SHADOW_BIAS = 0.005f;
             SHADOW_NORMAL_BIAS = 0.008f;
 
-            DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+            DataPath = OperatingSystem.IsIOS()
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Data")
+                : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
         }
 
 #if DEBUG
