@@ -5,14 +5,9 @@ using Microsoft.Xna.Framework;
 namespace Client.Main.Objects.Effects.Skills
 {
     /// <summary>
-    /// Factory for classic Ice Storm and its five Ice Up master variants.
+    /// Factory for Ice Storm; the registry resolves Season 6 master replacements.
     /// </summary>
     [SkillVisualEffect(39)]
-    [SkillVisualEffect(302)]
-    [SkillVisualEffect(303)]
-    [SkillVisualEffect(304)]
-    [SkillVisualEffect(305)]
-    [SkillVisualEffect(306)]
     public sealed class IceStormSkillEffect : ISkillVisualEffect
     {
         public WorldObject? CreateEffect(SkillEffectContext context)

@@ -82,17 +82,9 @@ namespace Client.Main.Objects.Effects.Joints
         /// <summary>Basis vectors of the C++ AngleMatrix ((Z*Y)*X, degrees).</summary>
         public static void AngleBasis(Vector3 angleDeg, out Vector3 right, out Vector3 forward, out Vector3 up)
         {
-            float sy = MathF.Sin(angleDeg.Z * MathHelper.Pi / 180f);
-            float cy = MathF.Cos(angleDeg.Z * MathHelper.Pi / 180f);
-            float sp = MathF.Sin(angleDeg.Y * MathHelper.Pi / 180f);
-            float cp = MathF.Cos(angleDeg.Y * MathHelper.Pi / 180f);
-            float sr = MathF.Sin(angleDeg.X * MathHelper.Pi / 180f);
-            float cr = MathF.Cos(angleDeg.X * MathHelper.Pi / 180f);
-
-            // Columns of the C++ matrix (VectorRotate contracts against rows m[j][i]).
-            right = new Vector3(cp * cy, sr * sp * cy + cr * -sy, cr * sp * cy + -sr * -sy);
-            forward = new Vector3(cp * sy, sr * sp * sy + cr * cy, cr * sp * sy + -sr * cy);
-            up = new Vector3(-sp, sr * cp, cr * cp);
+            // VectorRotate computes dot products with matrix rows, so basis vectors
+            // must be columns. The former implementation returned rows (inverse rotation).
+            MuMainAngleBasis(angleDeg, out right, out forward, out up);
         }
 
         /// <summary>Rotates a local vector by the C++ AngleMatrix.</summary>

@@ -18,7 +18,7 @@ namespace Client.Main.Objects.Effects.Joints
     /// </summary>
     public sealed class SourceJointEffect : EffectObject
     {
-        public enum JointFamily { Spirit, Thunder, Laser1, Flare }
+        public enum JointFamily { Spirit, Thunder, Laser1, Flare, Healing }
 
         private const int MaxRingCapacity = 50;
 
@@ -46,6 +46,16 @@ namespace Client.Main.Objects.Effects.Joints
         private Vector3 _startPosition;
         private bool _collision;
         private float _luminosityBoost;
+        private bool _healingFlashSpawned;
+
+        public static SourceJointEffect Healing(WalkerObject target, int subtype, Vector3 position, Vector3 angle) => new()
+        {
+            Family = JointFamily.Healing, SubType = subtype, Position = position,
+            TargetProvider = () => target.WorldPosition.Translation,
+            LifeTimeFrames = 12f, MaxTails = 2, ScaleValue = 5f,
+            JointTexturePath = "Effect/JointEnergy01.jpg", _angle = angle,
+            _fenrirVertices = new VertexPositionColorTexture[(MaxRingCapacity - 1) * 12]
+        };
 
         private SourceJointEffect()
         {
@@ -215,7 +225,7 @@ namespace Client.Main.Objects.Effects.Joints
                 _fortitudeFlare = await TextureLoader.Instance.PrepareAndGetTexture("Effect/flare01.jpg");
 
             // Initial tail ring: cross of +-Scale*0.5 around the position (CreateJoint).
-            if (SubType is 76 or 77)
+            if (SubType is 76 or 77 || Family == JointFamily.Healing)
                 PushFenrirTail(Position, _angle);
             else
                 PushRing(Position);
@@ -262,12 +272,31 @@ namespace Client.Main.Objects.Effects.Joints
             if (TargetProvider != null)
             {
                 TargetPosition = TargetProvider();
-                if (Family != JointFamily.Flare)
+                if (Family != JointFamily.Flare && Family != JointFamily.Healing)
                     TargetPosition += Vector3.UnitZ * 80f;
             }
 
             switch (Family)
             {
+                case JointFamily.Healing:
+                    // MoveJoint performs forward flight before the healing switch.
+                    Position += SourceJointMath.MuMainRotate(new Vector3(0f, -Velocity, 0f), _angle) * f;
+                    Velocity += 4f * f;
+                    Vector3 position = Position;
+                    SourceJointMath.MuMainMoveHumming(ref position, ref _angle, TargetPosition + Vector3.UnitZ * 120f, 10f, f);
+                    Position = position;
+                    float luminosity = MathF.Max(0f, (12f - LifeTimeFrames) * 0.1f);
+                    LightTint = (SubType == 1 ? new Vector3(0.4f, 0.6f, 1f)
+                        : SubType == 2 ? new Vector3(0.4f, 1f, 0.6f) : new Vector3(1f, 0.6f, 0.4f)) * luminosity;
+                    PushFenrirTail(Position, _angle);
+                    if (!_healingFlashSpawned && LifeTimeFrames <= 1f && World != null)
+                    {
+                        _healingFlashSpawned = true;
+                        var flash = new HealingImpactSparkEffect(TargetPosition + Vector3.UnitZ * 120f, LightTint);
+                        World.Objects.Add(flash);
+                        _ = flash.Load();
+                    }
+                    break;
                 case JointFamily.Spirit:
                     MoveSpirit(f);
                     break;
@@ -290,7 +319,7 @@ namespace Client.Main.Objects.Effects.Joints
                 Position += SourceJointMath.Rotate(local, _angle) * f;
             }
 
-            if (SubType is not (76 or 77) && (LifeTimeFrames > 0 || Family != JointFamily.Spirit))
+            if (Family != JointFamily.Healing && SubType is not (76 or 77) && (LifeTimeFrames > 0 || Family != JointFamily.Spirit))
                 PushRing(Position);
 
             LifeTimeFrames -= f;
@@ -434,7 +463,7 @@ namespace Client.Main.Objects.Effects.Joints
 
         public override void Draw(GameTime gameTime)
         {
-            if (SubType is not (76 or 77) || Hidden || Status != GameControlStatus.Ready || _texture == null || _fenrirVertices == null)
+            if ((SubType is not (76 or 77) && Family != JointFamily.Healing) || Hidden || Status != GameControlStatus.Ready || _texture == null || _fenrirVertices == null)
                 return;
             int count = BuildFenrirVertices((float)((long)gameTime.TotalGameTime.TotalMilliseconds % 1000L) * 0.001f, SourceJointMath.FrameFactor);
             if (count == 0)
@@ -502,8 +531,8 @@ namespace Client.Main.Objects.Effects.Joints
                 var nextCenter = (next[0] + next[1]) * 0.5f;
                 if (Vector3.DistanceSquared(center, nextCenter) > 60f * 60f)
                     continue;
-                float u1 = SubType == 77 ? (tails - j) / (float)((MaxTails - 1) / 2) - scroll : ((tails - j) / 16f - scroll) * uvScale;
-                float u2 = SubType == 77 ? (tails - j - 1) / (float)((MaxTails - 1) / 2) - scroll : ((tails - j - 1) / 16f - scroll) * uvScale;
+                float u1 = Family == JointFamily.Healing ? (tails - j) / 16f : SubType == 77 ? (tails - j) / (float)((MaxTails - 1) / 2) - scroll : ((tails - j) / 16f - scroll) * uvScale;
+                float u2 = Family == JointFamily.Healing ? (tails - j - 1) / 16f : SubType == 77 ? (tails - j - 1) / (float)((MaxTails - 1) / 2) - scroll : ((tails - j - 1) / 16f - scroll) * uvScale;
                 float intensity = SubType == 77 ? MathHelper.Clamp((tails - 1 - j) / (float)MaxTails * 2f, 0f, 1f) : 1f;
                 AddFenrirQuad(ref count, current[2], current[3], next[3], next[2], u1, u2, 1f, 0f, intensity);
                 AddFenrirQuad(ref count, current[0], current[1], next[1], next[0], u1, u2, 0f, 1f, intensity);
@@ -526,7 +555,7 @@ namespace Client.Main.Objects.Effects.Joints
 
         public override void DrawAfter(GameTime gameTime)
         {
-            if (SubType is 76 or 77)
+            if (SubType is 76 or 77 || Family == JointFamily.Healing)
                 return;
             if (Hidden || Status != GameControlStatus.Ready || _texture == null || _ringCount < 2)
                 return;

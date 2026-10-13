@@ -23,7 +23,7 @@ namespace Client.Main.Objects.Effects
 
         private const int BeamSegments = 20;
         private const float SegmentStep = 50f;
-        private const float BeamScale = 64f;
+        private const float BeamScale = 16f;
         private const float BeamLifeFrames = 20f;
 
         private static readonly Vector3 SpawnOffset = new(-20f, -90f, 100f);
@@ -39,7 +39,7 @@ namespace Client.Main.Objects.Effects
         private bool _initialized;
         private bool _soundPlayed;
 
-        private SpriteBatch _spriteBatch = null!;
+        private readonly VertexPositionColorTexture[] _vertices = new VertexPositionColorTexture[BeamSegments * 6];
         private Texture2D _beamTexture = null!;
 
         private readonly DynamicLight _beamLight;
@@ -77,7 +77,6 @@ namespace Client.Main.Objects.Effects
 
             _ = await TextureLoader.Instance.Prepare(BeamTexturePath);
 
-            _spriteBatch = GraphicsManager.Instance.Sprite;
             _beamTexture = TextureLoader.Instance.GetTexture2D(BeamTexturePath) ?? GraphicsManager.Instance.Pixel;
         }
 
@@ -117,21 +116,8 @@ namespace Client.Main.Objects.Effects
         public override void Draw(GameTime gameTime)
         {
             base.Draw(gameTime);
-
-            if (!Visible || _beamTexture == null || _spriteBatch == null)
-                return;
-
-            if (!SpriteBatchScope.BatchIsBegun)
-            {
-                using (new SpriteBatchScope(_spriteBatch, SpriteSortMode.Deferred, BlendState, SamplerState.LinearClamp, DepthState))
-                {
-                    DrawBeam();
-                }
-            }
-            else
-            {
+            if (Visible && _beamTexture != null && _initialized)
                 DrawBeam();
-            }
         }
 
         private void InitializeBeam()
@@ -194,45 +180,24 @@ namespace Client.Main.Objects.Effects
 
         private void DrawBeam()
         {
-            float pulse = 0.92f + 0.08f * MathF.Sin(_time * 18f);
-            Color color = new Color(0.5f, 0.7f, 1f) * pulse;
-
-            Vector3 pos = _startPosition;
+            // CreateSprite(BITMAP_SPARK+1, ..., Scale=16): world-size billboards.
+            // Source colour is constant; there is no extra opacity pulse.
+            Matrix camera = Matrix.Invert(Camera.Instance.View);
+            Vector3 right = camera.Right * (_beamTexture.Width * BeamScale * .5f);
+            Vector3 up = camera.Up * (_beamTexture.Height * BeamScale * .5f);
+            Color color = new(.5f, .7f, 1f);
+            int count = 0;
             for (int i = 0; i < BeamSegments; i++)
             {
-                DrawSprite(_beamTexture, pos, color, 0f, BeamScale);
-                pos += _directionStep;
+                Vector3 center = _startPosition + _directionStep * i;
+                var a = new VertexPositionColorTexture(center - right + up, color, new Vector2(0, 0));
+                var b = new VertexPositionColorTexture(center + right + up, color, new Vector2(1, 0));
+                var c = new VertexPositionColorTexture(center + right - up, color, new Vector2(1, 1));
+                var d = new VertexPositionColorTexture(center - right - up, color, new Vector2(0, 1));
+                _vertices[count++] = a; _vertices[count++] = b; _vertices[count++] = c;
+                _vertices[count++] = a; _vertices[count++] = c; _vertices[count++] = d;
             }
-        }
-
-        private void DrawSprite(Texture2D texture, Vector3 worldPos, Color color, float rotation, float scale)
-        {
-            var viewport = GraphicsDevice.Viewport;
-            Vector3 projected = viewport.Project(worldPos, Camera.Instance.Projection, Camera.Instance.View, Matrix.Identity);
-            if (projected.Z < 0f || projected.Z > 1f)
-                return;
-
-            float baseScale = ComputeScreenScale(worldPos, 1f);
-            float finalScale = scale * baseScale;
-            float depth = MathHelper.Clamp(projected.Z, 0f, 1f);
-
-            _spriteBatch.Draw(
-                texture,
-                new Vector2(projected.X, projected.Y),
-                null,
-                color,
-                rotation,
-                new Vector2(texture.Width * 0.5f, texture.Height * 0.5f),
-                finalScale,
-                SpriteEffects.None,
-                depth);
-        }
-
-        private static float ComputeScreenScale(Vector3 worldPos, float baseScale)
-        {
-            float distance = Vector3.Distance(Camera.Instance.Position, worldPos);
-            float scale = baseScale / (MathF.Max(distance, 0.1f) / Constants.TERRAIN_SIZE);
-            return scale * Constants.RENDER_SCALE;
+            ElfSupportBuffEffect.DrawWorldGeometry(_beamTexture, _vertices, count);
         }
 
         private void RemoveSelf()

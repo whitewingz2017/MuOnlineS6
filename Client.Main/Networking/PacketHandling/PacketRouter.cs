@@ -1,4 +1,4 @@
-// File: Client/Main/Networking/PacketHandling/PacketRouter.cs
+﻿// File: Client/Main/Networking/PacketHandling/PacketRouter.cs
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -44,6 +44,8 @@ namespace Client.Main.Networking.PacketHandling
         private readonly PetHandler _petHandler;
         private readonly BuffManager _buffManager;
         private readonly Effects.GreaterFortitudeBuffController _fortitudeBuffs;
+        private readonly Effects.ElfSupportBuffController _elfSupportBuffs;
+        private readonly Effects.ClassBuffController _classBuffs;
 
         private readonly Dictionary<(byte MainCode, byte SubCode), Func<Memory<byte>, Task>> _packetHandlers
             = new();
@@ -57,6 +59,8 @@ namespace Client.Main.Networking.PacketHandling
         {
             _buffManager.Update();
             _fortitudeBuffs.Update();
+            _elfSupportBuffs.Update();
+            _classBuffs.Update();
         }
 
         // ───────────────────────── Constructors ─────────────────────────
@@ -79,6 +83,8 @@ namespace Client.Main.Networking.PacketHandling
             // Instantiate BuffManager (shared across handlers)
             _buffManager = new BuffManager(loggerFactory);
             _fortitudeBuffs = new Effects.GreaterFortitudeBuffController(_buffManager);
+            _elfSupportBuffs = new Effects.ElfSupportBuffController(_buffManager);
+            _classBuffs = new Effects.ClassBuffController(_buffManager);
 
             // Instantiate handlers
             _characterDataHandler = new CharacterDataHandler(loggerFactory, characterState, networkManager, targetVersion, _buffManager);
@@ -147,6 +153,8 @@ namespace Client.Main.Networking.PacketHandling
         {
             _logger.LogWarning("Disconnected from {Server}.", _isConnectServerRouting ? "Connect Server" : "Game Server");
             MuGame.ScheduleOnMainThread(_fortitudeBuffs.Clear);
+            MuGame.ScheduleOnMainThread(_elfSupportBuffs.Clear);
+            MuGame.ScheduleOnMainThread(_classBuffs.Clear);
             if (!_isConnectServerRouting)
             {
                 MuGame.ScheduleOnMainThread(() =>
@@ -154,7 +162,7 @@ namespace Client.Main.Networking.PacketHandling
                     if (MuGame.Instance.ActiveScene is Client.Main.Scenes.GameScene scene)
                     {
                         scene.Hero?.StopMovement();
-                        Client.Main.Controls.UI.MessageWindow.Show("Connection to the game server was lost. Please return to server selection.");
+                        Client.Main.Controls.UI.MessageWindow.ShowDisconnected();
                     }
                 });
             }

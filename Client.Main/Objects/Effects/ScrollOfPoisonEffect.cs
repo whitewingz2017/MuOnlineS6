@@ -7,6 +7,7 @@ using Client.Main.Controllers;
 using Client.Main.Graphics;
 using Client.Main.Helpers;
 using Client.Main.Models;
+using Client.Main.Objects.Effects.Joints;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -19,11 +20,11 @@ namespace Client.Main.Objects.Effects
     public sealed class ScrollOfPoisonEffect : EffectObject
     {
         private const string PoisonBaseName = "Poison";
-        private const string SmokeTexturePath = "Effect/Spark03.jpg";
-        private const float TotalLifeFrames = 66f;
-        private const float ModelLifeFrames = 54f;
+        private const string SmokeTexturePath = "Effect/smoke01.jpg";
+        private const float TotalLifeFrames = 50f;
+        private const float ModelLifeFrames = 40f;
         private const int SmokeParticleCount = 10;
-        private const float SmokeVisualScale = 8f;
+        private readonly VertexPositionColorTexture[] _smokeVertices = new VertexPositionColorTexture[SmokeParticleCount * 6];
 
         private readonly Vector3 _center;
 
@@ -33,23 +34,19 @@ namespace Client.Main.Objects.Effects
         private float _lifeFrames = TotalLifeFrames;
         private float _time;
 
-        private SpriteBatch _spriteBatch = null!;
         private Texture2D _smokeTexture = null!;
 
         private readonly SmokeParticle[] _smokeParticles = new SmokeParticle[SmokeParticleCount];
         private readonly DynamicLight _poisonLight;
         private bool _lightAdded;
 
-        private readonly Color _smokeColor = new(0.38f, 0.86f, 0.45f, 0.95f);
+        private readonly Color _smokeColor = new(0.5f, 1f, 0.8f);
 
         private struct SmokeParticle
         {
             public Vector3 Position;
             public Vector3 Velocity;
             public float Life;
-            public float MaxLife;
-            public float Rotation;
-            public float RotationSpeed;
             public float Scale;
         }
 
@@ -83,7 +80,6 @@ namespace Client.Main.Objects.Effects
             await ResolvePaths();
 
             _ = await TextureLoader.Instance.Prepare(SmokeTexturePath);
-            _spriteBatch = GraphicsManager.Instance.Sprite;
             _smokeTexture = TextureLoader.Instance.GetTexture2D(SmokeTexturePath) ?? GraphicsManager.Instance.Pixel;
 
             if (World?.Terrain != null && !_lightAdded)
@@ -125,21 +121,8 @@ namespace Client.Main.Objects.Effects
         public override void Draw(GameTime gameTime)
         {
             base.Draw(gameTime);
-
-            if (!Visible || _smokeTexture == null || _spriteBatch == null)
-                return;
-
-            if (!SpriteBatchScope.BatchIsBegun)
-            {
-                using (new SpriteBatchScope(_spriteBatch, SpriteSortMode.Deferred, BlendState, SamplerState.LinearClamp, DepthState))
-                {
-                    DrawSmokeParticles();
-                }
-            }
-            else
-            {
+            if (Visible && _smokeTexture != null)
                 DrawSmokeParticles();
-            }
         }
 
         private async Task ResolvePaths()
@@ -157,7 +140,7 @@ namespace Client.Main.Objects.Effects
             {
                 Position = Vector3.Zero,
                 Angle = Vector3.Zero,
-                Scale = 0.9f
+                Scale = 1f
             };
 
             Children.Add(core);
@@ -166,98 +149,54 @@ namespace Client.Main.Objects.Effects
 
         private void InitializeSmokeParticles()
         {
+            // ZzzCharacter: ten BITMAP_SMOKE subtype 1 particles at the victim.
             for (int i = 0; i < _smokeParticles.Length; i++)
             {
-                float life = RandomRange(0.95f, 1.75f);
                 _smokeParticles[i] = new SmokeParticle
                 {
-                    Position = new Vector3(
-                        RandomRange(-28f, 28f),
-                        RandomRange(-28f, 28f),
-                        RandomRange(10f, 80f)),
-                    Velocity = new Vector3(
-                        RandomRange(-40f, 40f),
-                        RandomRange(-40f, 40f),
-                        RandomRange(40f, 95f)),
-                    Life = life,
-                    MaxLife = life,
-                    Rotation = RandomRange(0f, MathHelper.TwoPi),
-                    RotationSpeed = RandomRange(-1.8f, 1.8f),
-                    Scale = RandomRange(0.65f, 1.25f)
+                    Position = new Vector3(MuGame.Random.Next(64) - 32,
+                        MuGame.Random.Next(64) - 32, MuGame.Random.Next(64) + 32),
+                    Velocity = SourceJointMath.Rotate(new Vector3(0, -(MuGame.Random.Next(8) + 40), 0),
+                        new Vector3(MuGame.Random.Next(90) - 45, 0, MuGame.Random.Next(360))),
+                    Life = 50f,
+                    Scale = (MuGame.Random.Next(32) + 80) * .01f
                 };
             }
         }
 
         private void UpdateSmokeParticles(float dt)
         {
+            float factor = dt * 25f;
             for (int i = 0; i < _smokeParticles.Length; i++)
             {
-                if (_smokeParticles[i].Life <= 0f)
-                    continue;
-
-                var particle = _smokeParticles[i];
-                particle.Life -= dt;
-
-                if (particle.Life <= 0f)
-                {
-                    particle.Life = 0f;
-                    _smokeParticles[i] = particle;
-                    continue;
-                }
-
-                particle.Position += particle.Velocity * dt;
-                particle.Velocity = new Vector3(
-                    particle.Velocity.X * 0.96f,
-                    particle.Velocity.Y * 0.96f,
-                    particle.Velocity.Z + (28f * dt));
-                particle.Rotation += particle.RotationSpeed * dt;
-
-                _smokeParticles[i] = particle;
+                ref var particle = ref _smokeParticles[i];
+                if (particle.Life <= 0) continue;
+                particle.Position += particle.Velocity * factor;
+                particle.Velocity *= MathF.Pow(.4f, factor);
+                particle.Scale += .05f * factor;
+                particle.Life -= factor;
             }
         }
 
         private void DrawSmokeParticles()
         {
-            float effectAlpha = MathHelper.Clamp(_lifeFrames / TotalLifeFrames, 0f, 1f);
-            if (effectAlpha <= 0f)
-                return;
-
-            for (int i = 0; i < _smokeParticles.Length; i++)
+            Matrix camera = Matrix.Invert(Camera.Instance.View);
+            int count = 0;
+            foreach (ref readonly var particle in _smokeParticles.AsSpan())
             {
-                ref readonly var particle = ref _smokeParticles[i];
-                if (particle.Life <= 0f)
-                    continue;
-
-                float lifeRatio = particle.Life / particle.MaxLife;
-                float alpha = lifeRatio * effectAlpha;
-                float scale = particle.Scale * (0.75f + 0.65f * (1f - lifeRatio));
-
-                DrawSmokeSprite(particle.Position, particle.Rotation, scale, alpha);
+                if (particle.Life <= 0) continue;
+                Vector3 center = _center + particle.Position;
+                Vector3 right = camera.Right * (_smokeTexture.Width * particle.Scale * .5f);
+                Vector3 up = camera.Up * (_smokeTexture.Height * particle.Scale * .5f);
+                Color color = _smokeColor * MathHelper.Clamp(particle.Life / 50f, 0, 1);
+                var a = new VertexPositionColorTexture(center - right + up, color, new Vector2(0, 0));
+                var b = new VertexPositionColorTexture(center + right + up, color, new Vector2(1, 0));
+                var c = new VertexPositionColorTexture(center + right - up, color, new Vector2(1, 1));
+                var d = new VertexPositionColorTexture(center - right - up, color, new Vector2(0, 1));
+                _smokeVertices[count++] = a; _smokeVertices[count++] = b; _smokeVertices[count++] = c;
+                _smokeVertices[count++] = a; _smokeVertices[count++] = c; _smokeVertices[count++] = d;
             }
-        }
-
-        private void DrawSmokeSprite(Vector3 localPosition, float rotation, float scale, float alpha)
-        {
-            Vector3 worldPos = _center + localPosition;
-            var viewport = GraphicsDevice.Viewport;
-            Vector3 projected = viewport.Project(worldPos, Camera.Instance.Projection, Camera.Instance.View, Matrix.Identity);
-            if (projected.Z < 0f || projected.Z > 1f)
-                return;
-
-            float baseScale = ComputeScreenScale(worldPos, 1f);
-            float finalScale = scale * baseScale * SmokeVisualScale;
-            float depth = MathHelper.Clamp(projected.Z, 0f, 1f);
-
-            _spriteBatch.Draw(
-                _smokeTexture,
-                new Vector2(projected.X, projected.Y),
-                null,
-                _smokeColor * alpha,
-                rotation,
-                new Vector2(_smokeTexture.Width * 0.5f, _smokeTexture.Height * 0.5f),
-                finalScale,
-                SpriteEffects.None,
-                depth);
+            ElfSupportBuffEffect.DrawWorldGeometry(_smokeTexture, _smokeVertices, count);
         }
 
         private void UpdateDynamicLight()
@@ -327,22 +266,20 @@ namespace Client.Main.Objects.Effects
         {
             private readonly string _path;
             private float _lifeFrames;
-            private readonly float _initialLife;
 
             public PoisonCoreModel(string path, float lifeFrames)
             {
                 _path = path;
                 _lifeFrames = lifeFrames;
-                _initialLife = lifeFrames;
 
                 ContinuousAnimation = true;
                 AnimationSpeed = 3.6f;
-                LightEnabled = true;
+                LightEnabled = false;
                 IsTransparent = true;
                 DepthState = DepthStencilState.DepthRead;
                 BlendState = BlendState.Additive;
                 BlendMeshState = BlendState.Additive;
-                BlendMesh = -2;
+                BlendMesh = 1;
             }
 
             public override async Task Load()
@@ -359,7 +296,8 @@ namespace Client.Main.Objects.Effects
 
                 float factor = FPSCounter.Instance.FPS_ANIMATION_FACTOR;
                 _lifeFrames -= factor;
-                BlendMeshLight = MathHelper.Clamp(_lifeFrames / _initialLife, 0f, 1f) * 1.1f;
+                BlendMeshLight = _lifeFrames * .1f;
+                Alpha = MathHelper.Clamp(_lifeFrames * .1f, 0f, 1f);
 
                 if (_lifeFrames <= 0f)
                     RemoveSelf();

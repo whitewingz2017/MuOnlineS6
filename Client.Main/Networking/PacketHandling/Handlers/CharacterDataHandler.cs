@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.Network.Packets;
 using MUnique.OpenMU.Network.Packets.ServerToClient;
 using System;
@@ -112,10 +112,16 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     skillId, targetId);
 
                 // Map skill ID to effect ID and deactivate
-                // For now, we'll use the lower byte of skill ID as effect ID
-                // This mapping may need to be adjusted based on actual game data
+                // Include master variants: skill numbers differ from status effect IDs.
                 byte effectId = skillId switch
                 {
+                    16 or 403 or 404 or 406 => (byte)BuffEffectId.ManaShield,
+                    64 or 511 or 515 or 522 => (byte)BuffEffectId.CriticalDamage,
+                    517 => (byte)BuffEffectId.CriticalDamageMastery,
+                    217 => (byte)BuffEffectId.Reflection,
+                    218 or 469 or 470 or 472 => (byte)BuffEffectId.Berserk,
+                    27 or 417 or 423 => (byte)BuffEffectId.GreaterDefense,
+                    28 or 420 or 422 => (byte)BuffEffectId.GreaterDamage,
                     48 or 356 => (byte)BuffEffectId.SwellLife,
                     360 or 363 => (byte)BuffEffectId.SwellLifeProficiency,
                     _ => (byte)(skillId & 0xFF)
@@ -1301,7 +1307,28 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 var skillAnim = new SkillAnimation(packet);
                 ushort playerId = skillAnim.PlayerId;
                 ushort skillId = skillAnim.SkillId;
-                ushort targetId = skillAnim.TargetId;
+                ushort rawTargetId = skillAnim.TargetId;
+                ushort targetId = (ushort)(rawTargetId & 0x7FFF);
+                // MuMain registers recipient buffs from the successful target animation as well
+                // as status packets. The high target bit reports successful application.
+                if ((rawTargetId & 0x8000) != 0)
+                {
+                    byte? buffId = skillId switch
+                    {
+                        16 or 403 or 404 or 406 => (byte)BuffEffectId.ManaShield,
+                        64 or 511 or 515 or 522 => (byte)BuffEffectId.CriticalDamage,
+                        517 => (byte)BuffEffectId.CriticalDamageMastery,
+                        217 => (byte)BuffEffectId.Reflection,
+                        218 or 469 or 470 or 472 => (byte)BuffEffectId.Berserk,
+                        27 or 417 or 423 => (byte)BuffEffectId.GreaterDefense,
+                        28 or 420 or 422 => (byte)BuffEffectId.GreaterDamage,
+                        48 or 356 => (byte)BuffEffectId.SwellLife,
+                        360 or 363 => (byte)BuffEffectId.SwellLifeProficiency,
+                        _ => null,
+                    };
+                    if (buffId.HasValue)
+                        _buffManager.ProcessMagicEffectStatus(targetId, buffId.Value, true);
+                }
 
                 _logger.LogDebug("SkillAnimation: Player={PlayerId}, Skill={SkillId}, Target={TargetId}",
                     playerId, skillId, targetId);

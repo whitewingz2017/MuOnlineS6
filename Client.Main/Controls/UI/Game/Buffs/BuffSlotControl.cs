@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Threading.Tasks;
 using Client.Main.Content;
@@ -240,10 +240,7 @@ namespace Client.Main.Controls.UI.Game.Buffs
                     : $"{Math.Ceiling(value.TotalMinutes)}m remaining";
             }
 
-            var elapsed = DateTime.UtcNow - buff.ActivatedAt;
-            return elapsed.TotalSeconds < 60
-                ? $"{(int)elapsed.TotalSeconds}s active"
-                : $"{(int)elapsed.TotalMinutes}m active";
+            return "Active";
         }
 
         private void DrawTimeBar(SpriteBatch spriteBatch)
@@ -259,10 +256,10 @@ namespace Client.Main.Controls.UI.Game.Buffs
             // Color based on buff type
             Color barColor = _buff.EffectId switch
             {
-                0 => new Color(255, 60, 40),   // Greater Damage - red
-                1 => new Color(40, 200, 60),   // Greater Defense - green
-                2 => new Color(40, 80, 255),   // Mana Shield - blue
-                4 => new Color(255, 200, 40),  // Swell - gold
+                1 => new Color(255, 60, 40),   // Greater Damage - red
+                2 => new Color(40, 200, 60),   // Greater Defense - green
+                4 => new Color(40, 80, 255),   // Mana Shield - blue
+                8 or 135 => new Color(255, 200, 40),  // Swell - gold
                 20 => new Color(255, 150, 40), // Elf Attack - orange
                 21 => new Color(40, 200, 60),  // Elf Defense - green
                 22 => new Color(40, 220, 200), // Elf Heal - teal

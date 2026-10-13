@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
@@ -10,13 +10,14 @@ namespace Client.Main.Core.Client
     /// </summary>
     public enum BuffEffectId : byte
     {
-        GreaterDamage = 0,
-        GreaterDefense = 1,
-        ManaShield = 2,
+        GreaterDamage = 1,
+        GreaterDefense = 2,
+        ManaShield = 4,
         ElfSoldier = 3,
         SwellLife = 8,
         SwellLifeProficiency = 135,
         CriticalDamage = 5,
+        CriticalDamageMastery = 148,
         HealOverTime = 6,
 
         Poison = 55,
@@ -26,8 +27,8 @@ namespace Client.Main.Core.Client
 
         Invisible = 12,
         Invincible = 13,
-        Berserk = 14,
-        Reflection = 15,
+        Berserk = 81,
+        Reflection = 71,
         Transform = 16,
 
         ElfAttack = 20,

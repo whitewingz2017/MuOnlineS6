@@ -80,7 +80,7 @@ namespace Client.Main.Objects.Effects
         private const int MaxQuadsPerBatch = MaxParticles + 64;
 
         /// <summary>0 deg (centre), +10 deg (right) and -20 deg (left) pillar headings.</summary>
-        private static readonly float[] PillarYawOffsetsDegrees = { 0f, 10f, -20f };
+        private static readonly float[] PillarYawOffsetsDegrees = { 0f, 10f, -10f };
         private static readonly float[] PillarSideOffsets = { 0f, PillarSideOffset, -PillarSideOffset };
 
         // BITMAP_BLUE_BLUR sub 1 is spawned with Vector(0, 1, 0) but MoveParticles()

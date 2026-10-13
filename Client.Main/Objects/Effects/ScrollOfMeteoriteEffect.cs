@@ -7,6 +7,7 @@ using Client.Main.Controls;
 using Client.Main.Graphics;
 using Client.Main.Helpers;
 using Client.Main.Models;
+using Client.Main.Objects.Effects.Joints;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -26,16 +27,12 @@ namespace Client.Main.Objects.Effects
 
         private const float FramesPerSecond = 25f;
         private const float DefaultDurationSeconds = 1.6f; // SourceMain MODEL_FIRE default life: 40 frames
-        private const float FallFrames = 20f;               // slowed ~2.5x for more dramatic arc
-        private const float StartHeightOffset = 1200f;
-        private const float StartXOffsetMin = 40f;
-        private const float StartXOffsetMax = 70f;
-        private const float StartYOffsetRange = 15f;
+        private const float StartHeightOffset = 400f;
+        private const float StartXOffsetMin = 130f;
+        private const float StartXOffsetMax = 162f;
         private const float ImpactFlashFrames = 16f;
         private const int ImpactStoneCount = 6;
         private const float ImpactExplosionWorldRadius = 220f;
-        private const float ImpactFireDuration = 3.5f;
-        private const int ImpactFireLayers = 3;
 
         private readonly Vector3 _seedTarget;
         private readonly DynamicLight _meteorLight;
@@ -193,16 +190,16 @@ namespace Client.Main.Objects.Effects
 
             _meteorPosition = _targetPosition + new Vector3(
                 RandomRange(StartXOffsetMin, StartXOffsetMax),
-                RandomRange(-StartYOffsetRange, StartYOffsetRange),
+                0f,
                 StartHeightOffset);
 
-            _meteorVelocity = (_targetPosition - _meteorPosition) / FallFrames;
+            _meteorVelocity = SourceJointMath.Rotate(new Vector3(0, 0, -50), new Vector3(0, 20, 0));
             _meteorScale = RandomRange(1.0f, 1.7f);
 
             _core = new MeteorCoreModel(_firePath)
             {
                 Position = Vector3.Zero,
-                Angle = new Vector3(75f, 0f, 0f), // fixed downward tilt, consistent across casts
+                Angle = new Vector3(0f, 20f, 0f), // MODEL_FIRE subtype 0
                 Scale = _meteorScale
             };
 
@@ -241,27 +238,6 @@ namespace Client.Main.Objects.Effects
             _trail = null;
 
             SpawnImpactStones();
-            SpawnImpactFire();
-        }
-
-        private void SpawnImpactFire()
-        {
-            if (World == null)
-                return;
-
-            // Stack multiple FieryAuraEffect layers at different heights
-            // to form a tall fire column immediately at impact.
-            float[] heights = { 0f, 35f, 70f };
-            float[] scales  = { 1.0f, 0.75f, 0.5f };
-            float[] durations = { ImpactFireDuration, ImpactFireDuration * 0.8f, ImpactFireDuration * 0.6f };
-
-            for (int i = 0; i < ImpactFireLayers; i++)
-            {
-                Vector3 pos = _targetPosition + new Vector3(0f, 0f, heights[i]);
-                var fire = new MeteorImpactFireEffect(pos, durations[i], scales[i]);
-                World.Objects.Add(fire);
-                _ = fire.Load();
-            }
         }
 
         private void SpawnImpactStones()
@@ -326,25 +302,8 @@ namespace Client.Main.Objects.Effects
             var proj = Camera.Instance.Projection;
             var view = Camera.Instance.View;
 
-            // Draw animated explosion atlas at multiple positions around impact
-            Vector3[] burstPositions =
-            {
-                _targetPosition + new Vector3(0f, 0f, 50f),
-                _targetPosition + new Vector3(30f, 20f, 30f),
-                _targetPosition + new Vector3(-25f, 15f, 60f),
-                _targetPosition + new Vector3(15f, -30f, 40f),
-            };
-
-            for (int i = 0; i < burstPositions.Length; i++)
-            {
-                // Stagger each burst slightly
-                float burstT = MathHelper.Clamp(t - i * 0.06f, 0f, 1f);
-                float burstAlpha = alpha * MathHelper.Clamp(1f - burstT * 1.1f, 0f, 1f);
-                if (burstAlpha < 0.01f)
-                    continue;
-
-                DrawAnimatedExplosion(burstPositions[i], burstT, burstAlpha, viewport, proj, view);
-            }
+            // Source emits one BITMAP_EXPLOTION at the impact position +80Z.
+            DrawAnimatedExplosion(_targetPosition + new Vector3(0, 0, 80), t, alpha, viewport, proj, view);
         }
 
         private void DrawAnimatedExplosion(Vector3 worldPos, float t, float alpha, Viewport viewport, Matrix proj, Matrix view)
@@ -478,57 +437,6 @@ namespace Client.Main.Objects.Effects
             }
 
             base.Dispose();
-        }
-
-        private sealed class MeteorImpactFireEffect : EffectObject
-        {
-            private readonly FieryAuraEffect _fire;
-            private readonly float _duration;
-            private float _elapsed;
-            private bool _deactivated;
-
-            public MeteorImpactFireEffect(Vector3 position, float duration, float fireScale = 0.38f)
-            {
-                Position = position;
-                _duration = duration;
-                IsTransparent = true;
-
-                _fire = new FieryAuraEffect(qualityScale: 0.55f, enableDynamicLight: true)
-                {
-                    Scale = fireScale,
-                    Position = Vector3.Zero
-                };
-                Children.Add(_fire);
-            }
-
-            public override void Update(GameTime gameTime)
-            {
-                base.Update(gameTime);
-
-                if (Status == GameControlStatus.NonInitialized)
-                    _ = Load();
-
-                if (Status != GameControlStatus.Ready)
-                    return;
-
-                float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
-                _elapsed += dt;
-
-                if (!_deactivated && _elapsed >= _duration * 0.6f)
-                {
-                    _fire.SetActive(false);
-                    _deactivated = true;
-                }
-
-                if (_elapsed >= _duration)
-                    RemoveSelf();
-            }
-
-            private void RemoveSelf()
-            {
-                World?.RemoveObject(this);
-                Dispose();
-            }
         }
 
         private sealed class MeteorFireTrail : EffectObject
@@ -735,9 +643,9 @@ namespace Client.Main.Objects.Effects
                 AnimationSpeed = 7f;
                 BlendMesh = 1;
                 BlendMeshState = BlendState.Additive;
-                BlendMeshLight = 0.18f;
-                LightEnabled = true;
-                Light = new Vector3(0.08f, 0.03f, 0.01f); // dark, near-black rock
+                BlendMeshLight = .5f;
+                LightEnabled = false;
+                Light = Vector3.One;
                 IsTransparent = true;
                 BlendState = BlendState.Additive;
                 DepthState = DepthStencilState.DepthRead;

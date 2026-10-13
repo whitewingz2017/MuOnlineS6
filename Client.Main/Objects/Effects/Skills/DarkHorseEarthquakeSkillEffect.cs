@@ -5,14 +5,9 @@ namespace Client.Main.Objects.Effects.Skills
 {
     /// <summary>
     /// Factory for Dark Lord's Dark Horse Earthquake/Earth Shake visual sequence.
-    /// SourceMain uses the same sequence for the five Earth Shake master variants.
+    /// Season 6 master variants are resolved by the registry replacement map.
     /// </summary>
     [SkillVisualEffect(62)]
-    [SkillVisualEffect(515)]
-    [SkillVisualEffect(516)]
-    [SkillVisualEffect(517)]
-    [SkillVisualEffect(518)]
-    [SkillVisualEffect(519)]
     public sealed class DarkHorseEarthquakeSkillEffect : ISkillVisualEffect
     {
         public WorldObject? CreateEffect(SkillEffectContext context)

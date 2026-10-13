@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Threading.Tasks;
 using Client.Main.Content;
@@ -15,6 +15,8 @@ namespace Client.Main.Objects.Effects
     /// <summary>Orange LIGHT sub4 particles following the source client's upper-body bones.</summary>
     public sealed class GreaterFortitudeBuffEffect : EffectObject
     {
+        public override WorldObjectRenderPolicy RenderPolicy => base.RenderPolicy.With(forceVisible: true, alwaysUpdate: true);
+        private readonly VertexPositionColorTexture[] _vertices = new VertexPositionColorTexture[ParticleCount * 6];
         private const float SourceFrameRate = 25f;
         private const int ParticleCount = 20;
         private static readonly int[] UpperBones = { 25, 26, 27, 20, 34, 35, 36 };
@@ -37,8 +39,8 @@ namespace Client.Main.Objects.Effects
         {
             Owner = owner;
             Position = owner.WorldPosition.Translation;
-            IsTransparent = true;
-            AffectedByTransparency = true;
+            IsTransparent = false;
+            AffectedByTransparency = false;
             BlendState = BlendState.Additive;
             DepthState = DepthStencilState.DepthRead;
             LightEnabled = false;
@@ -94,37 +96,30 @@ namespace Client.Main.Objects.Effects
         {
             if (!Visible || _texture == null || Owner.Hidden || Owner.IsDead)
                 return;
-            var batch = GraphicsManager.Instance.Sprite;
-            if (!SpriteBatchScope.BatchIsBegun)
-            {
-                using (new SpriteBatchScope(batch, SpriteSortMode.Deferred, BlendState.Additive, SamplerState.LinearClamp, DepthStencilState.DepthRead))
-                    DrawParticles(batch);
-            }
-            else
-                DrawParticles(batch);
+            DrawParticles();
         }
 
-        private void DrawParticles(SpriteBatch batch)
+        private void DrawParticles()
         {
-            var camera = Camera.Instance;
-            if (camera == null || _texture == null)
-                return;
-            var viewport = GraphicsManager.Instance.GraphicsDevice.Viewport;
-            var origin = new Vector2(_texture.Width * 0.5f, _texture.Height * 0.5f);
+            if (_texture == null) return;
+            Matrix camera = Matrix.Invert(Camera.Instance.View);
+            int count = 0;
             for (int i = 0; i < ParticleCount; i++)
             {
                 ref var particle = ref _particles[i];
-                if (particle.Life <= 0f || !Owner.TryGetBoneWorldMatrix(particle.Bone, out var bone))
-                    continue;
-                Vector3 position = bone.Translation + Vector3.UnitZ * particle.Gravity;
-                Vector3 screen = viewport.Project(position, camera.Projection, camera.View, Matrix.Identity);
-                if (screen.Z < 0f || screen.Z > 1f)
-                    continue;
-                float screenScale = Constants.RENDER_SCALE * Constants.TERRAIN_SIZE / MathF.Max(Vector3.Distance(camera.Position, position), 1f);
-                batch.Draw(_texture, new Vector2(screen.X, screen.Y), null,
-                    new Color(1f, 0.5f, 0.1f) * particle.Brightness, 0f, origin,
-                    particle.Scale * screenScale, SpriteEffects.None, screen.Z);
+                if (particle.Life <= 0f || !Owner.TryGetBoneWorldMatrix(particle.Bone, out var bone)) continue;
+                Vector3 center = bone.Translation + Vector3.UnitZ * particle.Gravity;
+                Vector3 right = camera.Right * _texture.Width * particle.Scale * .5f;
+                Vector3 up = camera.Up * _texture.Height * particle.Scale * .5f;
+                Color tint = new Color(1f, .5f, .1f) * particle.Brightness;
+                var a = new VertexPositionColorTexture(center - right + up, tint, new Vector2(0, 0));
+                var b = new VertexPositionColorTexture(center + right + up, tint, new Vector2(1, 0));
+                var c = new VertexPositionColorTexture(center + right - up, tint, new Vector2(1, 1));
+                var d = new VertexPositionColorTexture(center - right - up, tint, new Vector2(0, 1));
+                _vertices[count++] = a; _vertices[count++] = b; _vertices[count++] = c;
+                _vertices[count++] = a; _vertices[count++] = c; _vertices[count++] = d;
             }
+            ElfSupportBuffEffect.DrawWorldGeometry(_texture, _vertices, count);
         }
     }
 }

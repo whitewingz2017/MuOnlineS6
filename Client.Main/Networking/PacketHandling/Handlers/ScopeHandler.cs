@@ -517,8 +517,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 {
                     var c = scope[i];
                     ushort raw = c.Id;
-                    _buffManager.ProcessMagicEffectStatus(raw, (byte)BuffEffectId.SwellLife, false);
-                    _buffManager.ProcessMagicEffectStatus(raw, (byte)BuffEffectId.SwellLifeProficiency, false);
+                    _buffManager.ClearPlayerBuffs(raw);
 
                     if (c.EffectCount > 0)
                     {
@@ -560,8 +559,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
 
                 var character = new AddCharacterToScopeExtended(packet);
                 ushort raw = character.Id;
-                _buffManager.ProcessMagicEffectStatus(raw, (byte)BuffEffectId.SwellLife, false);
-                _buffManager.ProcessMagicEffectStatus(raw, (byte)BuffEffectId.SwellLifeProficiency, false);
+                _buffManager.ClearPlayerBuffs(raw);
                 var appearanceAndEffects = character.AppearanceAndEffects;
                 var appearance = appearanceAndEffects.Slice(2, 25);
 
@@ -2265,8 +2263,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 }
 
                 objectsToRemove.Add((masked, playerRemovalGeneration));
-                _buffManager.ProcessMagicEffectStatus(masked, (byte)BuffEffectId.SwellLife, false);
-                _buffManager.ProcessMagicEffectStatus(masked, (byte)BuffEffectId.SwellLifeProficiency, false);
+                _buffManager.ClearPlayerBuffs(masked);
                 InvalidateNpcSpawnGeneration(masked);
             }
 
@@ -2528,8 +2525,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 var death = new ObjectGotKilled(packet);
                 ushort killed = death.KilledId;
                 ushort killer = death.KillerId;
-                _buffManager.ProcessMagicEffectStatus(killed, (byte)BuffEffectId.SwellLife, false);
-                _buffManager.ProcessMagicEffectStatus(killed, (byte)BuffEffectId.SwellLifeProficiency, false);
+                _buffManager.ClearPlayerBuffs(killed);
                 _characterState.DeactivateBuff((byte)BuffEffectId.SwellLife, killed);
                 _characterState.DeactivateBuff((byte)BuffEffectId.SwellLifeProficiency, killed);
 

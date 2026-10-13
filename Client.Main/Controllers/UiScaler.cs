@@ -59,6 +59,17 @@ namespace Client.Main.Controllers
         public static float InverseScale { get; private set; } = 1f;
 
         public static Vector2 Offset { get; private set; } = Vector2.Zero;
+
+        // Window edges in UI coordinates, including space outside the letterboxed layout.
+        public static Rectangle WindowBounds
+        {
+            get
+            {
+                Point topLeft = ToVirtual(Point.Zero);
+                Point bottomRight = ToVirtual(ActualSize);
+                return new Rectangle(topLeft, bottomRight - topLeft);
+            }
+        }
         private static Matrix _spriteTransform = Matrix.Identity;
         internal static bool DrawingAtNativeResolution { get; set; }
         public static Matrix SpriteTransform => DrawingAtNativeResolution
