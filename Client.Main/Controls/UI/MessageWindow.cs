@@ -111,12 +111,18 @@ namespace Client.Main.Controls.UI
 
         public static void ShowDisconnected()
         {
+#if IOS
+            const string message = "Connection to the server was lost.";
+#else
             const string message = "Connection to the server was lost. Press OK to close the application.";
+#endif
             if (MuGame.Instance?.ActiveScene?.Controls.OfType<MessageWindow>().Any(window => window.Text == message) == true)
                 return;
             var window = Show(message);
+#if !IOS
             if (window != null)
                 window.Closed += (_, _) => MuGame.ScheduleOnMainThread(() => MuGame.Instance.Exit());
+#endif
         }
 
         public static MessageWindow Show(string text)
