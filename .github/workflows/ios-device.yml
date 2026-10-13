@@ -1,0 +1,72 @@
+name: iPhone IPA (AltStore)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  content:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet tool restore
+      # Compile OpenGL effects on Windows so the Mac does not require Wine.
+      - name: Build iOS content
+        shell: pwsh
+        run: |
+          dotnet mgcb /quiet /@:Client.Main/MGContent/Content.mgcb /platform:iOS /outputDir:"${{ github.workspace }}/ios-content" /intermediateDir:"${{ runner.temp }}/ios-content-obj" /workingDir:"${{ github.workspace }}/Client.Main/MGContent"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-content
+          path: ios-content
+          if-no-files-found: error
+          retention-days: 3
+
+  iphone:
+    needs: content
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Apple workload
+        run: dotnet workload install ios
+      - name: Show Apple toolchain
+        run: xcodebuild -version
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-content
+          path: ios-content
+      - name: Build unsigned iPhone application
+        run: >-
+          dotnet publish MuIos/MuIos.csproj -c Release -f net10.0-ios -r ios-arm64
+          -p:ClientMainTargetFramework=net10.0-ios
+          -p:MonoGameFramework=MonoGame.Framework.iOS -p:MonoGamePlatform=iOS
+          -p:PublishTrimmed=true -p:TrimMode=copy
+          -p:EnableCodeSigning=false -p:EnableDefaultCodesignEntitlements=false
+          -p:BuildIpa=false -p:ArchiveOnBuild=false
+          -p:IosContentDir="$GITHUB_WORKSPACE/ios-content"
+      - name: Package for AltStore signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(find MuIos/bin/Release/net10.0-ios/ios-arm64 -maxdepth 2 -type d -name MuIos.app -print -quit)"
+          test -n "$app"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload" artifacts/ios
+          ditto "$app" "$RUNNER_TEMP/ipa/Payload/MuIos.app"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/artifacts/ios/TwinMU-unsigned.ipa" Payload)
+          unzip -t artifacts/ios/TwinMU-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwinMU-iPhone-unsigned
+          path: artifacts/ios/TwinMU-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

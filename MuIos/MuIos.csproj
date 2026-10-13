@@ -2,32 +2,48 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-ios</TargetFramework>
-    <RuntimeIdentifier>iossimulator-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">iossimulator-arm64</RuntimeIdentifier>
     <OutputType>Exe</OutputType>
-    <SupportedOSPlatformVersion>11.2</SupportedOSPlatformVersion>
-    <CodesignKey>iPhone Developer</CodesignKey>
-    <SkipXcodeVersionCheck>true</SkipXcodeVersionCheck>
-    <EnableCodeSigning>false</EnableCodeSigning>
+    <SupportedOSPlatformVersion>12.2</SupportedOSPlatformVersion>
     <ClientMainTargetFramework>net10.0-ios</ClientMainTargetFramework>
     <UseSourceGenerators>true</UseSourceGenerators>
+    <MonoGameFramework>MonoGame.Framework.iOS</MonoGameFramework>
+    <MonoGamePlatform>iOS</MonoGamePlatform>
+    <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
+    <!-- Preserve reflection-driven game registries while running the required iOS trimmer. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>copy</TrimMode>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.4.1" />
-    <PackageReference Include="MonoGame.Framework.iOS" Version="3.8.4.1" />
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Framework.iOS" Version="3.8.5" />
   </ItemGroup>
 
   <PropertyGroup>
     <DefineConstants>$(DefineConstants);IOS</DefineConstants>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(IosContentDir)' == ''">
     <MonoGameContentReference Include="..\Client.Main\MGContent\Content.mgcb">
       <Link>Content\Content.mgcb</Link>
     </MonoGameContentReference>
   </ItemGroup>
 
-  <Target Name="RestoreDotnetTools" BeforeTargets="CollectPackageReferences">
+  <ItemGroup Condition="'$(IosContentDir)' != ''">
+    <BundleResource Include="$(IosContentDir)/**/*">
+      <Link>Content/%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </BundleResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <BundleResource Include="../Client.Main/appsettings.json" Link="appsettings.json" />
+    <ProjectReference Include="../Client.Main/Client.Main.csproj">
+      <AdditionalProperties>ClientMainTargetFramework=$(TargetFramework);MonoGameFramework=$(MonoGameFramework);MonoGamePlatform=$(MonoGamePlatform)</AdditionalProperties>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Target Name="RestoreDotnetTools" BeforeTargets="RunContentBuilder" Condition="'$(IosContentDir)' == '' AND '$(DesignTimeBuild)' != 'true'">
     <Message Text="Restoring dotnet tools" Importance="High" />
     <Exec Command="dotnet tool restore" />
   </Target>
