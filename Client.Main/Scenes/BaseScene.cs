@@ -1,6 +1,7 @@
 using Client.Main.Controllers;
 using Client.Main.Controls;
 using Client.Main.Controls.UI;
+using UIControl = Client.Main.Controls.UI.UIControl;
 using Client.Main.Helpers;
 using Client.Main.Models;
 using Client.Main.Objects;

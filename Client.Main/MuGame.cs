@@ -3,6 +3,7 @@ using Client.Main.Content;
 using Client.Main.Controllers;
 using Client.Main.Controls;
 using Client.Main.Controls.UI;
+using UIControl = Client.Main.Controls.UI.UIControl;
 using Client.Main.Controls.UI.Game.Inventory;
 using Client.Main.Controls.UI.Game.Helper;
 using Client.Main.Core.Client;
