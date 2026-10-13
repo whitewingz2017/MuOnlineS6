@@ -25,7 +25,7 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
     internal sealed class ClassicPcBottomBarControl : UIControl
     {
         private float HudScale => Math.Clamp(
-            Math.Min(UiScaler.ActualSize.X / 640f, UiScaler.ActualSize.Y / 480f), 1f, 2f);
+            Math.Min(UiScaler.WindowBounds.Width / 640f, UiScaler.WindowBounds.Height / 480f), 0.1f, 2f);
         private const int ReferenceWidth = 640;
         private const int ReferenceHeight = 51;
         private const int ReferenceExpY = 41;
@@ -159,8 +159,9 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
 
             base.Update(gameTime);
             RefreshLayout();
-            HandleKeyboard();
             HandleMouse();
+            HandleKeyboard();
+            _hud.EnsureConsumableIconsCached();
         }
 
         public override void Draw(GameTime gameTime)
@@ -177,7 +178,7 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
             Rectangle full = DisplayRectangle;
 
             // Bottom main bar only. Skill list (when open) occupies the top of `full`.
-            int barHeight = ScaleValue(ReferenceHeight) + 6;
+            int barHeight = ScaleValue(ReferenceHeight);
             Rectangle barRect = new(
                 full.Left,
                 full.Bottom - barHeight,
@@ -389,30 +390,58 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
         private void DrawPotionHints(SpriteBatch sprite, Rectangle rect)
         {
             string[] labels = { "Q", "W", "E", "R" };
-            int[] positions = { 28, 58, 88, 118 };
             for (int i = 0; i < labels.Length; i++)
             {
-                DrawValue(sprite, labels[i], rect.Left + ScaleValue(positions[i]), rect.Top + ScaleValue(33), 7.5f,
-                    i < 3 && _hud.GetItemAssignmentAt(i).HasValue ? new Color(255, 224, 138) : Color.WhiteSmoke);
+                var slot = GetPotionSlotRectangle(rect, i);
+                var assignment = _hud.GetItemAssignmentAt(i);
+                if (assignment.HasValue)
+                {
+                    var (group, id) = assignment.Value;
+                    int count = _hud.CountItemInInventory(group, id);
+                    var icon = _hud.GetItemIconByKey(group, id);
+                    if (icon != null)
+                    {
+                        var iconRect = new Rectangle(slot.X + ScaleValue(10), slot.Y + ScaleValue(12),
+                            ScaleValue(20), ScaleValue(20));
+                        sprite.Draw(icon, iconRect, count > 0 ? Color.White : Color.White * 0.35f);
+                    }
+                    string text = count.ToString();
+                    float textScale = 8f / Constants.BASE_FONT_SIZE;
+                    var size = _font.MeasureString(text) * textScale;
+                    DrawValue(sprite, text, slot.Right - size.X - ScaleValue(2),
+                        slot.Bottom - size.Y - ScaleValue(1), 8f);
+                }
+                DrawValue(sprite, labels[i], slot.Left + ScaleValue(1), slot.Top,
+                    7.5f, new Color(255, 224, 138));
             }
         }
 
+        private Rectangle GetPotionSlotRectangle(Rectangle bar, int index)
+            => new(bar.Left + ScaleValue(index * 38), bar.Top + ScaleValue(2),
+                ScaleValue(38), ScaleValue(39));
+
         private void HandleKeyboard()
         {
-            if (_hud.IsModernRenderer)
-                return;
-
             var keyboard = MuGame.Instance.Keyboard;
             var previous = MuGame.Instance.PrevKeyboard;
-            Keys[] potionKeys = { Keys.Q, Keys.W, Keys.E };
+            bool controlHeld = keyboard.IsKeyDown(Keys.LeftControl) || keyboard.IsKeyDown(Keys.RightControl);
+            Keys[] potionKeys = { Keys.Q, Keys.W, Keys.E, Keys.R };
             for (int i = 0; i < potionKeys.Length; i++)
             {
                 if (keyboard.IsKeyDown(potionKeys[i]) && previous.IsKeyUp(potionKeys[i]))
-                    _hud.TryConsumePotionForHud(i);
+                {
+                    if (controlHeld)
+                    {
+                        var assignment = (Scene as GameScene)?.InventoryControl?.HoveredQuickSlotItem;
+                        if (assignment.HasValue)
+                            _hud.SetItemAssignmentAt(i, assignment);
+                    }
+                    else
+                        _hud.TryConsumePotionForHud(i);
+                }
             }
 
             Keys[] skillKeys = { Keys.D1, Keys.D2, Keys.D3, Keys.D4, Keys.D5 };
-            bool controlHeld = keyboard.IsKeyDown(Keys.LeftControl) || keyboard.IsKeyDown(Keys.RightControl);
             for (int i = 0; i < skillKeys.Length; i++)
             {
                 bool justPressed = IsJustPressed(keyboard, previous, skillKeys[i]);
@@ -427,7 +456,10 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
                     continue;
                 }
 
-                _hud.SelectSkillSlot(i);
+                if (controlHeld && _hud.SelectedSkill is SkillEntryState selected)
+                    AssignSkillToSlot(i, selected);
+                else
+                    _hud.SelectSkillSlot(i);
             }
         }
 
@@ -554,7 +586,7 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
         private void RefreshLayout()
         {
             int width = ScaleValue(ReferenceWidth);
-            int barHeight = ScaleValue(ReferenceHeight) + 6;
+            int barHeight = ScaleValue(ReferenceHeight);
             int gap = ScaleValue(2);
 
             int panelHeight = 0;
@@ -572,8 +604,9 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
             int totalHeight = barHeight + (_skillListOpen && panelHeight > 0 ? panelHeight + gap : 0);
             ControlSize = new Point(width, totalHeight);
             ViewSize = ControlSize;
-            X = Math.Max(0, (UiScaler.VirtualSize.X - width) / 2);
-            Y = Math.Max(0, UiScaler.VirtualSize.Y - totalHeight - ScaleValue(3));
+            Rectangle window = UiScaler.WindowBounds;
+            X = window.Left + (window.Width - width) / 2;
+            Y = window.Bottom - totalHeight;
 
             // Bar is the bottom band of this control; skill list sits above it (inside bounds).
             Rectangle frame = new(X, Y + (totalHeight - barHeight), width, barHeight);

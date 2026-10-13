@@ -282,6 +282,73 @@ hero.Position = new Vector3(14350, 11950, 0);
 hero.MoveTargetPosition = hero.TargetPosition;
 var skillControllerType = typeof(GameScene).Assembly.GetType("Client.Main.Scenes.GameSceneSkillController")!;
 var hud = RuntimeHelpers.GetUninitializedObject(typeof(Client.Main.Controls.UI.Game.Hud.ModernBottomHud));
+// Classic PC assigns Ctrl+number; Hybrid retains click-to-choose assignment.
+var hudType = hud.GetType();
+void HudField(string name, object value) => hudType.GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(hud, value);
+HudField("_slotSkills", new SkillEntryState[13]);
+HudField("_hotbarSkills", new SkillEntryState[10]);
+HudField("_activeSet", -1);
+HudField("_activeSkillSlot", 3);
+var picker = new Client.Main.Controls.UI.Game.Skills.SkillSelectionPanel { Visible = false };
+HudField("_skillPanel", picker);
+var assignedSkill = new SkillEntryState { SkillId = 20 };
+HudField("_selectedSkillOverride", assignedSkill);
+typeof(MuGame).GetProperty(nameof(MuGame.Keyboard))!.SetValue(game,
+    new Microsoft.Xna.Framework.Input.KeyboardState(Microsoft.Xna.Framework.Input.Keys.LeftControl, Microsoft.Xna.Framework.Input.Keys.D2));
+typeof(MuGame).GetProperty(nameof(MuGame.PrevKeyboard))!.SetValue(game, new Microsoft.Xna.Framework.Input.KeyboardState());
+hudType.GetMethod("HandleKeyboard", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(hud, null);
+Check(((Client.Main.Controls.UI.Game.Hud.ModernBottomHud)hud).GetHotbarSkillAt(1) == null,
+    "Hybrid Ctrl+number must not rewrite click-to-choose assignments.");
+HudField("_selectedSkillOverride", assignedSkill);
+((Client.Main.Controls.UI.Game.Hud.ModernBottomHud)hud).SetHotbarSkillAt(1, assignedSkill);
+var classicBar = RuntimeHelpers.GetUninitializedObject(hudType.Assembly.GetType("Client.Main.Controls.UI.Game.Hud.Classic.ClassicPcBottomBarControl")!);
+classicBar.GetType().GetField("_hud", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(classicBar, hud);
+classicBar.GetType().GetField("_skillRects", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(classicBar, new Rectangle[5]);
+typeof(MuGame).GetProperty(nameof(MuGame.Keyboard))!.SetValue(game,
+    new Microsoft.Xna.Framework.Input.KeyboardState(Microsoft.Xna.Framework.Input.Keys.LeftControl, Microsoft.Xna.Framework.Input.Keys.D3));
+classicBar.GetType().GetMethod("HandleKeyboard", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(classicBar, null);
+Check(ReferenceEquals(((Client.Main.Controls.UI.Game.Hud.ModernBottomHud)hud).GetHotbarSkillAt(2), assignedSkill)
+    && ((Client.Main.Controls.UI.Game.Hud.ModernBottomHud)hud).GetHotbarSkillAt(1) == null,
+    "Classic PC Ctrl+3 must move the skill assignment even with a Modern skin.");
+// Ctrl+Q/W/E/R registers the hovered inventory potion, including the fourth slot.
+var potionInventory = (Client.Main.Controls.UI.Game.Inventory.InventoryControl)RuntimeHelpers.GetUninitializedObject(typeof(Client.Main.Controls.UI.Game.Inventory.InventoryControl));
+potionInventory.Visible = true;
+var potion = new InventoryItem(new Client.Main.Controls.UI.Game.Inventory.ItemDefinition(3, "Large Healing Potion", 1, 1, "") { Group = 14 }, Point.Zero);
+typeof(Client.Main.Controls.UI.Game.Inventory.InventoryControl).GetField("_hoveredItem", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(potionInventory, potion);
+typeof(GameScene).GetField("_inventoryControl", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(gameScene, potionInventory);
+((GameControl)classicBar).Parent = gameScene;
+HudField("_potionAssignments", new (byte Group, int Id)?[5]);
+var potionKeys = new[] { Microsoft.Xna.Framework.Input.Keys.Q, Microsoft.Xna.Framework.Input.Keys.W, Microsoft.Xna.Framework.Input.Keys.E, Microsoft.Xna.Framework.Input.Keys.R };
+for (int slot = 0; slot < potionKeys.Length; slot++)
+{
+    typeof(MuGame).GetProperty(nameof(MuGame.Keyboard))!.SetValue(game, new Microsoft.Xna.Framework.Input.KeyboardState(Microsoft.Xna.Framework.Input.Keys.LeftControl, potionKeys[slot]));
+    classicBar.GetType().GetMethod("HandleKeyboard", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(classicBar, null);
+    Check(((Client.Main.Controls.UI.Game.Hud.ModernBottomHud)hud).GetItemAssignmentAt(slot) == ((byte)14, 3),
+        "Classic Ctrl+potion key must register the hovered potion in each Q/W/E/R slot.");
+}
+((GameControl)classicBar).Parent = null;
+typeof(GameControl).GetProperty(nameof(GameControl.Controls))!.SetValue(classicBar, Activator.CreateInstance(typeof(Client.Main.Helpers.ChildrenCollection<GameControl>), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, [classicBar], null));
+classicBar.GetType().GetField("_buttonRects", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(classicBar, new Rectangle[5]);
+classicBar.GetType().GetField("_skillListHits", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(classicBar, new List<(Rectangle, SkillEntryState)>());
+foreach (var windowSize in new[] { new Point(1280, 720), new Point(800, 900), new Point(1920, 600), new Point(640, 480) })
+{
+    Client.Main.Controllers.UiScaler.Configure(windowSize.X, windowSize.Y, 1280, 720);
+    classicBar.GetType().GetMethod("RefreshLayout", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(classicBar, null);
+    var bar = (GameControl)classicBar;
+    var bottom = Client.Main.Controllers.UiScaler.ToActual(new Point(bar.X, bar.Y + bar.ViewSize.Y));
+    Check(Math.Abs(bottom.Y - windowSize.Y) <= 1, "Classic PC HUD must touch the physical bottom after changing window proportions.");
+    int drawnFrameHeight = (int)classicBar.GetType().GetMethod("ScaleValue", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(classicBar, [51])!;
+    var visibleFrameBottom = Client.Main.Controllers.UiScaler.ToActual(new Point(bar.X, bar.Y + drawnFrameHeight));
+    Check(Math.Abs(visibleFrameBottom.Y - windowSize.Y) <= 1,
+        "The drawn HUD frame must reach the window bottom, without invisible padding below it.");
+    var left = Client.Main.Controllers.UiScaler.ToActual(new Point(bar.X, bar.Y));
+    var right = Client.Main.Controllers.UiScaler.ToActual(new Point(bar.X + bar.ViewSize.X, bar.Y));
+    Check(left.X >= -1 && right.X <= windowSize.X + 1, "Classic PC HUD must fit inside the resized window.");
+    var corner = Client.Main.Controllers.UiScaler.ToActual(Client.Main.Controllers.UiScaler.WindowBounds.Location);
+    Check(Math.Abs(corner.X) <= 1 && Math.Abs(corner.Y) <= 1, "Helper corner must map to the physical top-left through letterboxing.");
+}
+Client.Main.Controllers.UiScaler.Configure(1280, 720, 1280, 720);
+typeof(MuGame).GetProperty(nameof(MuGame.Keyboard))!.SetValue(game, new Microsoft.Xna.Framework.Input.KeyboardState());
 var skillController = Activator.CreateInstance(skillControllerType, gameScene, hud, NullLogger.Instance,
     new Func<PlayerObject, bool>(_ => false))!;
 typeof(GameScene).GetField("_skillController", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(gameScene, skillController);

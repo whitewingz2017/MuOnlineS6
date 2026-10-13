@@ -262,10 +262,11 @@ namespace Client.Main.Controls.UI.Game.Hud
             _displayAgPct = MathHelper.Lerp(_displayAgPct, _targetAgPct, LerpSpeed * dt);
 
             RefreshCompanionLifeInfos();
-            if (IsModernRenderer && !IsMuHelperWindowOpen())
+            if (Visible && Interactive && IsModernRenderer && !IsMuHelperWindowOpen())
             {
                 HandleKeyboard();
                 HandleMouseHover();
+                HandleButtonPress();
                 HandlePotionPickerClick();
                 EnsurePotionIconsCached();
             }
@@ -333,9 +334,35 @@ namespace Client.Main.Controls.UI.Game.Hud
             }
         }
 
+        private bool _buttonPressHandled;
+
+        private void HandleButtonPress()
+        {
+            var mouse = MuGame.Instance.UiMouseState;
+            var previous = MuGame.Instance.PrevUiMouseState;
+            if (mouse.LeftButton != ButtonState.Pressed || previous.LeftButton != ButtonState.Released)
+                return;
+            _buttonPressHandled = false;
+            for (int i = 0; i < _btnRects.Length; i++)
+            {
+                if (!_btnRects[i].Contains(mouse.Position))
+                    continue;
+                _buttonPressHandled = true;
+                Scene?.SetMouseInputConsumed();
+                int button = i;
+                MuGame.ScheduleOnMainThread(() => OnButtonClicked(button));
+                return;
+            }
+        }
+
         public override bool OnClick()
         {
             base.OnClick();
+            if (_buttonPressHandled)
+            {
+                _buttonPressHandled = false;
+                return true;
+            }
 
             var mousePos = MuGame.Instance.UiMouseState;
 
@@ -429,8 +456,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             {
                 if (kb.IsKeyDown(SlotKeys[i]) && !prev.IsKeyDown(SlotKeys[i]))
                 {
-                    _activeSkillSlot = i;
-                    PersistQuickSlots();
+                    SelectSkillSlot(i - PotionSlotCount);
                 }
             }
 
@@ -919,22 +945,13 @@ namespace Client.Main.Controls.UI.Game.Hud
 
             switch (index)
             {
-                case 0: gs.PauseMenu.Visible = !gs.PauseMenu.Visible; break;
-                case 1: ToggleWindow<Character.CharacterInfoWindowControl>(gs); break;
-                case 2:
-                    if (gs.InventoryControl != null)
-                    {
-                        if (gs.InventoryControl.Visible)
-                        {
-                            gs.InventoryControl.Hide();
-                        }
-                        else
-                        {
-                            gs.InventoryControl.Show();
-                        }
-                    }
+                case 0:
+                    gs.PauseMenu.Visible = !gs.PauseMenu.Visible;
+                    if (gs.PauseMenu.Visible) gs.PauseMenu.BringToFront();
                     break;
-                case 3: ToggleWindow<Party.PartyPanelControl>(gs); break;
+                case 1: gs.ToggleClassicCharacterInfo(); break;
+                case 2: gs.ToggleClassicInventory(); break;
+                case 3: gs.ToggleClassicParty(); break;
             }
         }
 
@@ -956,16 +973,20 @@ namespace Client.Main.Controls.UI.Game.Hud
         // Layout (left → right):
         //   [PARTY][GUILD][QUEST] | HP SD | [Q][W][E]  [1][2]...[0] | MP AG | [MENU][CHAR][INV]
 
+        private Rectangle _lastWindowBounds;
+
         private void RefreshLayout()
         {
             Point virtualSize = UiScaler.VirtualSize;
-            if (virtualSize == _lastVirtualSize)
+            Rectangle window = UiScaler.WindowBounds;
+            if (virtualSize == _lastVirtualSize && window == _lastWindowBounds)
                 return;
 
             _lastVirtualSize = virtualSize;
+            _lastWindowBounds = window;
 
             int vw = virtualSize.X;
-            int vh = virtualSize.Y;
+            int vh = window.Bottom;
 
             int panelH = 92;
             int expH = 12;
@@ -2037,7 +2058,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             itemSlot = 0;
             group = 0;
             id = 0;
-            if (slotIndex < 0 || slotIndex >= PotionSlotCount || _potionAssignments[slotIndex] is not { } assignment)
+            if (slotIndex < 0 || slotIndex >= _potionAssignments.Length || _potionAssignments[slotIndex] is not { } assignment)
                 return false;
 
             (group, id) = assignment;

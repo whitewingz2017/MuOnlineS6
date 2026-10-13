@@ -745,7 +745,7 @@ namespace Client.Main.Scenes
                     _hero.SnapToTerrainHeight();
                     worldInstance.ActivateObjectForRendering(_hero, forceFullVisibilityRebuild: true);
                     worldInstance.Visible = true;
-                    _modernHud.Visible = true;
+                    ApplyHudTheme(force: true);
                     _mapController?.UpdateLoadProgress("Game ready!", 1.0f);
                     ScheduleMapNameUpdateNextFrame("GameScene.UpdateInitialMapName");
                     _ = RefreshMiniMapAsync();
@@ -1364,7 +1364,9 @@ namespace Client.Main.Scenes
 
         internal void ExitFromClassicHud()
         {
+#if !IOS
             MuGame.ScheduleOnMainThread(() => MuGame.Instance.Exit());
+#endif
         }
 
         internal void BeginClassicSkillAssignment(int hotbarIndex)

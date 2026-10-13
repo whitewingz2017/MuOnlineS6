@@ -23,6 +23,7 @@ namespace Client.Main.Controls.UI.Game.Map
         private readonly GameScene _scene;
 
         private Point _lastVirtualSize = Point.Zero;
+        private Rectangle _lastWindowBounds;
         private SpriteFont? _font;
         private string _mapName = string.Empty;
 
@@ -269,10 +270,11 @@ namespace Client.Main.Controls.UI.Game.Map
         {
             Point virtualSize = UiScaler.VirtualSize;
 
-            if (virtualSize == _lastVirtualSize)
+            if (virtualSize == _lastVirtualSize && UiScaler.WindowBounds == _lastWindowBounds)
                 return;
 
             _lastVirtualSize = virtualSize;
+            _lastWindowBounds = UiScaler.WindowBounds;
 
             if (UiThemeManager.IsMobilePlatform || UseOriginalLocationBar)
             {
@@ -320,9 +322,9 @@ namespace Client.Main.Controls.UI.Game.Map
                 _midW +
                 _rightW;
 
-            X = (int)(12 * _uiScale);
+            X = UiScaler.WindowBounds.Left;
 
-            Y = (int)(8 * _uiScale);
+            Y = UiScaler.WindowBounds.Top;
 
             ControlSize = new Point(
                 totalWidth,
@@ -351,8 +353,8 @@ namespace Client.Main.Controls.UI.Game.Map
             float scale = Math.Clamp(MathF.Min(scaleX, scaleY), 0.82f, 1.35f);
 
             if (UiThemeManager.IsMobilePlatform) scale = 1f;
-            X = UiThemeManager.IsMobilePlatform ? Hud.TouchMenuControl.MobileMapRectangle.X : ScaleOriginal(OriginalBaseX, scale);
-            Y = UiThemeManager.IsMobilePlatform ? Hud.TouchMenuControl.MobileMapRectangle.Y - 34 : ScaleOriginal(OriginalBaseY, scale);
+            X = UiThemeManager.IsMobilePlatform ? Hud.TouchMenuControl.MobileMapRectangle.X : (MuGame.AppSettings?.HudTheme == HudTheme.ClassicPc ? UiScaler.WindowBounds.Left : ScaleOriginal(OriginalBaseX, scale));
+            Y = UiThemeManager.IsMobilePlatform ? Hud.TouchMenuControl.MobileMapRectangle.Y - 34 : (MuGame.AppSettings?.HudTheme == HudTheme.ClassicPc ? UiScaler.WindowBounds.Top : ScaleOriginal(OriginalBaseY, scale));
 
             int plateWidth = ScaleOriginal(UiThemeManager.IsMobilePlatform ? 184 : OriginalPlateWidth, scale);
             int height = ScaleOriginal(OriginalBaseHeight, scale);

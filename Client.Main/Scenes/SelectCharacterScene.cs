@@ -1006,7 +1006,8 @@ namespace Client.Main.Scenes
                     else
                     {
                         _logger.LogWarning("Disconnected while in character selection. Returning to LoginScene.");
-                        MessageWindow.Show("Connection lost.");
+                        MessageWindow.ShowDisconnected();
+                        return;
                     }
 
                     RequestReturnToLogin();
