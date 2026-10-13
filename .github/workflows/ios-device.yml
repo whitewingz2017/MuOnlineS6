@@ -31,7 +31,7 @@ jobs:
   iphone:
     needs: content
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       # Keep the SDK/workload/Xcode versions together; latest workloads can require
@@ -58,14 +58,25 @@ jobs:
           name: ios-content
           path: ios-content
       - name: Build unsigned iPhone application
+        timeout-minutes: 50
         run: >-
           dotnet publish MuIos/MuIos.csproj -c Release -f net10.0-ios -r ios-arm64
+          -v:normal "-flp:logfile=ios-publish.log;verbosity=diagnostic"
           -p:ClientMainTargetFramework=net10.0-ios
           -p:MonoGameFramework=MonoGame.Framework.iOS -p:MonoGamePlatform=iOS
           -p:PublishTrimmed=true -p:TrimMode=copy
+          -p:MtouchUseLlvm=false
           -p:EnableCodeSigning=false -p:EnableDefaultCodesignEntitlements=false
           -p:BuildIpa=false -p:ArchiveOnBuild=false
           -p:IosContentDir="$GITHUB_WORKSPACE/ios-content"
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-diagnostics
+          path: ios-publish.log
+          if-no-files-found: warn
+          retention-days: 3
       - name: Package for AltStore signing
         shell: bash
         run: |
