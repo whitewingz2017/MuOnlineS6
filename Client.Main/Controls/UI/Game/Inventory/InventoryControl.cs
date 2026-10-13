@@ -231,6 +231,17 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private Rectangle _footerRightButtonRect;
 
         private InventoryItem _hoveredItem;
+
+        internal (byte Group, int Id)? HoveredQuickSlotItem
+        {
+            get
+            {
+                var definition = Visible ? _hoveredItem?.Definition : null;
+                return definition?.IsQuickSlotConsumable() == true
+                    && !definition.IsJewel() && !definition.IsUpgradeJewel()
+                    ? ((byte)definition.Group, definition.Id) : null;
+            }
+        }
         private Point _hoveredSlot = new(-1, -1);
         private int _hoveredEquipSlot = -1;
         private int _pickedFromEquipSlot = -1;
