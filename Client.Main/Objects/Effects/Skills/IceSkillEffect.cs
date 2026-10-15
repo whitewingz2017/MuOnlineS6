@@ -25,10 +25,11 @@ namespace Client.Main.Objects.Effects.Skills
             }
             else
             {
-                center = context.Caster.WorldPosition.Translation + (Vector3.UnitZ * 70f);
+                center = (context.TargetPosition ?? context.Caster.WorldPosition.Translation) + (Vector3.UnitZ * 70f);
             }
 
-            (targetWalker ?? context.Caster).ApplyTemporaryDebuffTint(effectId: 56, durationSeconds: 3.2f);
+            if (targetWalker != null)
+                targetWalker.ApplyTemporaryDebuffTint(effectId: 56, durationSeconds: 3.2f);
 
             return new ScrollOfIceEffect(center);
         }

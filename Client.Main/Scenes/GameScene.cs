@@ -1529,7 +1529,7 @@ namespace Client.Main.Scenes
             if (_classicBottomBar != null)
             {
                 _classicBottomBar.Visible = classic;
-                _classicBottomBar.Interactive = false;
+                _classicBottomBar.Interactive = classic;
             }
             if (_classicTouchActions != null)
             {

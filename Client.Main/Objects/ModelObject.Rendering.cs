@@ -123,6 +123,8 @@ namespace Client.Main.Objects
         private BlendState _plannedBlendMeshState;
         private bool _plannedLowQuality;
         private bool _plannedPreserveBlendMeshes;
+        private int _plannedItemGroup;
+        private int _plannedItemIndex;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private List<int> RentMeshList()
@@ -179,6 +181,7 @@ namespace Client.Main.Objects
                 ReferenceEquals(_plannedBlendState, BlendState) &&
                 ReferenceEquals(_plannedBlendMeshState, BlendMeshState) &&
                 _plannedLowQuality == LowQuality &&
+                _plannedItemGroup == MaterialItemGroup && _plannedItemIndex == MaterialItemIndex &&
                 _plannedPreserveBlendMeshes == preserveBlendMeshes)
             {
                 return;
@@ -195,8 +198,13 @@ namespace Client.Main.Objects
             if (Model?.Meshes != null && _meshes != null)
             {
                 int meshCount = Math.Min(Model.Meshes.Length, _meshes.Length);
-                for (int meshIndex = 0; meshIndex < meshCount; meshIndex++)
+                // Alpha-textured item bodies must precede their additive overlays too.
+                // Otherwise a wing membrane in the transparent plan covers its lightning.
+                bool sortItemLayers = MaterialItemGroup >= 0;
+                int stages = sortItemLayers ? 2 : 1;
+                for (int slot = 0; slot < meshCount * stages; slot++)
                 {
+                    int meshIndex = slot % meshCount;
                     if (IsHiddenMesh(meshIndex))
                         continue;
 
@@ -209,6 +217,8 @@ namespace Client.Main.Objects
                     Texture2D texture = _meshes[meshIndex].Texture;
                     bool twoSided = IsMeshTwoSided(meshIndex, isBlend);
                     BlendState blend = GetMeshBlendState(meshIndex, isBlend);
+                    if (sortItemLayers && SourceItemMaterialRules.IsAdditive(blend) != (slot >= meshCount))
+                        continue;
                     MeshShaderKind shaderKind = DetermineShaderForMesh(meshIndex).Kind;
                     int drawOrder = shaderKind == MeshShaderKind.AlphaTest && (isRgba || isBlend)
                         ? meshIndex
@@ -229,6 +239,8 @@ namespace Client.Main.Objects
             _plannedBlendMeshState = BlendMeshState;
             _plannedLowQuality = LowQuality;
             _plannedPreserveBlendMeshes = preserveBlendMeshes;
+            _plannedItemGroup = MaterialItemGroup;
+            _plannedItemIndex = MaterialItemIndex;
             _builtMeshRenderPlanVersion = _meshRenderPlanVersion;
         }
 
@@ -270,6 +282,8 @@ namespace Client.Main.Objects
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private BlendState GetMeshBlendState(int mesh, bool isBlendMesh)
         {
+            if (MaterialItemGroup == 12 && MaterialItemIndex == 36 && mesh < 2)
+                return Blendings.OneOneAdditive;
             if (Model?.Meshes == null || mesh < 0 || mesh >= Model.Meshes.Length)
                 return isBlendMesh ? BlendMeshState : BlendState;
 
@@ -399,7 +413,7 @@ namespace Client.Main.Objects
         {
             // Item material shader (for excellent/ancient/high level items)
             bool useItemMaterial = Constants.ENABLE_ITEM_MATERIAL_SHADER &&
-                                   (ItemLevel >= 7 || IsExcellentItem || IsAncientItem) &&
+                                   (MaterialItemGroup >= 0 || ItemLevel >= 7 || IsExcellentItem || IsAncientItem) &&
                                    GraphicsManager.Instance.ItemMaterialEffect != null &&
                                    ShouldApplyItemMaterial(mesh);
 
@@ -885,6 +899,7 @@ namespace Client.Main.Objects
             if (_gpuSkinnedMeshBatchingFailed ||
                 !Constants.ENABLE_BMD_MESH_BATCHING ||
                 stateKey.ShaderKind == MeshShaderKind.AlphaTest ||
+                stateKey.ShaderKind == MeshShaderKind.ItemMaterial ||
                 meshIndices == null || meshIndices.Count <= 1 ||
                 Model?.Meshes == null || _meshes == null ||
                 !CanUseGpuSkinGeometry())
@@ -1015,13 +1030,7 @@ namespace Client.Main.Objects
 
         private bool CanUseFastItemUpgradeShader()
         {
-            if (!Constants.ENABLE_FAST_MATERIAL_SHADERS || IsAncientItem || IsExcellentItem)
-                return false;
-
-            bool highLevelArmor = GraphicsManager.Instance.HasItemUpgradeTextures &&
-                                  MaterialItemGroup >= 7 && MaterialItemGroup <= 11 &&
-                                  ItemLevel >= 11;
-            return ItemLevel >= 7 && !highLevelArmor;
+            return false; // Source chrome/material bindings are required at every upgrade level.
         }
 
         private bool CanUseFastMonsterMaterialShader() =>
@@ -1606,8 +1615,15 @@ namespace Client.Main.Objects
 
                     // Set texture
                     bindings.DiffuseTexture?.SetValue(texture);
+                    Client.Main.Graphics.SourceItemMaterialRules.Apply(effect,MaterialItemGroup,MaterialItemIndex,mesh,ItemLevel,
+                        emissive:Client.Main.Graphics.SourceItemMaterialRules.IsAdditive(blendState));
+                    // MuMain RenderLinkObject disables directional mesh lighting on equipment.
+                    if (HasWalkerAncestor()) effect.Parameters["SourceUnlit"]?.SetValue(1f);
                     if (!fastItemShader)
                         ApplyItemMaterialUpgradeBindings(bindings);
+
+                    if (this is Client.Main.Objects.Effects.Grade15ArmorEffect grade && grade.RgbTexture != null)
+                        effect.Parameters["Chrome01Texture"]?.SetValue(grade.RgbTexture);
 
                     // Set item properties
                     int itemOptions = ItemLevel & 0x0F;
@@ -1630,9 +1646,9 @@ namespace Client.Main.Objects
                     if (usingGpuSkinning)
                         RegisterGpuSkinnedMeshDraw();
 
-                    effect.CurrentTechnique.Passes[0].Apply();
                     ApplyQualityModelSampler(gd);
-                    gd.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, primitiveCount);
+                    Client.Main.Graphics.SourceItemPassRenderer.Draw(gd,effect,primitiveCount,
+                        MaterialItemGroup < 0 || (MaterialItemGroup == 12 && MaterialItemIndex == 36));
 
                     gd.BlendState = prevBlend;
                     gd.RasterizerState = prevCull;

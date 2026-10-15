@@ -1,4 +1,5 @@
 using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Client.Main.Content;
@@ -29,6 +30,8 @@ namespace Client.Main.Controls.UI.Game.Hud
         private Vector2 _aimOrigin;
         private Vector2 _aimOffset;
         private bool _aimDragged;
+        private TimeSpan _heldSkillStartedAt;
+        private bool _castDuringHold;
         private const float AimRadius = 72f;
         private SkillEntryState _aimSkill;
         private const string SkillFrameTexPath = "Interface/DH/mi_skill_frame.OZP";
@@ -208,15 +211,30 @@ namespace Client.Main.Controls.UI.Game.Hud
                 _aimDragged |= _aimOffset.LengthSquared() > 12f * 12f;
                 if (_aimOffset.LengthSquared() > AimRadius * AimRadius)
                     _aimOffset = Vector2.Normalize(_aimOffset) * AimRadius;
+                // Teleport commits the chosen tile on release; casting during the
+                // drag would teleport before the player finishes aiming.
+                if (down && _aimSkill.SkillId != 6 &&
+                    (gameTime.TotalGameTime - _heldSkillStartedAt).TotalMilliseconds >= 120)
+                {
+                    // The skill controller enforces the skill's cast interval. Keep trying
+                    // while held so a stationary or aimed skill attacks without release.
+                    _castDuringHold |= _aimDragged
+                        ? gs.SkillController?.CastAimedTouchSkill(_aimSkill, _aimOffset / AimRadius) == true
+                        : CastHeldSkill(gs, _aimSkill);
+                }
                 if (!down)
                 {
-                    gs.CancelAutoAttack();
-                    if (_aimDragged)
-                        gs.SkillController?.CastAimedTouchSkill(_aimSkill, _aimOffset / AimRadius);
-                    else
-                        CastSkill(gs, _aimSkill);
+                    if (!_castDuringHold)
+                    {
+                        gs.CancelAutoAttack();
+                        if (_aimDragged)
+                            gs.SkillController?.CastAimedTouchSkill(_aimSkill, _aimOffset / AimRadius);
+                        else
+                            CastSkill(gs, _aimSkill);
+                    }
                     _heldSkill = -1;
                     _aimSkill = null;
+                    _castDuringHold = false;
                     _pressedSkill = -1;
                 }
                 return;
@@ -243,6 +261,8 @@ namespace Client.Main.Controls.UI.Game.Hud
                     _aimOrigin = p.ToVector2();
                     _aimOffset = Vector2.Zero;
                     _aimDragged = false;
+                    _heldSkillStartedAt = gameTime.TotalGameTime;
+                    _castDuringHold = false;
                 }
                 else
                     gs.ModernHud?.BeginSkillAssignment(hitSkill);
@@ -280,6 +300,12 @@ namespace Client.Main.Controls.UI.Game.Hud
             gs.CancelAutoAttack();
             var target = FindNearestMonster(gs, gs.SkillController?.GetCastRange(skill.SkillId, hasTarget: true) ?? 0f);
             gs.SkillController?.StartSkillFromTouchHotbar(skill, target);
+        }
+
+        private bool CastHeldSkill(GameScene gs, SkillEntryState skill)
+        {
+            var target = FindNearestMonster(gs, gs.SkillController?.GetCastRange(skill.SkillId, hasTarget: true) ?? 0f);
+            return gs.SkillController?.CastSkillFromHotbar(skill, target) == true;
         }
 
         private static MonsterObject FindNearestMonster(GameScene gs, float range)
@@ -424,6 +450,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             if (cut != null)
             {
                 sb.Draw(cut, frameRect, Color.White * alpha);
+                global::Client.Main.Controls.UI.Game.Skills.SkillCooldownRenderer.Draw(sb, skill.SkillId, frameRect, alpha, circular: true);
                 return true;
             }
             return false;

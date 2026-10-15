@@ -273,14 +273,14 @@ namespace Client.Main.Controls.UI.Game.Trade
             var destRect = new Rectangle(mouse.X - w / 2, mouse.Y - h / 2, w, h);
 
             Texture2D texture = ResolveItemTexture(_draggedItem, w, h, animated: false)
-                                ?? BmdPreviewRenderer.GetPreview(
+                                ?? BmdPreviewRenderer.TryGetCachedOverflowPreview(
                                     _draggedItem,
                                     _draggedItem.Definition.Width * InventoryControl.INVENTORY_SQUARE_WIDTH,
                                     _draggedItem.Definition.Height * InventoryControl.INVENTORY_SQUARE_HEIGHT);
 
             if (texture != null)
             {
-                spriteBatch.Draw(texture, destRect, Color.White * 0.85f);
+                spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, destRect), Color.White * 0.85f);
             }
         }
 
@@ -1011,7 +1011,7 @@ namespace Client.Main.Controls.UI.Game.Trade
 
                 if (texture != null)
                 {
-                    spriteBatch.Draw(texture, rect, Color.White * Alpha);
+                    spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, rect), Color.White * Alpha);
                 }
                 else if (pixel != null)
                 {
@@ -1072,7 +1072,7 @@ namespace Client.Main.Controls.UI.Game.Trade
 
                 if (texture != null)
                 {
-                    spriteBatch.Draw(texture, rect, Color.White * Alpha);
+                    spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, rect), Color.White * Alpha);
                 }
                 else if (pixel != null)
                 {
@@ -2012,50 +2012,7 @@ namespace Client.Main.Controls.UI.Game.Trade
                 return tex;
             }
 
-            var cacheKey = (item, width, height, animated);
-            if (_bmdPreviewCache.TryGetValue(cacheKey, out var cachedPreview) && cachedPreview != null)
-                return cachedPreview;
-
-            bool isHovered = animated;
-
-            // Material animation for non-hovered items (if enabled)
-            if (!isHovered && Constants.ENABLE_ITEM_MATERIAL_ANIMATION)
-            {
-                try
-                {
-                    var mat = BmdPreviewRenderer.GetMaterialAnimatedPreview(item, width, height, _currentGameTime);
-                    if (mat != null)
-                    {
-                        return mat;
-                    }
-                }
-                catch { }
-            }
-
-            if (isHovered)
-            {
-                try
-                {
-                    var animatedTexture = BmdPreviewRenderer.GetAnimatedPreview(item, width, height, _currentGameTime);
-                    if (animatedTexture != null)
-                    {
-                        _bmdPreviewCache[cacheKey] = animatedTexture;
-                        return animatedTexture;
-                    }
-                }
-                catch { return null; }
-            }
-
-            try
-            {
-                var preview = BmdPreviewRenderer.GetPreview(item, width, height);
-                if (preview != null)
-                {
-                    _bmdPreviewCache[cacheKey] = preview;
-                }
-                return preview;
-            }
-            catch { return null; }
+            return BmdPreviewRenderer.GetOverflowPreview(item, width, height, _currentGameTime, animated);
         }
     }
 }

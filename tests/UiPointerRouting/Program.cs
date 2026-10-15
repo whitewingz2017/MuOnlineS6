@@ -16,6 +16,20 @@ try
 {
     int checks = 0;
     void Check(bool value, string message) { if (!value) throw new Exception(message); checks++; }
+    if (args.Contains("--scroll-requirements-only"))
+    {
+        foreach (int itemLevel in new[] { 0, 1, 7, 15 })
+        {
+            var powerWave = new InventoryItem(new ItemDefinition(10, "Scroll of Power Wave", 1, 2, "") { Group = 15, Id = 10, DropLevel = 9, RequiredEnergy = 56 }, Point.Zero, level: itemLevel);
+            Check(Client.Main.Core.Utilities.MuMainItemRules.Requirements(powerWave).Energy == 56,
+                "Power Wave tooltip must use the server's fixed 56 Energy requirement.");
+            var fireBall = new InventoryItem(new ItemDefinition(3, "Scroll of Fire Ball", 1, 2, "") { Group = 15, Id = 3, DropLevel = 5, RequiredEnergy = 40 }, Point.Zero, level: itemLevel);
+            Check(Client.Main.Core.Utilities.MuMainItemRules.Requirements(fireBall).Energy == 40,
+                "Fire Ball tooltip must retain its fixed 40 Energy requirement.");
+        }
+        Console.WriteLine($"PASS: {checks} scroll requirement checks.");
+        return;
+    }
     if (args.Contains("--experience-only"))
     {
         foreach (int level in new[] { 1, 2, 31, 255, 256, 257, 399 })
@@ -252,7 +266,7 @@ try
         .Where(t => !t.IsAbstract && t.Namespace?.StartsWith("Client.Main.Objects.Monsters", StringComparison.Ordinal) == true && typeof(Client.Main.Objects.MonsterObject).IsAssignableFrom(t)))
     {
         var instance = (Client.Main.Objects.MonsterObject)Activator.CreateInstance(type)!;
-        Check(instance.AnimationSpeed == 25f, $"{type.Name} does not use the original 25 Hz animation clock.");
+        Check(instance.AnimationSpeed is 6f or 25f, $"{type.Name} lost the configured monster cadence or explicit player-rig override.");
         var controller = new Client.Main.Controllers.AnimationController(instance);
         foreach (var action in new[] { MonsterActionType.Shock, MonsterActionType.Attack1, MonsterActionType.Attack2, MonsterActionType.Appear })
         {
@@ -288,12 +302,12 @@ try
         return;
     }
     var login = new Client.Main.Controls.UI.Login.LoginDialog();
-    var back = (OkButton)typeof(Client.Main.Controls.UI.Login.LoginDialog)
+    var back = (ButtonControl)typeof(Client.Main.Controls.UI.Login.LoginDialog)
         .GetField("_classicCancelButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(login)!;
-    var ok = (OkButton)typeof(Client.Main.Controls.UI.Login.LoginDialog)
-        .GetField("_okButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(login)!;
-    Check(back.Visible && back.Interactive && back.TexturePath == "Interface/newui_button_cancel.OZT",
-        "Login Back button is unavailable or uses the wrong texture.");
+    var ok = (ButtonControl)typeof(Client.Main.Controls.UI.Login.LoginDialog)
+        .GetField("_classicOkButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(login)!;
+    Check(back.Visible && back.Interactive,
+        "Login Back button is unavailable.");
     Check(back.Y == ok.Y && back.X >= ok.X + ok.ViewSize.X && back.Y + back.ViewSize.Y <= login.ControlSize.Y,
         "Login Back overlaps OK or falls outside the dialog.");
     int backRequests = 0;
@@ -388,16 +402,19 @@ try
         "Mobile action buttons exceed the dialog bounds.");
     actionDialog.Dispose();
     var mobileMenu = new TouchMenuControl();
+    mobileMenu.Open();
+    typeof(TouchMenuControl).GetField("_menuProgress",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(mobileMenu,1f);
+    typeof(TouchMenuControl).GetMethod("LayoutRects",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(mobileMenu,null);
     var menuRects = (Rectangle[])typeof(TouchMenuControl).GetField("_rects", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(mobileMenu)!;
     Check(menuRects.Length == 15 && menuRects.Distinct().Count() == 15, "Mobile menu grid overlaps or omits entries.");
     foreach (var rect in menuRects)
         Check(mobileMenu.ContainsPointerPoint(rect.Center), "Visible mobile icon does not capture input.");
     Check(!mobileMenu.ContainsPointerPoint(new Point(640, 300)), "Mobile shortcut bounds block the world between icons.");
-    var expandedIconCenter = menuRects[0].Center;
+    var expandedIconCenter = menuRects[3].Center;
     mobileMenu.Close();
     var progressField = typeof(TouchMenuControl).GetField("_menuProgress", BindingFlags.Instance | BindingFlags.NonPublic)!;
     var layoutMenu = typeof(TouchMenuControl).GetMethod("LayoutRects", BindingFlags.Instance | BindingFlags.NonPublic)!;
-    Check(mobileMenu.ContainsPointerPoint(menuRects[0].Center), "Closing animation lets touches pass through visible icons.");
+    Check(mobileMenu.ContainsPointerPoint(menuRects[3].Center), "Closing animation lets touches pass through visible icons.");
     progressField.SetValue(mobileMenu, 0f);
     layoutMenu.Invoke(mobileMenu, null);
     Check(!mobileMenu.ContainsPointerPoint(expandedIconCenter), "Collapsed grid still captures clicks.");

@@ -45,7 +45,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
             public int ItemIndex { get; }
 
             public bool RequiresDistinctKey => Level != 0 || IsExcellent || IsAncient;
-            public bool ShouldUseItemMaterial => Level >= 7 || IsExcellent || IsAncient;
+            public bool ShouldUseItemMaterial => ItemGroup >= 0 || Level >= 7 || IsExcellent || IsAncient;
+            public bool RequiresMaterialAnimation => Level >= 7 || IsExcellent || IsAncient || ItemGroup == 12 || (ItemGroup == 8 && ItemIndex == 73);
             public int ItemOptions => (Level & 0x0F) | (IsExcellent ? 0x10 : 0);
         }
 
@@ -646,7 +647,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             var pose = new PreviewPoseGeometry
             {
                 Bones = bones,
-                MeshOrder = BuildMeshRenderOrder(bmd),
+                MeshOrder = BuildMeshRenderOrder(bmd, definition),
                 Meshes = new PreviewMeshGeometry[bmd.Meshes.Length],
                 UsesPlayerIdlePose = usesPlayerIdlePose,
             };
@@ -675,9 +676,11 @@ namespace Client.Main.Controls.UI.Game.Inventory
             return pose;
         }
 
-        private static int[] BuildMeshRenderOrder(BMD bmd)
+        private static int[] BuildMeshRenderOrder(BMD bmd, ItemDefinition definition)
         {
             int meshCount = bmd?.Meshes?.Length ?? 0;
+            if (definition?.Group == 12 && definition.Id == 36 && meshCount == 3)
+                return new[] {2,0,1}; // MuMain renders the membrane before its additive layers.
             var result = new int[meshCount];
             int opaqueWrite = 0;
             int transparentWrite = 0;
@@ -727,7 +730,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 width,
                 height,
                 rotationAngle,
-                ItemRenderProperties.Default,
+                new ItemRenderProperties(0, false, false, definition?.Group ?? -1, definition?.Id ?? -1),
                 gameTime: null,
                 useCache: true,
                 isRotating: false,
@@ -755,7 +758,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 width,
                 height,
                 rotationAngle,
-                ItemRenderProperties.Default,
+                new ItemRenderProperties(0, false, false, definition?.Group ?? -1, definition?.Id ?? -1),
                 isRotating: false);
             return GetCacheEntry(key, isRotating: false)?.Texture;
         }
@@ -783,7 +786,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 width,
                 height,
                 rotationAngle,
-                ItemRenderProperties.Default,
+                new ItemRenderProperties(0, false, false, definition?.Group ?? -1, definition?.Id ?? -1),
                 gameTime,
                 useCache: true,
                 isRotating: true,
@@ -819,7 +822,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 width,
                 height,
                 rotationAngle,
-                ItemRenderProperties.Default,
+                new ItemRenderProperties(0, false, false, definition?.Group ?? -1, definition?.Id ?? -1),
                 gameTime,
                 useCache: true,
                 isRotating: true,
@@ -855,7 +858,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 width,
                 height,
                 rotationAngle,
-                ItemRenderProperties.Default,
+                new ItemRenderProperties(0, false, false, definition?.Group ?? -1, definition?.Id ?? -1),
                 gameTime,
                 useCache: true,
                 isRotating: true,
@@ -891,7 +894,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 width,
                 height,
                 rotationAngle,
-                ItemRenderProperties.Default,
+                new ItemRenderProperties(0, false, false, definition?.Group ?? -1, definition?.Id ?? -1),
                 gameTime,
                 useCache: true,
                 isRotating: true,
@@ -930,6 +933,44 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 smoothAnimation: false);
         }
 
+        // Preserve MuMain's slot-based scale, but render beyond the occupied cells.
+        // The caller draws the padded canvas at its native size around the slot.
+        public static Rectangle GetOverflowRectangle(Rectangle slot)
+        {
+            // Long weapons can rotate across the short axis of their occupied cells.
+            int padding = Math.Max(slot.Width, slot.Height) / 2;
+            return new Rectangle(slot.X-padding,slot.Y-padding,
+                slot.Width+2*padding,slot.Height+2*padding);
+        }
+
+        private sealed class OverflowLayout { }
+        private static readonly ConditionalWeakTable<Texture2D, OverflowLayout> OverflowPreviews = new();
+
+        public static Rectangle GetItemDrawRectangle(Texture2D texture, Rectangle slot) =>
+            texture != null && OverflowPreviews.TryGetValue(texture, out _) ? GetOverflowRectangle(slot) : slot;
+
+        public static Texture2D TryGetCachedOverflowPreview(InventoryItem item, int width, int height)
+        {
+            if (item?.Definition == null) return null;
+            var canvas = GetOverflowRectangle(new Rectangle(0,0,width,height));
+            var key = BuildCacheKey(item.Definition, canvas.Width, canvas.Height, 0f, CreateRenderProperties(item), false)
+                + $"_layout{width}x{height}";
+            var texture = GetCacheEntry(key, false)?.Texture;
+            if (texture == null || texture.IsDisposed) return null;
+            OverflowPreviews.GetValue(texture, _ => new OverflowLayout());
+            return texture;
+        }
+
+        public static Texture2D GetOverflowPreview(InventoryItem item, int width, int height, GameTime gameTime, bool rotating)
+        {
+            var canvas = GetOverflowRectangle(new Rectangle(0, 0, width, height));
+            float angle = rotating && gameTime != null ? CalculateRawRotationAngle(gameTime.TotalGameTime.TotalSeconds, 120f) : 0f;
+            var texture = GetPreviewInternal(item?.Definition, canvas.Width, canvas.Height, angle,
+                CreateRenderProperties(item), gameTime, true, rotating, rotating, width, height);
+            if (texture != null) OverflowPreviews.GetValue(texture, _ => new OverflowLayout());
+            return texture;
+        }
+
         private static float CalculateCachedRotationAngle(double totalSeconds, float speedDegreesPerSecond)
         {
             float angle = CalculateRawRotationAngle(totalSeconds, speedDegreesPerSecond);
@@ -950,7 +991,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
             GameTime gameTime,
             bool useCache,
             bool isRotating,
-            bool smoothAnimation)
+            bool smoothAnimation,
+            int layoutWidth = 0,
+            int layoutHeight = 0)
         {
             if (definition == null || string.IsNullOrWhiteSpace(definition.TexturePath))
                 return null;
@@ -960,9 +1003,10 @@ namespace Client.Main.Controls.UI.Game.Inventory
             EnsureDeviceHooks(GraphicsManager.Instance.GraphicsDevice);
 
             string key = BuildCacheKey(definition, width, height, rotationAngle, props, isRotating);
+            if (layoutWidth > 0) key += $"_layout{layoutWidth}x{layoutHeight}";
             float now = ResolveEffectTime(gameTime);
             bool requiresAnimation = isRotating ||
-                                     (props.ShouldUseItemMaterial && Constants.ENABLE_ITEM_MATERIAL_ANIMATION);
+                                     (props.RequiresMaterialAnimation && Constants.ENABLE_ITEM_MATERIAL_ANIMATION);
 
             PreviewCacheEntry entry = useCache ? GetCacheEntry(key, isRotating) : null;
             if (entry?.Texture != null && entry.Texture.IsDisposed)
@@ -1018,7 +1062,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                         props,
                         gameTime,
                         target,
-                        out didRender);
+                        out didRender, layoutWidth, layoutHeight);
                 }
                 finally
                 {
@@ -1033,6 +1077,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
                 if (rendered == null)
                     return entry?.Texture;
+
+                // Pooled targets can later serve a fitted HUD icon instead of a grid preview.
+                if (layoutWidth <= 0) OverflowPreviews.Remove(rendered);
 
 
                 if (!useCache)
@@ -1067,10 +1114,22 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
         }
 
-        private static string GetPreviewModelPath(ItemDefinition definition, int level) =>
-            definition.Group == 13 && definition.Id == 20
+        internal static string GetPreviewModelPath(ItemDefinition definition, int level)
+        {
+            if (definition.Group == 8)
+            {
+                switch (definition.Id)
+                {
+                    case 59: return "Player/Armor_inventory60.bmd";
+                    case 60: return "Player/ArmorMale61_inventory.bmd";
+                    case 61: return "Player/ArmorMale62_inventory.bmd";
+                    case 73: return "Player/ArmorMale74_inven.bmd";
+                }
+            }
+            return definition.Group == 13 && definition.Id == 20
                 ? level is >= 1 and <= 3 ? "Item/RingOfLordEvent00.bmd" : "Item/MagicRing00.bmd"
                 : definition.TexturePath;
+        }
 
         private static RenderTarget2D Render(
             ItemDefinition def,
@@ -1080,7 +1139,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
             in ItemRenderProperties props,
             GameTime gameTime,
             RenderTarget2D target,
-            out bool didRender)
+            out bool didRender,
+            int layoutWidth = 0,
+            int layoutHeight = 0)
         {
             didRender = false;
             RenderTarget2D rt = target;
@@ -1167,7 +1228,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 var display = MuMainInventoryDisplay.Get(def);
                 if (def.Group == 13 && def.Id == 20)
                     display = display with { Anchor = new Vector2(0.5f, props.Level == 0 ? 0.65f : 0.8f) };
-                Matrix world = display.WorldMatrix(def, width, height, rotationAngle);
+                Matrix world = display.WorldMatrix(def, layoutWidth > 0 ? layoutWidth : width,
+                    layoutHeight > 0 ? layoutHeight : height, rotationAngle);
                 Matrix worldViewProjection = world * view * projection;
                 Vector3 eyePosition = new(0f, 0f, 1000f);
                 bool useItemMaterial = props.ShouldUseItemMaterial &&
@@ -1337,20 +1399,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             ItemPreviewEffectBindings bindings,
             in ItemRenderProperties props)
         {
-            if (!Constants.ENABLE_FAST_MATERIAL_SHADERS ||
-                bindings?.FastTechnique == null ||
-                props.Level < 7 ||
-                props.IsExcellent ||
-                props.IsAncient)
-            {
-                return false;
-            }
-
-            bool isArmorPart = props.ItemGroup >= 7 && props.ItemGroup <= 11;
-            bool usesHighLevelArmor = isArmorPart &&
-                                      props.Level >= 11 &&
-                                      GraphicsManager.Instance.HasItemUpgradeTextures;
-            return !usesHighLevelArmor;
+            return false; // Inventory uses the same source chrome rules as equipped items.
         }
 
         private static void RenderMeshWithItemMaterialPreview(GraphicsDevice gd,
@@ -1373,6 +1422,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             var currentBlendState = gd.BlendState;
             var currentRasterizerState = gd.RasterizerState;
             var previousTechnique = effect.CurrentTechnique;
+            var previousDepth = gd.DepthStencilState;
 
             try
             {
@@ -1382,10 +1432,14 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 bool fastShader = CanUseFastItemPreviewShader(bindings, props);
                 effect.CurrentTechnique = fastShader ? bindings.FastTechnique : bindings.Technique;
                 BlendState customBlendState = GetBlendStateForMesh(mesh);
+                if (props.ItemGroup == 12 && props.ItemIndex == 36 && meshIdx < 2)
+                    customBlendState = Blendings.OneOneAdditive;
                 if (customBlendState != null)
                 {
                     gd.BlendState = customBlendState;
                 }
+                if (SourceItemMaterialRules.IsAdditive(gd.BlendState))
+                    gd.DepthStencilState = DepthStencilState.DepthRead;
 
                 bool isTwoSided = customBlendState != null && customBlendState != BlendState.Opaque;
                 if (isTwoSided)
@@ -1424,6 +1478,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     bindings.IsExcellent?.SetValue(props.IsExcellent);
                     bindings.IsAncient?.SetValue(props.IsAncient);
                 }
+                Client.Main.Graphics.SourceItemMaterialRules.Apply(effect,props.ItemGroup,props.ItemIndex,meshIdx,props.Level,inventory:true,
+                    emissive:SourceItemMaterialRules.IsAdditive(gd.BlendState));
                 bindings.ItemOptions?.SetValue(props.ItemOptions);
                 bindings.Time?.SetValue(shaderTime);
                 bindings.Alpha?.SetValue(1f);
@@ -1432,12 +1488,13 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 gd.Indices = geometry.IndexBuffer;
 
                 int primitiveCount = geometry.IndexBuffer.IndexCount / 3;
-                effect.CurrentTechnique.Passes[0].Apply();
-                gd.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, primitiveCount);
+                Client.Main.Graphics.SourceItemPassRenderer.Draw(gd,effect,primitiveCount,
+                    (props.ItemGroup==8 && props.ItemIndex==73) || (props.ItemGroup==12 && props.ItemIndex==36));
             }
             finally
             {
                 effect.CurrentTechnique = previousTechnique;
+                gd.DepthStencilState = previousDepth;
                 gd.BlendState = currentBlendState;
                 gd.RasterizerState = currentRasterizerState;
             }

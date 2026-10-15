@@ -46,6 +46,7 @@ namespace Client.Main
     public class MuGame : Game
 #endif
     {
+        public static string DisplayVersion { get; set; } = "1.3.6";
 #if WINDOWS_DX
         public event EventHandler<TimeSpan> PreviewUpdate;
         public event EventHandler<EventArgs> EndUpdate;
@@ -130,7 +131,10 @@ namespace Client.Main
 
         // Instance Fields
         private readonly GraphicsDeviceManager _graphics;
-        private ILogger _logger = AppLoggerFactory?.CreateLogger<MuGame>();
+        // A package update can recreate the Android activity in the same process
+        // after the previous game disposed its logger factory. Initialize creates
+        // a fresh factory before assigning this logger.
+        private ILogger _logger;
         private readonly DeterministicFrameClock _simulationClock = new(
             SimulationFixedStep,
             SimulationMaxStepsPerFrame,
@@ -970,6 +974,8 @@ namespace Client.Main
                 _mguiDesktop?.Draw();
 #endif
 
+                DrawVersionLabel();
+
                 RenderPassProfiler.AddFrameworkDraw(frameworkDrawStarted);
 
                 // Commit only a fully completed GameScene frame. The next frame renders into
@@ -1005,6 +1011,27 @@ namespace Client.Main
                     _telemetryPublisher?.PublishSnapshot(this);
 #endif
             }
+        }
+
+        private void DrawVersionLabel()
+        {
+            var graphics = GraphicsManager.Instance;
+            if (graphics?.Sprite == null || graphics.Font == null)
+                return;
+
+            var font = GraphicsManager.GetUiFont(OperatingSystem.IsAndroid() ? 24f : 14f, out float scale) ?? graphics.Font;
+            string label = "Version " + DisplayVersion;
+            Vector2 size = font.MeasureString(label) * scale;
+            var viewport = GraphicsDevice.Viewport;
+            var position = new Vector2(viewport.Width - size.X - 10f, viewport.Height - size.Y - 6f);
+            var sprite = graphics.Sprite;
+            sprite.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp,
+                DepthStencilState.None, RasterizerState.CullNone, null, Matrix.Identity);
+            sprite.DrawString(font, label, position + Vector2.One, Color.Black, 0f,
+                Vector2.Zero, scale, SpriteEffects.None, 0f);
+            sprite.DrawString(font, label, position, Color.White, 0f,
+                Vector2.Zero, scale, SpriteEffects.None, 0f);
+            sprite.End();
         }
 
         /// <summary>

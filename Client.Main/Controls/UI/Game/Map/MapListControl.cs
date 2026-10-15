@@ -8,8 +8,8 @@ namespace Client.Main.Controls.UI.Game.Map
 {
     public class MapListControl : UIControl
     {
-        private const int InnerPadding = 10;
-        private const int ButtonSpacing = 0;
+        private const int InnerPadding = 12;
+        private const int ButtonSpacing = 6; //original
         private const float ButtonFontSize = 10f;
 
         private bool IsSeason6 => UiThemeManager.CurrentId == UiThemeId.Season6;
@@ -268,7 +268,7 @@ namespace Client.Main.Controls.UI.Game.Map
         private void ArrangeMapButtons()
         {
             int padding = IsSeason6 ? 14 : InnerPadding;
-            int spacing = IsSeason6 ? 2 : ButtonSpacing;
+            int spacing = IsSeason6 ? 4 : ButtonSpacing;
             int currentY = padding;
 
             foreach (var child in Controls)

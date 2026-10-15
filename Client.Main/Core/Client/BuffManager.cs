@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
@@ -10,6 +10,9 @@ namespace Client.Main.Core.Client
     /// </summary>
     public enum BuffEffectId : byte
     {
+        IgnoreDefense = 129,
+        IncreaseHealth = 130,
+        IncreaseBlock = 131,
         GreaterDamage = 1,
         GreaterDefense = 2,
         ManaShield = 4,

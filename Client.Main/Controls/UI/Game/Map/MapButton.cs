@@ -45,7 +45,7 @@ namespace Client.Main.Controls.UI.Game.Map
 
             var sb = GraphicsManager.Instance.Sprite;
             float scaleFactor = FontSize / Constants.BASE_FONT_SIZE;
-            Vector2 pos = new Vector2(DisplayRectangle.X + 5, DisplayRectangle.Y + 5);
+            Vector2 pos = new Vector2(DisplayRectangle.X + 5, DisplayRectangle.Y + 8);
             sb.DrawString(
                 GraphicsManager.Instance.Font,
                 Name,

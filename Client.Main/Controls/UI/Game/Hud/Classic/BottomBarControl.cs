@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Client.Main.Content;
 using Client.Main.Controllers;
@@ -79,26 +80,135 @@ namespace Client.Main.Controls.UI.Game.Hud
         // Dono do ESTADO dos slots de poção (no mobile o ModernBottomHud é headless — não
         // desenha, mas guarda/persiste as atribuições feitas na tela Potion Imprint).
         private readonly ModernBottomHud _hud;
+        private int _potionPickerSlot = -1;
+        private bool _potionPressHandled;
+        private Rectangle _potionPickerRect;
+        private Rectangle[] _potionPickerItems = Array.Empty<Rectangle>();
+        private IReadOnlyList<(byte Group, int Id, string Name, string? TexturePath, int Count)> _availablePotions =
+            Array.Empty<(byte, int, string, string?, int)>();
 
         public BottomBarControl(CharacterState state, ModernBottomHud hud = null)
         {
             _state = state;
             _hud = hud;
-            // The bar is a visual plate; its skill/potion/action controls are separate
-            // interactive overlays. Keep the plate click-through so it cannot block world input.
-            Interactive = false;
+            // Only the center potion slots (and an open picker) receive input.
+            Interactive = true;
             AutoViewSize = false;
-            // Faixa full-width na base.
-            ControlSize = new Point(UiScaler.VirtualSize.X, 110);
+            ControlSize = new Point(1, 1);
             ViewSize = ControlSize;
-            X = 0;
-            Y = UiScaler.VirtualSize.Y - 110;
+            LayoutPotionHitArea();
+        }
+
+        public override void Update(GameTime gameTime)
+        {
+            LayoutPotionHitArea();
+            if (Visible && Interactive && MuGame.Instance?.UiMouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed &&
+                MuGame.Instance.PrevUiMouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released &&
+                DisplayRectangle.Contains(MuGame.Instance.UiMouseState.Position))
+            {
+                _potionPressHandled = true;
+                HandlePotionTap(MuGame.Instance.UiMouseState.Position);
+                Scene?.SetMouseInputConsumed();
+            }
+            _hud?.EnsureConsumableIconsCached();
+            base.Update(gameTime);
         }
 
         public override bool OnClick()
         {
             base.OnClick();
+            if (_potionPressHandled)
+            {
+                _potionPressHandled = false;
+                return true;
+            }
+            return HandlePotionTap(MuGame.Instance.UiMouseState.Position);
+        }
+
+        private bool HandlePotionTap(Point point)
+        {
+            if (_hud == null) return true;
+            if (_potionPickerSlot >= 0)
+            {
+                for (int i = 0; i < _potionPickerItems.Length; i++)
+                {
+                    if (!_potionPickerItems[i].Contains(point)) continue;
+                    var potion = _availablePotions[i];
+                    _hud.SetItemAssignmentAt(_potionPickerSlot, (potion.Group, potion.Id));
+                    _potionPickerSlot = -1;
+                    LayoutPotionHitArea();
+                    Scene?.SetMouseInputConsumed();
+                    return true;
+                }
+                if (_potionPickerRect.Contains(point)) return true;
+                _potionPickerSlot = -1;
+            }
+
+            for (int i = 0; i < SlotCount; i++)
+            {
+                if (!GetPotionSlotRectangle(i).Contains(point)) continue;
+                var assignment = _hud.GetItemAssignmentAt(i);
+                if (assignment.HasValue &&
+                    _hud.CountItemInInventory(assignment.Value.Group, assignment.Value.Id) > 0)
+                    _hud.TryConsumePotionForHud(i);
+                else
+                {
+                    _potionPickerSlot = i;
+                    _availablePotions = _hud.GetConsumableCandidates();
+                }
+                LayoutPotionHitArea();
+                Scene?.SetMouseInputConsumed();
+                return true;
+            }
+
+            LayoutPotionHitArea();
             return true;
+        }
+
+        private static Rectangle GetPotionSlotRectangle(int index)
+        {
+            int slotsWidth = SlotCount * SlotSize + (SlotCount - 1) * SlotGap;
+            int left = (UiScaler.VirtualSize.X - slotsWidth) / 2;
+            int top = UiScaler.VirtualSize.Y - (int)BottomBarLayout.SlotsBottom - SlotSize;
+            return new Rectangle(left + index * (SlotSize + SlotGap), top, SlotSize, SlotSize);
+        }
+
+        private void LayoutPotionHitArea()
+        {
+            Rectangle first = GetPotionSlotRectangle(0);
+            Rectangle last = GetPotionSlotRectangle(SlotCount - 1);
+            int left = first.Left;
+            int top = first.Top;
+            int right = last.Right;
+            int bottom = first.Bottom;
+            _potionPickerItems = Array.Empty<Rectangle>();
+            if (_potionPickerSlot >= 0)
+            {
+                _availablePotions = _hud?.GetConsumableCandidates() ??
+                    Array.Empty<(byte, int, string, string?, int)>();
+                if (_availablePotions.Count == 0)
+                    _potionPickerSlot = -1;
+                else
+                {
+                    const int rowHeight = 28;
+                    const int width = 190;
+                    int height = _availablePotions.Count * rowHeight + 8;
+                    int x = Math.Clamp(GetPotionSlotRectangle(_potionPickerSlot).Center.X - width / 2,
+                        2, UiScaler.VirtualSize.X - width - 2);
+                    int y = Math.Max(2, first.Top - height - 5);
+                    _potionPickerRect = new Rectangle(x, y, width, height);
+                    _potionPickerItems = new Rectangle[_availablePotions.Count];
+                    for (int i = 0; i < _potionPickerItems.Length; i++)
+                        _potionPickerItems[i] = new Rectangle(x + 4, y + 4 + i * rowHeight, width - 8, rowHeight);
+                    left = Math.Min(left, x);
+                    top = Math.Min(top, y);
+                    right = Math.Max(right, x + width);
+                }
+            }
+            X = left;
+            Y = top;
+            ControlSize = new Point(right - left, bottom - top);
+            ViewSize = ControlSize;
         }
 
         public override async Task Load()
@@ -341,7 +451,32 @@ namespace Client.Main.Controls.UI.Game.Hud
             DrawClaw(sb, _texClawRight, mpRectPlate, -(int)BottomBarLayout.ClawNudge);
             DrawCrystalNum(sb, font, mpRectPlate, _state.CurrentMana);
 
+            if (_potionPickerSlot >= 0)
+                DrawPotionPicker(sb, pixel, font);
+
             base.Draw(gameTime);
+        }
+
+        private void DrawPotionPicker(SpriteBatch sprite, Texture2D pixel, SpriteFont font)
+        {
+            sprite.Draw(pixel, _potionPickerRect, new Color(100, 86, 58));
+            sprite.Draw(pixel, new Rectangle(_potionPickerRect.X + 1, _potionPickerRect.Y + 1,
+                _potionPickerRect.Width - 2, _potionPickerRect.Height - 2), new Color(18, 21, 28, 245));
+            for (int i = 0; i < _potionPickerItems.Length; i++)
+            {
+                var potion = _availablePotions[i];
+                Rectangle row = _potionPickerItems[i];
+                if (row.Contains(MuGame.Instance.UiMouseState.Position))
+                    sprite.Draw(pixel, row, new Color(84, 72, 46, 150));
+
+                var icon = _hud.GetItemIconByKey(potion.Group, potion.Id);
+                if (icon != null && !icon.IsDisposed)
+                    sprite.Draw(icon, new Rectangle(row.X + 2, row.Y + 2, 24, 24), Color.White);
+                if (font == null) continue;
+                string label = $"{potion.Name} x{potion.Count}";
+                DrawOutlined(sprite, font, label, new Vector2(row.X + 31, row.Y + 5),
+                    0.34f, Color.White, 1);
+            }
         }
 
         // Barras laterais (arte SD/AG). Tamanho FIXO pelo layout — esticar até o centro

@@ -27,6 +27,8 @@ namespace Client.Main.Controllers
         public Texture2D ItemChrome02Texture { get; private set; }
         public Texture2D ItemShiny01Texture { get; private set; }
         public Texture2D ItemChrome01Texture { get; private set; }
+        public Texture2D WingRuinLayerTexture { get; private set; }
+        public Texture2D WingChrome06Texture { get; private set; }
         public bool HasItemUpgradeTextures =>
             ItemChrome02Texture != null &&
             ItemShiny01Texture != null &&
@@ -371,6 +373,8 @@ namespace Client.Main.Controllers
             ItemChrome02Texture = LoadRuntimeTexture("Effect/Chrome02.jpg");
             ItemShiny01Texture = LoadRuntimeTexture("Effect/Shiny01.jpg");
             ItemChrome01Texture = LoadRuntimeTexture("Effect/Chrome01.jpg");
+            WingRuinLayerTexture = LoadRuntimeTexture("Item/msword01_r.jpg");
+            WingChrome06Texture = LoadRuntimeTexture("Effect/Chrome06.jpg");
         }
 
         private static Texture2D LoadRuntimeTexture(string path)

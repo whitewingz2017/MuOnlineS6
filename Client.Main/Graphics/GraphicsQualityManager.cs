@@ -128,7 +128,7 @@ namespace Client.Main.Graphics
                     Constants.DRAW_GRASS = false;
                     // Android Auto resolves to Low after MainActivity applies its defaults.
                     // Keep equipment upgrade/excellent/ancient materials on that profile.
-                    Constants.ENABLE_ITEM_MATERIAL_SHADER = OperatingSystem.IsAndroid();
+                    Constants.ENABLE_ITEM_MATERIAL_SHADER = true;
                     Constants.ENABLE_MONSTER_MATERIAL_SHADER = false;
                     Constants.ENABLE_WEAPON_TRAIL = false;
                     break;

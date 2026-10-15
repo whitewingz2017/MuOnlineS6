@@ -42,3 +42,24 @@ foreach (var entry in ServerMasterSkills.All.Where(e => e.Replaced != 0))
     checks++;
 }
 Console.WriteLine($"PASS: {checks} rotation and master visual routing checks.");
+
+await SkillDatabase.Initialize();
+int cooldownSkills=0;
+foreach(ushort id in SkillVisualEffectRegistry.GetRegisteredSkillIds())
+{
+    int delay=SkillDatabase.GetSkillCooldown(id);
+    if(delay<=0)continue;
+    Client.Main.Core.Client.SkillCooldownTracker.ResetAll();
+    var tracker=typeof(Client.Main.Core.Client.SkillCooldownTracker);
+    if(!Client.Main.Core.Client.SkillCooldownTracker.TryConsume(id,10000) ||
+       Client.Main.Core.Client.SkillCooldownTracker.TryConsume(id,10000+delay/2d) ||
+       Math.Abs(Client.Main.Core.Client.SkillCooldownTracker.GetCooldownRatio(id,10000+delay/2d)-.5f)>.001f ||
+       !Client.Main.Core.Client.SkillCooldownTracker.TryConsume(id,10000+delay))
+        throw new Exception($"Cooldown repeat/expiry failed for skill {id}");
+    Client.Main.Core.Client.SkillCooldownTracker.ResetAll();
+    if(Client.Main.Core.Client.SkillCooldownTracker.GetRemainingMs(id,10000)!=0)
+        throw new Exception($"Cooldown reset failed for skill {id}");
+    cooldownSkills++;
+}
+if(cooldownSkills==0)throw new Exception("No cooldown skills exercised.");
+Console.WriteLine($"PASS: cooldown consumption, half-time HUD ratio, expiry and reset for {cooldownSkills} registered skills.");

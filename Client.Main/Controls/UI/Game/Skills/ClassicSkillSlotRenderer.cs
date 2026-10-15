@@ -46,6 +46,7 @@ namespace Client.Main.Controls.UI.Game.Skills
             if (skillId is > 0)
             {
                 SkillIconRenderer.DrawSkillRect(spriteBatch, skillId.Value, GetIconRectangle(cell), tint);
+                SkillCooldownRenderer.Draw(spriteBatch, skillId.Value, GetIconRectangle(cell), tint.A / 255f);
             }
         }
     }

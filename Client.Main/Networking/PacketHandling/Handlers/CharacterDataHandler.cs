@@ -124,7 +124,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     28 or 420 or 422 => (byte)BuffEffectId.GreaterDamage,
                     48 or 356 => (byte)BuffEffectId.SwellLife,
                     360 or 363 => (byte)BuffEffectId.SwellLifeProficiency,
-                    _ => (byte)(skillId & 0xFF)
+                    _ => Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId) switch { 266 => (byte)BuffEffectId.IgnoreDefense, 267 => (byte)BuffEffectId.IncreaseHealth, 268 => (byte)BuffEffectId.IncreaseBlock, _ => (byte)(skillId & 0xFF) }
                 };
                 _characterState.DeactivateBuff(effectId, targetId);
                 _buffManager.ProcessMagicEffectStatus(targetId, effectId, false);
@@ -832,7 +832,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     var gameScene = MuGame.Instance?.ActiveScene as Client.Main.Scenes.GameScene;
                     if (gameScene != null)
                     {
-                        gameScene.ChatLog?.AddMessage("System", $"Gained {addedExperience} experience.", Client.Main.Models.MessageType.System);
+                        gameScene.ChatLog?.AddMessage(string.Empty,
+                            $"Exp gained: {addedExperience.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}",
+                            Client.Main.Models.MessageType.System);
 
                         if (addedExperience > 0 &&
                             killedObjectId != 0 &&
@@ -1297,7 +1299,99 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             return Task.CompletedTask;
         }
 
+        [PacketHandler(0x4A, PacketRouter.NoSubCode)]
+        public Task HandleRageAttackAsync(Memory<byte> packet)
+        {
+            if(!RageFighterSkillPackets.TryReadAttack(packet.Span,out ushort skill,out ushort source,out ushort target))return Task.CompletedTask;
+            if(Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skill)!=263)return Task.CompletedTask;
+            MuGame.ScheduleOnMainThread(()=>
+            {
+                if(MuGame.Instance?.ActiveScene is not GameScene scene || scene.World is not WalkableWorldControl world ||
+                    source==_characterState.Id || !world.TryGetWalkerById(source,out var caster) || caster is not PlayerObject player)return;
+                player.PlayAction((ushort)player.GetSkillAction(skill,false),fromServer:true);
+                var cast=new Objects.Effects.RageFighterCastEffect(player,null,263);
+                world.Objects.Add(cast);
+                MuGame.TaskScheduler?.QueueTask(async()=>await cast.Load(),Controllers.TaskScheduler.Priority.High,"DarkSide.RemoteCast");
+                SoundController.Instance.PlayBuffer(Client.Data.BMD.SkillDefinitions.GetSkillSound(skill));
+                if(!world.TryGetWalkerById(target,out var victim))return;
+                var ghost=new Objects.Effects.DarkSideAfterimageEffect(player,victim,0);
+                world.Objects.Add(ghost);
+                MuGame.TaskScheduler?.QueueTask(async()=>await ghost.Load(),Controllers.TaskScheduler.Priority.High,"DarkSide.Remote");
+            });
+            return Task.CompletedTask;
+        }
+
+        [PacketHandler(0x4B, PacketRouter.NoSubCode)]
+        public Task HandleDarkSideTargetsAsync(Memory<byte> packet)
+        {
+            ushort[] victims = new ushort[5];
+            if(!RageFighterSkillPackets.TryReadTargets(packet.Span,victims,out ushort skill) ||
+                Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skill) != 263) return Task.CompletedTask;
+            MuGame.ScheduleOnMainThread(() =>
+            {
+                if(MuGame.Instance?.ActiveScene is not GameScene scene || scene.Hero == null || scene.World is not WalkableWorldControl world) return;
+                scene.NotifyLocalSkillAnimation(skill);
+                SoundController.Instance.PlayBuffer(Client.Data.BMD.SkillDefinitions.GetSkillSound(skill));
+                scene.Hero.PlayAction((ushort)scene.Hero.GetSkillAction(skill,false),fromServer:true);
+                var cast=new Objects.Effects.RageFighterCastEffect(scene.Hero,null,263);
+                world.Objects.Add(cast);
+                MuGame.TaskScheduler?.QueueTask(async()=>await cast.Load(), Controllers.TaskScheduler.Priority.High,"DarkSide.Cast");
+                for(int i=0;i<victims.Length;i++)
+                {
+                    if(!RageFighterSkillPackets.TryGetTarget(victims[i],out ushort target) || !world.TryGetWalkerById(target,out var victim)) continue;
+                    var effect=new Objects.Effects.DarkSideAfterimageEffect(scene.Hero,victim,i);
+                    world.Objects.Add(effect);
+                    MuGame.TaskScheduler?.QueueTask(async()=>await effect.Load(), Controllers.TaskScheduler.Priority.High,"DarkSide.Load");
+                }
+            });
+            return Task.CompletedTask;
+        }
+
         private const ushort ComboSkillId = 59;
+
+        [PacketHandler(0xBF, 0x0A)]
+        public Task HandleChainLightningAsync(Memory<byte> packet)
+        {
+            // The protocol's target array begins at byte 10; validate before reading
+            // or scheduling any effects so a truncated chain cannot spawn a partial cast.
+            if (packet.Length < 10) return Task.CompletedTask;
+            var info = new ChainLightningHitInfo(packet);
+            int count = info.TargetCount;
+            if (count > 3 || packet.Length < 10 + count * 2)
+            {
+                _logger.LogWarning("Invalid ChainLightning target list: {Count} targets, {Length} bytes", count, packet.Length);
+                return Task.CompletedTask;
+            }
+            ushort playerId = (ushort)(info.PlayerId & 0x7FFF), skillId = info.SkillNumber;
+            ushort[] targets = new ushort[count];
+            for (int i = 0; i < count; i++) targets[i] = (ushort)(info[i].TargetId & 0x7FFF);
+            MuGame.ScheduleOnMainThread(() =>
+            {
+                if (MuGame.Instance?.ActiveScene is not GameScene scene || scene.World is not WalkableWorldControl world ||
+                    !world.TryGetWalkerById(playerId, out var caster)) return;
+                if (caster is PlayerObject player)
+                {
+                    player.PlayAction((ushort)player.GetSkillAction(skillId, isInSafeZone: false), fromServer: true);
+                    player.TriggerVehicleSkillAnimation();
+                }
+                if (playerId == _characterState.Id) scene.NotifyLocalSkillAnimation(skillId);
+                string sound = Client.Data.BMD.SkillDefinitions.GetSkillSound(skillId);
+                if (!string.IsNullOrEmpty(sound)) SoundController.Instance.PlayBuffer(sound);
+                WalkerObject? previous = caster;
+                for (int i = 0; i < targets.Length; i++)
+                {
+                    if (!world.TryGetWalkerById(targets[i], out var target)) { previous = null; continue; }
+                    if (previous != null && previous != target)
+                    {
+                        var effect = new ChainLightningEffect(previous, target, i == 0);
+                        world.Objects.Add(effect);
+                        MuGame.TaskScheduler?.QueueTask(async () => await effect.Load(), Controllers.TaskScheduler.Priority.High, "ChainLightning.Load");
+                    }
+                    previous = target;
+                }
+            });
+            return Task.CompletedTask;
+        }
 
         [PacketHandler(0x19, PacketRouter.NoSubCode)] // SkillAnimation (Targeted)
         public Task HandleSkillAnimationAsync(Memory<byte> packet)
@@ -1564,12 +1658,27 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                             float worldZ = world.Terrain.RequestTerrainHeight(worldX, worldY);
                             var targetPosition = new Vector3(worldX, worldY, worldZ);
 
+                            // Chaotic Diseier's local target explosion is separate from its
+                            // caster-centered area animation. Recover only a recent matching
+                            // request's selected target; never reuse an older area's victim.
+                            ushort visualTargetId = 0;
+                            Vector3? visualTargetPosition = areaLaunchYaw.HasValue ? null : targetPosition;
+                            double visualNowMs = MuGame.Instance?.GameTime?.TotalGameTime.TotalMilliseconds ?? Environment.TickCount64;
+                            double visualElapsedMs = visualNowMs - _characterState.LastAreaSkillSentAtMs;
+                            if ((skillId == 238 || Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId) is 214 or 270) && _characterState.LastAreaSkillId == skillId &&
+                                visualElapsedMs >= 0 && visualElapsedMs <= 1500 &&
+                                _characterState.LastAreaSkillTargetId != 0 &&
+                                world.TryGetWalkerById(_characterState.LastAreaSkillTargetId, out var selectedVictim))
+                            {
+                                visualTargetId = _characterState.LastAreaSkillTargetId;
+                                visualTargetPosition = selectedVictim.WorldPosition.Translation;
+                            }
                             var effectContext = new Objects.Effects.Skills.SkillEffectContext
                             {
                                 Caster = activeScene.Hero,
-                                TargetId = 0,
+                                TargetId = visualTargetId,
                                 SkillId = skillId,
-                                TargetPosition = areaLaunchYaw.HasValue ? null : targetPosition,
+                                TargetPosition = visualTargetPosition,
                                 LaunchYaw = areaLaunchYaw,
                                 World = world
                             };

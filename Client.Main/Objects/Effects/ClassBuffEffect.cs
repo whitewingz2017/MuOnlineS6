@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System;
 using System.Threading.Tasks;
 using Client.Main.Content;
@@ -40,6 +40,7 @@ namespace Client.Main.Objects.Effects
             LightEnabled = false;
             BoundingBoxLocal = new BoundingBox(new Vector3(-200), new Vector3(200, 200, 450));
             Children.Add(new ElfSupportBuffEffect(owner, buffs, soulBarrier: true));
+            Children.Add(new RageFighterBuffWindEffect(owner,buffs));
         }
 
         public override async Task LoadContent()
@@ -182,8 +183,9 @@ namespace Client.Main.Objects.Effects
                         angle += subtype % 2 == 1 ? 40f : -40f;
                         Vector3 point = start + Joints.SourceJointMath.MuMainRotate(new Vector3(0, 0, radius), new Vector3(angle, 0, 0));
                         Vector3 width = Vector3.TransformNormal(Vector3.UnitX * 10f, bone);
-                        Ribbon(ref count, previous, point, width, tint, (tails - tail) / 16f);
-                        Ribbon(ref count, previous, point, Vector3.TransformNormal(Vector3.UnitZ * 10f, bone), tint, (tails - tail) / 16f);
+                        float uvStep = 1f / Math.Max(1, tails - 1);
+                        Ribbon(ref count, previous, point, width, tint, (tails - tail) * uvStep, uvStep);
+                        Ribbon(ref count, previous, point, Vector3.TransformNormal(Vector3.UnitZ * 10f, bone), tint, (tails - tail) * uvStep, uvStep);
                         previous = point; radius -= .15f;
                         if (weapon.ItemGroup != 4) direction.Y -= .1f;
                     }
@@ -218,13 +220,13 @@ namespace Client.Main.Objects.Effects
                 frames == 4 ? new Vector2((frame % 2 + 1) * .5f, (frame / 2 + 1) * .5f) : Vector2.One);
         }
 
-        private void Ribbon(ref int count, Vector3 a, Vector3 b, Vector3 width, Color tint, float u)
+        private void Ribbon(ref int count, Vector3 a, Vector3 b, Vector3 width, Color tint, float u, float uvStep = 1f / 16f)
         {
             if (count + 6 > _vertices.Length) return;
             var v0 = new VertexPositionColorTexture(a - width, tint, new Vector2(u, 0));
             var v1 = new VertexPositionColorTexture(a + width, tint, new Vector2(u, 1));
-            var v2 = new VertexPositionColorTexture(b + width, tint, new Vector2(u - 1f / 16, 1));
-            var v3 = new VertexPositionColorTexture(b - width, tint, new Vector2(u - 1f / 16, 0));
+            var v2 = new VertexPositionColorTexture(b + width, tint, new Vector2(u - uvStep, 1));
+            var v3 = new VertexPositionColorTexture(b - width, tint, new Vector2(u - uvStep, 0));
             _vertices[count++] = v0; _vertices[count++] = v1; _vertices[count++] = v2;
             _vertices[count++] = v0; _vertices[count++] = v2; _vertices[count++] = v3;
         }

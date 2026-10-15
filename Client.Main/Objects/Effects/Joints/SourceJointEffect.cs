@@ -18,13 +18,13 @@ namespace Client.Main.Objects.Effects.Joints
     /// </summary>
     public sealed class SourceJointEffect : EffectObject
     {
-        public enum JointFamily { Spirit, Thunder, Laser1, Flare, Healing }
+        public enum JointFamily { Spirit, Thunder, Laser1, Flare, Healing, EnergyTrail }
 
         private const int MaxRingCapacity = 50;
 
         private Texture2D? _texture;
         private Texture2D? _fortitudeFlare;
-        private readonly Vector3[][] _rings = new Vector3[MaxRingCapacity][];
+        private readonly Vector3[][] _rings;
         private int _ringHead;
         private int _ringCount;
         private VertexPositionColorTexture[]? _fenrirVertices;
@@ -48,18 +48,25 @@ namespace Client.Main.Objects.Effects.Joints
         private float _luminosityBoost;
         private bool _healingFlashSpawned;
 
-        public static SourceJointEffect Healing(WalkerObject target, int subtype, Vector3 position, Vector3 angle) => new()
+        public static SourceJointEffect Healing(WalkerObject target, int subtype, Vector3 position, Vector3 angle)
         {
-            Family = JointFamily.Healing, SubType = subtype, Position = position,
-            TargetProvider = () => target.WorldPosition.Translation,
-            LifeTimeFrames = 12f, MaxTails = 2, ScaleValue = 5f,
-            JointTexturePath = "Effect/JointEnergy01.jpg", _angle = angle,
-            _fenrirVertices = new VertexPositionColorTexture[(MaxRingCapacity - 1) * 12]
-        };
+            // MuMain CreateJoint scales the two source tails by render cadence.
+            // Two samples at high FPS collapse the visible trail to a point.
+            int tails = Math.Clamp((int)(2f / MathF.Max(.01f, SourceJointMath.FrameFactor)), 1, 200);
+            return new SourceJointEffect(tails)
+            {
+                Family = JointFamily.Healing, SubType = subtype, Position = position,
+                TargetProvider = () => target.WorldPosition.Translation,
+                LifeTimeFrames = 12f, MaxTails = tails, ScaleValue = 5f,
+                JointTexturePath = "Effect/JointEnergy01.jpg", _angle = angle,
+                _fenrirVertices = new VertexPositionColorTexture[Math.Max(1, tails - 1) * 12]
+            };
+        }
 
-        private SourceJointEffect()
+        private SourceJointEffect(int ringCapacity = MaxRingCapacity)
         {
-            for (int i = 0; i < MaxRingCapacity; i++)
+            _rings = new Vector3[ringCapacity][];
+            for (int i = 0; i < ringCapacity; i++)
                 _rings[i] = new Vector3[4];
 
             IsTransparent = true;
@@ -72,6 +79,19 @@ namespace Client.Main.Objects.Effects.Joints
         }
 
         // ---- factories mirroring CreateJoint call sites -----------------------
+
+        public static SourceJointEffect BlastTrail(Func<Vector3> position)
+        {
+            int tails = Math.Clamp((int)(10f / MathF.Max(.01f, SourceJointMath.FrameFactor)), 2, 200);
+            return new SourceJointEffect(tails)
+            {
+                Family = JointFamily.EnergyTrail, SubType = 5, Position = position(),
+                TargetProvider = position, MaxTails = tails, ScaleValue = 100f,
+                LifeTimeFrames = 30f, JointTexturePath = "Effect/JointLaser01.jpg",
+                _angle = new Vector3(0f, 20f, 0f),
+                _fenrirVertices = new VertexPositionColorTexture[(tails - 1) * 12]
+            };
+        }
 
         /// <summary>Greater Fortitude's accelerating JOINT_SPIRIT sub2.</summary>
         public static SourceJointEffect FortitudeSpirit(Vector3 origin, float yawDeg) => new()
@@ -128,6 +148,20 @@ namespace Client.Main.Objects.Effects.Joints
                 LightTint = whiteSpirit ? Vector3.One : new Vector3(1f, 0.5f, 0.1f)
             };
             return joint;
+        }
+
+        /// <summary>MuMain's player Lightning ribbon (JOINT_THUNDER subtype 0).</summary>
+        public static SourceJointEffect PlayerLightning(Vector3 origin, Func<Vector3> targetProvider, float yaw, float scale)
+        {
+            int tails = Math.Clamp((int)(50f / MathF.Max(.01f, SourceJointMath.FrameFactor)), 2, 200);
+            return new SourceJointEffect(tails)
+            {
+                Family = JointFamily.Thunder, SubType = 0, Position = origin,
+                TargetProvider = targetProvider, TargetPosition = targetProvider() + Vector3.UnitZ * 80f,
+                Velocity = 50f, LifeTimeFrames = 2f, ScaleValue = scale, MaxTails = tails,
+                _angle = new Vector3(-60f, 0f, yaw),
+                _fenrirVertices = new VertexPositionColorTexture[(tails - 1) * 12]
+            };
         }
 
         /// <summary>JOINT_THUNDER sub2-style homing arc toward a live target
@@ -225,7 +259,7 @@ namespace Client.Main.Objects.Effects.Joints
                 _fortitudeFlare = await TextureLoader.Instance.PrepareAndGetTexture("Effect/flare01.jpg");
 
             // Initial tail ring: cross of +-Scale*0.5 around the position (CreateJoint).
-            if (SubType is 76 or 77 || Family == JointFamily.Healing)
+            if (SubType is 76 or 77 || Family == JointFamily.Healing || Family == JointFamily.EnergyTrail || Family == JointFamily.Thunder && SubType == 0)
                 PushFenrirTail(Position, _angle);
             else
                 PushRing(Position);
@@ -240,7 +274,7 @@ namespace Client.Main.Objects.Effects.Joints
             ring[1] = center + right * half;
             ring[2] = center - up * half;
             ring[3] = center + up * half;
-            _ringHead = (_ringHead + 1) % MaxRingCapacity;
+            _ringHead = (_ringHead + 1) % _rings.Length;
             _ringCount = Math.Min(_ringCount + 1, MaxTails);
         }
 
@@ -253,8 +287,8 @@ namespace Client.Main.Objects.Effects.Joints
             ring[1] = center - right * h;
             ring[2] = center + up * h;
             ring[3] = center - up * h;
-            _ringHead = (_ringHead + 1) % MaxRingCapacity;
-            if (_ringCount < (SubType == 2 && Family == JointFamily.Spirit ? MaxTails : MaxRingCapacity))
+            _ringHead = (_ringHead + 1) % _rings.Length;
+            if (_ringCount < (SubType == 2 && Family == JointFamily.Spirit ? MaxTails : _rings.Length))
                 _ringCount++;
         }
 
@@ -272,12 +306,16 @@ namespace Client.Main.Objects.Effects.Joints
             if (TargetProvider != null)
             {
                 TargetPosition = TargetProvider();
-                if (Family != JointFamily.Flare && Family != JointFamily.Healing)
+                if (Family != JointFamily.Flare && Family != JointFamily.Healing && Family != JointFamily.EnergyTrail)
                     TargetPosition += Vector3.UnitZ * 80f;
             }
 
             switch (Family)
             {
+                case JointFamily.EnergyTrail:
+                    Position = TargetPosition;
+                    PushFenrirTail(Position, _angle);
+                    break;
                 case JointFamily.Healing:
                     // MoveJoint performs forward flight before the healing switch.
                     Position += SourceJointMath.MuMainRotate(new Vector3(0f, -Velocity, 0f), _angle) * f;
@@ -319,7 +357,7 @@ namespace Client.Main.Objects.Effects.Joints
                 Position += SourceJointMath.Rotate(local, _angle) * f;
             }
 
-            if (Family != JointFamily.Healing && SubType is not (76 or 77) && (LifeTimeFrames > 0 || Family != JointFamily.Spirit))
+            if (Family != JointFamily.Healing && Family != JointFamily.EnergyTrail && !(Family == JointFamily.Thunder && SubType == 0) && SubType is not (76 or 77) && (LifeTimeFrames > 0 || Family != JointFamily.Spirit))
                 PushRing(Position);
 
             LifeTimeFrames -= f;
@@ -374,6 +412,26 @@ namespace Client.Main.Objects.Effects.Joints
 
         private void MoveThunderHoming(float f)
         {
+            if (SubType == 0)
+            {
+                // MuMain fills an entire curved ribbon each update, rather than
+                // advancing only its head once. Its movement uses the frame
+                // factor twice; retain that behavior for this source subtype.
+                for (int j = 0; j < MaxTails; j++)
+                {
+                    Vector3 position = Position;
+                    float distance = SourceJointMath.MuMainMoveHumming(ref position, ref _angle, TargetPosition, 50f, f);
+                    Position = position;
+                    var jitter = new Vector3(MuGame.Random.Next(-512, 512) / ScaleValue, 0f,
+                        MuGame.Random.Next(-512, 512) / ScaleValue) * f;
+                    var tailAngle = _angle + jitter;
+                    PushFenrirTail(Position, tailAngle);
+                    if (distance < Velocity * 1.5f)
+                        break;
+                    Position += SourceJointMath.MuMainRotate(new Vector3(0f, -Velocity * f, 0f), tailAngle) * f;
+                }
+                return;
+            }
             if (SubType == 77)
             {
                 _boltRefreshFrames += f;
@@ -463,7 +521,7 @@ namespace Client.Main.Objects.Effects.Joints
 
         public override void Draw(GameTime gameTime)
         {
-            if ((SubType is not (76 or 77) && Family != JointFamily.Healing) || Hidden || Status != GameControlStatus.Ready || _texture == null || _fenrirVertices == null)
+            if ((SubType is not (76 or 77) && Family != JointFamily.Healing && Family != JointFamily.EnergyTrail && !(Family == JointFamily.Thunder && SubType == 0)) || Hidden || Status != GameControlStatus.Ready || _texture == null || _fenrirVertices == null)
                 return;
             int count = BuildFenrirVertices((float)((long)gameTime.TotalGameTime.TotalMilliseconds % 1000L) * 0.001f, SourceJointMath.FrameFactor);
             if (count == 0)
@@ -481,6 +539,7 @@ namespace Client.Main.Objects.Effects.Joints
             var diffuse = effect.DiffuseColor;
             float alpha = effect.Alpha;
             bool vertexColor = effect.VertexColorEnabled;
+            int referenceAlpha = effect.ReferenceAlpha;
             try
             {
                 gd.BlendState = Blendings.OneOneAdditive;
@@ -494,6 +553,10 @@ namespace Client.Main.Objects.Effects.Joints
                 effect.DiffuseColor = LightTint;
                 effect.Alpha = 1f;
                 effect.VertexColorEnabled = true;
+                // Model passes can leave a cutout threshold on this shared
+                // effect. Joint ribbons carry fading vertex alpha and must
+                // not inherit that threshold.
+                effect.ReferenceAlpha = 0;
                 foreach (var pass in effect.CurrentTechnique.Passes)
                 {
                     pass.Apply();
@@ -513,6 +576,7 @@ namespace Client.Main.Objects.Effects.Joints
                 effect.DiffuseColor = diffuse;
                 effect.Alpha = alpha;
                 effect.VertexColorEnabled = vertexColor;
+                effect.ReferenceAlpha = referenceAlpha;
             }
         }
 
@@ -525,14 +589,22 @@ namespace Client.Main.Objects.Effects.Joints
             float uvScale = MathF.Pow(2f, frameFactor);
             for (int j = 0; j < tails; j++)
             {
-                var current = _rings[(_ringHead - 1 - j + MaxRingCapacity) % MaxRingCapacity];
-                var next = _rings[(_ringHead - 2 - j + MaxRingCapacity) % MaxRingCapacity];
+                var current = _rings[(_ringHead - 1 - j + _rings.Length) % _rings.Length];
+                var next = _rings[(_ringHead - 2 - j + _rings.Length) % _rings.Length];
                 var center = (current[0] + current[1]) * 0.5f;
                 var nextCenter = (next[0] + next[1]) * 0.5f;
                 if (Vector3.DistanceSquared(center, nextCenter) > 60f * 60f)
                     continue;
                 float u1 = Family == JointFamily.Healing ? (tails - j) / 16f : SubType == 77 ? (tails - j) / (float)((MaxTails - 1) / 2) - scroll : ((tails - j) / 16f - scroll) * uvScale;
                 float u2 = Family == JointFamily.Healing ? (tails - j - 1) / 16f : SubType == 77 ? (tails - j - 1) / (float)((MaxTails - 1) / 2) - scroll : ((tails - j - 1) / 16f - scroll) * uvScale;
+                // These MuMain subtypes leave bTileMapping false. Energy uses
+                // the full ribbon texture once; Thunder additionally scrolls it.
+                if (Family == JointFamily.EnergyTrail || Family == JointFamily.Thunder && SubType == 0)
+                {
+                    u1 = (tails - j) / (float)(MaxTails - 1);
+                    u2 = (tails - j - 1) / (float)(MaxTails - 1);
+                    if (Family == JointFamily.Thunder) { u1 = u1 * uvScale - scroll; u2 = u2 * uvScale - scroll; }
+                }
                 float intensity = SubType == 77 ? MathHelper.Clamp((tails - 1 - j) / (float)MaxTails * 2f, 0f, 1f) : 1f;
                 AddFenrirQuad(ref count, current[2], current[3], next[3], next[2], u1, u2, 1f, 0f, intensity);
                 AddFenrirQuad(ref count, current[0], current[1], next[1], next[0], u1, u2, 0f, 1f, intensity);
@@ -555,7 +627,7 @@ namespace Client.Main.Objects.Effects.Joints
 
         public override void DrawAfter(GameTime gameTime)
         {
-            if (SubType is 76 or 77 || Family == JointFamily.Healing)
+            if (SubType is 76 or 77 || Family == JointFamily.Healing || Family == JointFamily.EnergyTrail || Family == JointFamily.Thunder && SubType == 0)
                 return;
             if (Hidden || Status != GameControlStatus.Ready || _texture == null || _ringCount < 2)
                 return;
@@ -583,12 +655,12 @@ namespace Client.Main.Objects.Effects.Joints
             float scroll = (float)((long)gameTime.TotalGameTime.TotalMilliseconds % 1000L) * 0.001f;
             float fade = MathHelper.Clamp(LifeTimeFrames / 10f, 0f, 1f);
 
-            int oldest = (_ringHead - _ringCount + MaxRingCapacity) % MaxRingCapacity;
+            int oldest = (_ringHead - _ringCount + _rings.Length) % _rings.Length;
             Vector3 prevCenter = (_rings[oldest][0] + _rings[oldest][1]) * 0.5f;
 
             for (int j = 1; j < _ringCount; j++)
             {
-                int idx = (oldest + j) % MaxRingCapacity;
+                int idx = (oldest + j) % _rings.Length;
                 Vector3 center = (_rings[idx][0] + _rings[idx][1]) * 0.5f;
 
                 DrawSegment(spriteBatch, viewport, camera, prevCenter, center,

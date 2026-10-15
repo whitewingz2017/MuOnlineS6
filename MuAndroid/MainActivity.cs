@@ -199,6 +199,7 @@ namespace MuAndroid
         protected override void OnCreate(Bundle bundle)
         {
             base.OnCreate(bundle);
+            MuGame.DisplayVersion = PackageManager.GetPackageInfo(PackageName, 0)?.VersionName ?? "1.3.6";
             MuGame.PlatformLoggerProvider = new AndroidLogcatLoggerProvider();
             Constants.SETTINGS_PATH = EnsureAndroidConfig();
             TextFieldControl.ControlType = typeof(AndroidTextFieldControl);

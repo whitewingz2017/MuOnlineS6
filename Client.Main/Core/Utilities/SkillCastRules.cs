@@ -51,7 +51,7 @@ internal static class SkillCastRules
         (!hasTarget && id is 41 or 330 or 332 or 481);
 
     public static bool UsesCasterAreaPosition(int id) =>
-        id is 8 or 9 or 10 or 12 or 14 or 24 or 41 or 52 or 56 or 65 or 78 or 235 or 236 or 238
+        id is 8 or 9 or 10 or 12 or 14 or 24 or 41 or 52 or 56 or 65 or 78 or 221 or 222 or 235 or 236 or 238
             or 330 or 332 or 381 or 385 or 388 or 411 or 414 or 416 or 418 or 431
             or 481 or 482 or 486 or 487 or 518 or 523;
 

@@ -1031,7 +1031,7 @@ namespace Client.Main.Controls.UI.Game.Character
             else
             {
                 _levelText.Text = $"Level: {snapshot.Level}";
-                _expText.Text = $"Exp: {snapshot.Experience} / {snapshot.ExperienceForNextLevel}";
+                _expText.Text = $"Exp: {snapshot.Experience.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} / {snapshot.ExperienceForNextLevel.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}";
                 _statPointsText.Visible = IsSeason6 || snapshot.LevelUpPoints > 0;
                 _statPointsText.Text = $"Points: {snapshot.LevelUpPoints}";
             }

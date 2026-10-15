@@ -14,6 +14,33 @@ public static class MuMainItemRules
     {
         var d = item.Definition;
         var o = item.Details;
+        if (ServerItemRequirements.Profiles.TryGetValue((d.Group, d.Id), out var profile))
+        {
+            int serverBasis = profile.DropLevel + (o.IsAncient ? 30 : o.IsExcellent ? 25 : 0);
+            int Requirement(int index)
+            {
+                int raw = profile.Values[index];
+                if (raw == 0 || !profile.Wearable || (profile.Mapped & (1 << index)) == 0)
+                    return raw;
+                if (index == 4 && profile.Book)
+                    return 20 + raw * (serverBasis + o.Level) * 3 / 100;
+                int value = 20 + raw * (serverBasis + o.Level * 3) * (index == 4 ? 4 : 3) / 100;
+                if (index == 1) value += o.OptionLevel * 4;
+                return value;
+            }
+
+            int serverStrength = Requirement(1), serverAgility = Requirement(2);
+            if (profile.Wearable)
+                ApplyRequirementReductions(item, ref serverStrength, ref serverAgility);
+            return new(Requirement(0), serverStrength, serverAgility, Requirement(3), Requirement(4), Requirement(5));
+        }
+        return MuMainReferenceRequirements(item);
+    }
+
+    public static ItemRequirements MuMainReferenceRequirements(InventoryItem item)
+    {
+        var d = item.Definition;
+        var o = item.Details;
         int basis = d.DropLevel + (o.IsExcellent ? 25 : o.IsAncient ? 30 : 0);
         int Stat(int value, int factor = 3) => value == 0 ? 0 : 20 + value * (basis + o.Level * 3) * factor / 100;
         int strength = Stat(d.RequiredStrength), agility = Stat(d.RequiredDexterity);
@@ -24,6 +51,10 @@ public static class MuMainItemRules
             energy = 20 + d.RequiredEnergy * (basis + o.Level) * 3 / 100;
         else if (d.RequiredEnergy > 0 && d.Group == 15 && d.RequiredLevel > 0)
             energy = 20 + d.RequiredEnergy * d.RequiredLevel * 4 / 100;
+        // OpenMU uses raw requirements for consumable scrolls, unlike wearable
+        // items. Applying the equipment formula understates Power Wave (56 -> 40).
+        if (d.Group == 15)
+            energy = d.RequiredEnergy;
         if (d.Group == 12 && d.Id == 11)
             energy = o.Level switch { 0 => 30, 1 => 60, 2 => 90, 3 => 130, 4 => 170, 5 => 210, 6 => 300, 7 => 500, _ => 0 };
 

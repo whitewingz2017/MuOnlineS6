@@ -21,6 +21,24 @@ namespace Client.Main.Objects
 
         // Fields: rotation and movement
         private Vector3 _targetAngle;
+        private float _forcedMoveTicks;
+        private Vector3 _forcedMoveDestination;
+
+        internal void ApplyServerForcedMove(Vector2 location)
+        {
+            // MuMain ReceiveMovePosition starts JumpTime instead of teleporting.
+            // Only the authoritative destination changes logical position.
+            Vector3 origin = Position;
+            Vector3 facing = Angle;
+            ApplyServerPosition(location);
+            _forcedMoveDestination = Position;
+            if (Vector2.DistanceSquared(new Vector2(origin.X, origin.Y), new Vector2(Position.X, Position.Y)) <= 0f)
+                return;
+            Position = origin;
+            Angle = facing;
+            _targetAngle = facing;
+            _forcedMoveTicks = 1f;
+        }
         private Direction _direction;
         private Vector2 _location;
         private Vector3 _cachedTargetPosition;
@@ -244,6 +262,7 @@ namespace Client.Main.Objects
 
         internal void ApplyServerPosition(Vector2 location)
         {
+            _forcedMoveTicks = 0f;
             Interlocked.Increment(ref _walkSendGeneration);
             StopMovement();
             Location = location;
@@ -330,12 +349,22 @@ namespace Client.Main.Objects
             if (_pendingTerrainSnap && World.Terrain?.Status == GameControlStatus.Ready)
                 SnapToTerrainHeight(updateCamera: false);
 
-            if (_movementIntent || IsMoving || (_currentPath?.Count ?? 0) > 0)
+            if (_forcedMoveTicks > 0f || _movementIntent || IsMoving || (_currentPath?.Count ?? 0) > 0)
                 UpdateMovement(gameTime);
         }
 
         private void UpdateMovement(GameTime gameTime)
         {
+            if (_forcedMoveTicks > 0f && World is WalkableWorldControl forcedWorld)
+            {
+                float factor = MathF.Min(5f, (float)gameTime.ElapsedGameTime.TotalSeconds * 25f);
+                Position = Vector3.Lerp(Position, _forcedMoveDestination, MathF.Min(1f, .2f * factor));
+                Position = new Vector3(Position.X, Position.Y,
+                    forcedWorld.Terrain.RequestTerrainHeight(Position.X, Position.Y) + ExtraHeight + forcedWorld.ExtraHeight);
+                _forcedMoveTicks += factor;
+                if (_forcedMoveTicks > 15f) { Position = _forcedMoveDestination; _forcedMoveTicks = 0f; }
+                return;
+            }
             BeforeUpdatePosition(gameTime);
             SynchronizeMonsterLocomotion();
             bool wasMoving = IsMoving;

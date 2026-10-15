@@ -1,5 +1,17 @@
 # Skill visual source audit — 2026-10-13
 
+## Current MuMain follow-up
+
+The expanded MuMain inventory is in [skill-visual-mumain-comparison.md](skill-visual-mumain-comparison.md)
+and the direct source excerpts are in `skill-visual-mumain-inventory.json`.
+It accounts for all 387 configured definitions, including passive, monster and event skills.
+This historical factory audit does not establish full visual parity.
+Evil Spirit's current motion values supersede the older finding below: velocity 70,
+six tails, main width 80 and homing turn rate 10 have been corrected against MuMain.
+Its persistent enlarged ghost layers, opacity and terrain darkening still differ.
+The current validation rerun passed 266 rotation/master-factory checks. These checks
+verify routing and math, not on-screen effect appearance.
+
 This is a development inventory and source comparison, not a certificate of visual parity. Every decorated skill factory is accounted for below, with master replacement coverage checked against the current OpenMU Season 6 tree. Some findings are complete parameter comparisons; others identify the remaining port work. No in-game side-by-side capture was performed.
 
 ## References and scope

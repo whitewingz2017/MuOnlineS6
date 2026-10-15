@@ -16,12 +16,6 @@
     #define UNIFORM_DEFAULT(type, name, value) type name = value
 #endif
 
-#if OPENGL
-static const float GlowIntensityScale = 1.0;
-#else
-static const float GlowIntensityScale = 0.80;
-#endif
-
 float4x4 World;
 float4x4 WorldViewProjection;
 #if !OPENGL
@@ -141,6 +135,7 @@ float4 SampleShadowSampler(float2 uv) { return ShadowMap.Sample(ShadowSampler, u
 #endif
 
 UNIFORM_DEFAULT(int, ItemOptions, 0);
+UNIFORM_DEFAULT(int, SourceMeshIndex, 0);
 UNIFORM_DEFAULT(int, ItemMaterialGroup, -1);
 UNIFORM_DEFAULT(int, ItemMaterialIndex, -1);
 UNIFORM_DEFAULT(float, HighLevelTexturesAvailable, 0.0);
@@ -191,22 +186,6 @@ struct VertexShaderOutputFast
     float2 TextureCoordinate : TEXCOORD2;
 };
 
-
-
-// HSV to RGB conversion for smooth rainbow
-
-// Custom spectrum for Excellent items: Blue -> Orange -> Violet (NO GREEN)
-// blueScale: controls blue intensity (0.30 for +7+, 1.0 for +0-+6)
-float3 GetCustomSpectrum(float phase, float blueScale)
-{
-    phase = frac(phase) * 3.0;
-    if (phase < 1.0)
-        return lerp(float3(0.0, 0.3, 1.0) * float3(1.0, 1.0, blueScale), float3(1.0, 0.5, 0.0), frac(phase)); // Blue to Orange
-    else if (phase < 2.0)
-        return lerp(float3(1.0, 0.5, 0.0), float3(0.6, 0.0, 0.8), frac(phase)); // Orange to Violet
-    else
-        return lerp(float3(0.6, 0.0, 0.8), float3(0.0, 0.3, 1.0) * float3(1.0, 1.0, blueScale), frac(phase)); // Violet to Blue
-}
 
 
 float SampleShadow(float3 worldPos, float3 normal)
@@ -296,488 +275,140 @@ VertexShaderOutputFast MainVS_FastSkinned(in VertexShaderInputSkinned input)
 #endif
 
 
-bool IsWarmUpgradeSet(int setIndex)
+UNIFORM_DEFAULT(float, SourceLevel, 0);
+UNIFORM_DEFAULT(float3, SourceGlow, float3(1,.5,0));
+UNIFORM_DEFAULT(float3, SourceShine, float3(1,1,1));
+UNIFORM_DEFAULT(float3, SourceAncient, float3(.1,.6,1));
+UNIFORM_DEFAULT(float, SourceExcellent, 1);
+UNIFORM_DEFAULT(float, SourceGlowMask, 1);
+UNIFORM_DEFAULT(float, SourceShineMask, 1);
+UNIFORM_DEFAULT(float, SourceWhiteShine, 0);
+
+UNIFORM_DEFAULT(float, SourceBadge, 0);
+UNIFORM_DEFAULT(float, SourcePass, -1);
+UNIFORM_DEFAULT(float, SourceWingIndex, -1);
+UNIFORM_DEFAULT(float, SourceWingMesh, -1);
+UNIFORM_DEFAULT(float, SourceEmissionGain, 1);
+UNIFORM_DEFAULT(float, SourceUnlit, 0);
+UNIFORM_DEFAULT(float, SourceStormMesh, -1);
+UNIFORM_DEFAULT(float, SourceGrade, 0);
+UNIFORM_DEFAULT(float, SourcePhoenixInventoryMesh, -1);
+UNIFORM_DEFAULT(float, SourceMetalDraws, 1);
+
+// MuMain RenderPartObjectEffect: base, CHROME, METAL, CHROME2/4 and option pass.
+float4 SourceItemPixel(float3 position, float3 normal, float2 uv)
 {
-    return setIndex == 4 ||
-           setIndex == 14 ||
-           setIndex == 15 ||
-           setIndex == 17 ||
-           (setIndex >= 39 && setIndex <= 42);
-}
-
-float3 GetUpgradePrimaryColor(int setIndex, float3 bodyLight)
-{
-    if (IsWarmUpgradeSet(setIndex))
-        return float3(bodyLight.r, bodyLight.g * 0.5, 0.0);
-
-    if (setIndex == 18 || setIndex == 43)
-        return float3(0.0, bodyLight.g * 0.5, bodyLight.b);
-
-    if (setIndex == 21 || setIndex == 44)
-        return float3(1.0, 1.0, 1.0);
-
-    return bodyLight;
-}
-
-float3 GetUpgradeReflectionColor(int setIndex, float3 bodyLight)
-{
-    if (IsWarmUpgradeSet(setIndex))
-        return float3(1.0, 0.5, 0.0);
-
-    if (setIndex == 18 || setIndex == 43)
-        return float3(0.0, 0.5, 1.0);
-
-    if (setIndex == 21 || setIndex == 44)
-        return float3(1.0, 1.0, 1.0);
-
-    // The complete legacy palette contains set-specific entries that are not
-    // available in the asset description. Keep unknown sets neutral instead
-    // of assigning an invented hue.
-    return lerp(float3(0.72, 0.78, 0.90), bodyLight, 0.35);
-}
-
-float4 RenderHighLevelArmor(
-    VertexShaderOutput input,
-    float4 diffuseSample,
-    float3 normal,
-    float itemLevel)
-{
-    float ndotl = saturate(dot(normal, -LightDirection));
-    float3 bodyLight = lerp(float3(0.28, 0.30, 0.34), float3(1.0, 1.0, 1.0), ndotl);
-
-    float shadowTerm = SampleShadow(input.WorldPosition, normal);
-    float shadowMix = lerp(1.0 - ShadowStrength, 1.0, shadowTerm);
-
-    // SourceMain renders the base armor at 90% of the character light, then
-    // adds the three reflective layers without rewriting depth.
-    float3 result = diffuseSample.rgb * bodyLight * 0.9 * shadowMix;
-
-    float wave = frac(Time * 0.1);
-    float wave2 = frac(Time * 0.2) * 1.2 - 0.4;
-
-    float2 primaryUv;
-    if (itemLevel >= 13.0)
+    if(SourceStormMesh>.5 && SourceStormMesh<1.5) uv.x+=floor(fmod(Time*25,16)/4)*.25;
+    if(SourcePhoenixInventoryMesh>.5) uv.x-=frac(Time)*.09;
+    float4 diffuse=tex2D(DiffuseSampler,uv);
+    if(SourceWingIndex>=0 && SourcePass>=10)
     {
-        float3 animatedLight = float3(cos(Time), sin(Time * 2.0), 1.0);
-        float normalLight = dot(normal, animatedLight);
-        primaryUv.x = normalLight + normal.y * 0.5 + animatedLight.y * 3.0;
-        primaryUv.y = 1.0 - normalLight - normal.z * 0.5 - wave * 3.0;
-    }
-    else
-    {
-        primaryUv.x = (normal.z + normal.x) * 0.8 + wave2 * 2.0;
-        primaryUv.y = (normal.y + normal.x) + wave2 * 3.0;
-    }
-
-    float2 metalUv = float2(
-        normal.z * 0.5 + 0.2,
-        normal.y * 0.5 + 0.5);
-
-    float2 chromeUv = float2(
-        normal.z * 0.5 + wave,
-        normal.y * 0.5 + wave * 2.0);
-
-    float3 primaryColor = GetUpgradePrimaryColor(ItemMaterialIndex, bodyLight);
-    float3 reflectionColor = GetUpgradeReflectionColor(ItemMaterialIndex, bodyLight);
-
-    float3 primaryLayer = tex2D(Chrome02Sampler, primaryUv).rgb;
-    float3 metalLayer = tex2D(Shiny01Sampler, metalUv).rgb;
-    float3 chromeLayer = tex2D(Chrome01Sampler, chromeUv).rgb;
-
-    // Levels 11-12 use the regular CHROME2 movement. Levels 13-15 use
-    // CHROME4 and receive a slightly stronger main reflection.
-    float levelStrength = saturate((itemLevel - 11.0) * 0.08 + 0.76);
-    float primaryStrength = itemLevel >= 13.0 ? 0.82 : 0.72;
-
-    result += primaryLayer * primaryColor * primaryStrength * levelStrength;
-    result += metalLayer * reflectionColor * 0.30;
-    result += chromeLayer * reflectionColor * 0.20;
-
-    return float4(result, diffuseSample.a * Alpha);
-}
-
-float4 MainPS_UpgradeFast(VertexShaderOutputFast input) : PS_COLOR
-{
-    float4 color = tex2D(DiffuseSampler, input.TextureCoordinate);
-    if (color.a < 0.1)
-        discard;
-
-    float itemOptions = max(0.0, (float)ItemOptions);
-    float itemLevel = itemOptions - floor(itemOptions * (1.0 / 16.0)) * 16.0;
-    float3 normal = normalize(input.Normal);
-    color.rgb *= max(0.1, dot(normal, -LightDirection));
-
-    float3 effectColor = GlowColor * GlowIntensityScale;
-    float brightness;
-    float ghostIntensity;
-    if (itemLevel < 9.0)
-    {
-        brightness = 1.6 + (itemLevel - 8.0) * 0.2;
-        ghostIntensity = 0.30;
-    }
-    else if (itemLevel < 10.0)
-    {
-        brightness = 1.8 + (itemLevel - 9.0) * 0.2;
-        ghostIntensity = 0.8;
-    }
-    else
-    {
-        brightness = 1.8 + (itemLevel - 10.0) * 0.2;
-        ghostIntensity = 0.7 + itemLevel * (1.0 / 30.0);
-    }
-
-    float subtlePulse = (1.0 + sin(Time * 0.8)) * 0.03 + 0.97;
-    float shimmer = (1.0 + sin(Time * 8.0 + normal.x * 12.0)) * 0.15 + 0.85;
-    float2 uv = input.TextureCoordinate;
-    float4 ghost1 = tex2D(DiffuseSampler, uv + float2(sin(Time * 0.8) * 0.035, cos(Time * 0.7) * 0.035) * ghostIntensity);
-    float4 ghost2 = tex2D(DiffuseSampler, uv + float2(sin(Time * 1.0 + 2.1) * 0.025, cos(Time * 0.9 + 1.8) * 0.025) * ghostIntensity);
-    float4 ghost3 = tex2D(DiffuseSampler, uv + float2(sin(Time * 1.2 + 4.2) * 0.02, cos(Time * 1.1 + 3.7) * 0.02) * ghostIntensity);
-    float4 ghost4 = tex2D(DiffuseSampler, uv + float2(sin(Time * 0.6 + 1.1) * 0.015, cos(Time * 1.3 + 2.3) * 0.015) * ghostIntensity);
-
-    color.rgb = color.rgb * (effectColor * 0.8) * brightness * subtlePulse;
-    color.rgb += ghost1.rgb * (0.8 * ghostIntensity) * shimmer * GlowIntensityScale;
-    color.rgb += ghost2.rgb * (0.6 * ghostIntensity) * shimmer * GlowIntensityScale;
-    color.rgb += ghost3.rgb * (0.5 * ghostIntensity) * shimmer * GlowIntensityScale;
-    color.rgb += ghost4.rgb * (0.4 * ghostIntensity) * shimmer * GlowIntensityScale;
-
-    float level10Mask = step(10.0, itemLevel);
-    float extraGlow = (itemLevel - 9.0) * 0.1;
-    float glowEffect = (1.0 + sin(Time)) * 0.03 + 0.2;
-    color.rgb += effectColor * glowEffect * extraGlow * level10Mask;
-
-    float shadowTerm = SampleShadow(input.WorldPosition, normal);
-    color.rgb *= lerp(1.0 - ShadowStrength, 1.0, shadowTerm);
-    return color;
-}
-
-float4 MainPS(VertexShaderOutput input) : PS_COLOR
-{
-    float4 color = tex2D(DiffuseSampler, input.TextureCoordinate);
-    
-    if (color.a < 0.1)
-        discard;
-    
-    float itemOptions = max(0.0, (float)ItemOptions);
-    float itemLevel = itemOptions - floor(itemOptions * (1.0 / 16.0)) * 16.0;
-    
-    float3 normal = normalize(input.Normal);
-
-    bool isArmorPart = ItemMaterialGroup >= 7 && ItemMaterialGroup <= 11;
-    bool useHighLevelArmor =
-        HighLevelTexturesAvailable > 0.5 &&
-        isArmorPart &&
-        itemLevel >= 11.0;
-
-    if (useHighLevelArmor == true)
-    {
-        // Build the +11/+13 chrome material first, then continue through the
-        // level-dependent glow section below. Ordinary upgraded armor must
-        // keep the same level glow as weapons and non-armor equipment.
-        color = RenderHighLevelArmor(input, color, normal, itemLevel);
-    }
-    else
-    {
-        float lightIntensity = max(0.1, dot(normal, -LightDirection));
-        color.rgb *= lightIntensity;
-    }
-    
-    
-    float3 effectColor = GlowColor * GlowIntensityScale;
-    float brightness = 1.0;
-    float ghostIntensity = 0.0;
-    
-    if (itemLevel < 7)
-    {    
-        brightness = 1;
-        ghostIntensity = 0;
-    }
-    else if (itemLevel < 9)
-    {
-        effectColor = GlowColor * GlowIntensityScale;
-        brightness = 1.6 + (itemLevel -8) * 0.2;
-        ghostIntensity = 0.30;
-    }
-    else if (itemLevel < 10)
-    {
-        effectColor = GlowColor * GlowIntensityScale;
-        brightness = 1.8 + (itemLevel - 9) * 0.2;
-        ghostIntensity = 0.8;
-    }
-    else
-    {
-        effectColor = GlowColor * GlowIntensityScale;
-        brightness = 1.8 + (itemLevel -10 ) * 0.2;
-        ghostIntensity = 0.7 + (itemLevel * (1.0 / 30.0));
-    }
-    
-    float subtlePulse = (1.0 + sin(Time * 0.8)) * 0.03 + 0.97;
-    float shimmer = (1.0 + sin(Time * 8.0 + normal.x * 12.0)) * 0.15 + 0.85;
-    
-    // Material flags are uniform for a draw call. Conditional sampling removes
-    // up to twelve unnecessary diffuse fetches from ordinary/non-special items.
-    float4 ghost1 = 0.0;
-    float4 ghost2 = 0.0;
-    float4 ghost3 = 0.0;
-    float4 ghost4 = 0.0;
-    // High-level armor keeps its Chrome material and also receives the regular
-    // upgrade-level glow unless the Excellent path supplies its own effect.
-    bool applyHighLevelLevelGlow = useHighLevelArmor && IsExcellent == false;
-    if ((useHighLevelArmor == false || applyHighLevelLevelGlow == true) && itemLevel >= 7.0)
-    {
-        float2 ghostOffset1 = float2(sin(Time * 0.8) * 0.035, cos(Time * 0.7) * 0.035) * ghostIntensity;
-        float2 ghostOffset2 = float2(sin(Time * 1.0 + 2.1) * 0.025, cos(Time * 0.9 + 1.8) * 0.025) * ghostIntensity;
-        float2 ghostOffset3 = float2(sin(Time * 1.2 + 4.2) * 0.02, cos(Time * 1.1 + 3.7) * 0.02) * ghostIntensity;
-        float2 ghostOffset4 = float2(sin(Time * 0.6 + 1.1) * 0.015, cos(Time * 1.3 + 2.3) * 0.015) * ghostIntensity;
-        ghost1 = tex2D(DiffuseSampler, input.TextureCoordinate + ghostOffset1);
-        ghost2 = tex2D(DiffuseSampler, input.TextureCoordinate + ghostOffset2);
-        ghost3 = tex2D(DiffuseSampler, input.TextureCoordinate + ghostOffset3);
-        ghost4 = tex2D(DiffuseSampler, input.TextureCoordinate + ghostOffset4);
-    }
-
-    float4 ancientGhost1 = 0.0;
-    float4 ancientGhost2 = 0.0;
-    if (IsAncient == true)
-    {
-        float2 ancientOffset1 = float2(sin(Time * 0.5) * 0.02, cos(Time * 0.4) * 0.02);
-        float2 ancientOffset2 = float2(sin(Time * 0.7 + 1.0) * 0.015, cos(Time * 0.6 + 1.5) * 0.015);
-        ancientGhost1 = tex2D(DiffuseSampler, input.TextureCoordinate + ancientOffset1);
-        ancientGhost2 = tex2D(DiffuseSampler, input.TextureCoordinate + ancientOffset2);
-    }
-
-    float4 excellentGhost1 = 0.0;
-    float4 excellentGhost2 = 0.0;
-    float4 excellentGhost3 = 0.0;
-    float4 excellentGhost4 = 0.0;
-    float4 excellentGhost5 = 0.0;
-    float4 excellentGhost6 = 0.0;
-    if (IsExcellent == true)
-    {
-        float2 excellentOffset1 = float2(sin(Time * 0.6) * 0.03, cos(Time * 0.5) * 0.03);
-        float2 excellentOffset2 = float2(sin(Time * 0.8 + 1.2) * 0.025, cos(Time * 0.7 + 1.8) * 0.025);
-        float2 excellentOffset3 = float2(sin(Time * 1.0 + 2.4) * 0.02, cos(Time * 0.9 + 2.6) * 0.02);
-        float2 excellentOffset4 = float2(sin(Time * 0.5 + 3.6) * 0.015, cos(Time * 1.1 + 3.2) * 0.015);
-        float2 excellentOffset5 = float2(sin(Time * 0.7 + 4.8) * 0.035, cos(Time * 0.6 + 4.4) * 0.035);
-        float2 excellentOffset6 = float2(sin(Time * 0.9 + 6.0) * 0.028, cos(Time * 0.8 + 5.5) * 0.028);
-        excellentGhost1 = tex2D(DiffuseSampler, input.TextureCoordinate + excellentOffset1);
-        excellentGhost2 = tex2D(DiffuseSampler, input.TextureCoordinate + excellentOffset2);
-        excellentGhost3 = tex2D(DiffuseSampler, input.TextureCoordinate + excellentOffset3);
-        excellentGhost4 = tex2D(DiffuseSampler, input.TextureCoordinate + excellentOffset4);
-        excellentGhost5 = tex2D(DiffuseSampler, input.TextureCoordinate + excellentOffset5);
-        excellentGhost6 = tex2D(DiffuseSampler, input.TextureCoordinate + excellentOffset6);
-    }
-    
-    
-    if (useHighLevelArmor == false)
-    {
-        // Legacy material path for lower-level items and non-armor equipment.
-        if (itemLevel >= 7)
+        normal=normalize(normal);
+        if(SourcePass==10)
         {
-            float3 metallic = effectColor * 0.8;
-            color.rgb = color.rgb * metallic * brightness * subtlePulse;
-            color.rgb += ghost1.rgb * (0.8 * ghostIntensity) * shimmer * GlowIntensityScale;
-            color.rgb += ghost2.rgb * (0.6 * ghostIntensity) * shimmer * GlowIntensityScale;
-            color.rgb += ghost3.rgb * (0.5 * ghostIntensity) * shimmer * GlowIntensityScale;
-            color.rgb += ghost4.rgb * (0.4 * ghostIntensity) * shimmer * GlowIntensityScale;
+            float pulse=SourceWingIndex==4 ? sin(Time)+1.1 : (sin(Time)+1)*.25;
+            return float4(diffuse.rgb*((SourceWingIndex==4 || SourceWingIndex==5) && SourceEmissionGain>1 ? pulse : 1),diffuse.a*Alpha);
         }
-        else
+        if(SourceWingIndex==39)
         {
-            color.rgb = color.rgb * brightness;
+            float pulse=abs(sin(Time));
+            return float4((SourceWingMesh<.5?diffuse.rgb*(.1+pulse*.3):tex2D(Chrome01Sampler,uv).rgb*pulse*.8)*Alpha,Alpha);
         }
-
-        float level10Mask = step(10.0, itemLevel);
-        float extraGlow = (itemLevel - 9.0) * 0.1;
-        float glowEffect = (1.0 + sin(Time * 1.0)) * 0.03 + 0.2;
-        color.rgb += effectColor * glowEffect * extraGlow * level10Mask;
+        float wave=frac(Time*.1);
+        float2 chrome=SourceWingIndex==42
+            ? float2((normal.z+normal.x)*.8+(frac(Time*.2)*1.2-.4)*2,normal.y+normal.x+(frac(Time*.2)*1.2-.4)*3)
+            : float2(normal.z*.5+wave,normal.y*.5+wave*2);
+        float3 color=SourceWingIndex==6?float3(.8,.6,1)*.5:float3(1,1,1);
+        // Dimension samples CHROME; Darkness explicitly samples CHROME+1.
+        float3 layer=SourceWingIndex==43?tex2D(Chrome01Sampler,chrome).rgb:tex2D(Chrome02Sampler,chrome).rgb;
+        return float4(layer*color*Alpha,Alpha);
     }
-    else if (applyHighLevelLevelGlow == true)
+    if(SourcePass<=0 && diffuse.a<.1)discard;
+    if(SourceStormMesh>=0)
     {
-        // Preserve the +11/+13 Chrome material and add only the old upgrade-level
-        // glow on top. Do not recolor or multiply the base material again.
-        float levelGlowScale = 0.72 + saturate((itemLevel - 7.0) / 8.0) * 0.48;
-        color.rgb += ghost1.rgb * (0.8 * ghostIntensity) * shimmer * GlowIntensityScale * levelGlowScale;
-        color.rgb += ghost2.rgb * (0.6 * ghostIntensity) * shimmer * GlowIntensityScale * levelGlowScale;
-        color.rgb += ghost3.rgb * (0.5 * ghostIntensity) * shimmer * GlowIntensityScale * levelGlowScale;
-        color.rgb += ghost4.rgb * (0.4 * ghostIntensity) * shimmer * GlowIntensityScale * levelGlowScale;
-
-        float level10Mask = step(10.0, itemLevel);
-        float extraGlow = max(0.0, itemLevel - 9.0) * 0.1;
-        float glowEffect = (1.0 + sin(Time * 1.0)) * 0.03 + 0.2;
-        color.rgb += effectColor * glowEffect * extraGlow * level10Mask * levelGlowScale;
+        // Mesh 1 is MuMain's four-frame gold lightning across the membrane.
+        // Boost that layer independently from edge highlights and +15 armor.
+        float3 stormTint = SourceStormMesh>.5 && SourceStormMesh<1.5
+            ? float3(.9,.6,.3)
+            : float3(1,.7,.5);
+        // Preserve MuMain's gold balance; boosting every channel above one burns it white.
+        // The membrane overlay gets the shared gain after the dark body has been drawn.
+        float stormGain = SourceStormMesh>.5 && SourceStormMesh<1.5 ? SourceEmissionGain : 1;
+        return float4(diffuse.rgb*stormTint*stormGain,diffuse.a*Alpha);
     }
-    
-    // Ancient is uniform for the draw call. Keep all sweep ALU out of ordinary items.
-    if (IsAncient == true)
+    if(SourceBadge>.5)
     {
-        // Ancient item effect - fast blue sweep with pause
-        float ancientEnabled = 1.0;
-    float3 ancientColor = float3(0.3, 0.5, 1.0); // More blue color
-
-    // Cycle with pause: sweep takes 12% of cycle, pause is 88%
-    float cycleSpeed = 0.1;
-    float sweepPortion = 0.15; // Sweep happens in first 12% of cycle, very long pause after
-
-    float cycleProgress = frac(Time * cycleSpeed); // 0 to 1 over cycle
-    float sweepProgress = saturate(cycleProgress / sweepPortion); // 0 to 1 during sweep, then stays at 1
-
-    // Fast sweep across mesh using texture coordinate
-    float sweepPosition = sweepProgress;
-    float meshPosition = input.TextureCoordinate.x;
-
-    // Create sharp beam that sweeps across
-    float beamWidth = 0.15;
-    float distFromBeam = abs(meshPosition - sweepPosition);
-    float beamIntensity = 1.0 - saturate(distFromBeam / beamWidth);
-    beamIntensity = pow(beamIntensity, 2.0) * 3.0; // Sharp falloff, bright center
-
-    // Fade out beam at the end of sweep (before pause)
-    float fadeOut = 1.0 - smoothstep(0.85, 1.0, sweepProgress);
-    beamIntensity *= fadeOut;
-
-    // Add secondary vertical wave for depth
-    float wave2 = sin(Time * 3.0 + input.TextureCoordinate.y * 6.0) * 0.3 + 0.7;
-    float combinedWave = beamIntensity * wave2;
-
-    float levelBoost = (itemLevel >= 9) ? 2.0 : 1.0;
-    color.rgb += ancientGhost1.rgb * ancientColor * combinedWave * 1.5 * levelBoost * ancientEnabled;
-    color.rgb += ancientGhost2.rgb * ancientColor * combinedWave * 1.1 * levelBoost * ancientEnabled;
-
-    // Subtle base blue glow (always present)
-    float baseGlow = sin(Time * 0.8) * 0.08 + 0.15;
-    float baseGlowIntensity = (itemLevel >= 9) ? 0.5 : 0.25;
-        color.rgb += color.rgb * ancientColor * baseGlow * baseGlowIntensity * ancientEnabled;
+        float wave2=frac(Time*.2)*1.2-.4;
+        float2 chrome=float2((normal.z+normal.x)*.8+wave2*2,normal.y+normal.x+wave2*3);
+        return float4(diffuse.rgb+tex2D(Chrome02Sampler,chrome).rgb*float3(1,.5,0),diffuse.a*Alpha);
     }
-
-    if (IsExcellent == true)
+    if(SourceGrade>.5)
     {
-        // ==================== EXCELLENT SWEEP PULSE EFFECT ====================
-    // Similar to Ancient sweep but with semi-transparent violet color (only for +7+)
-    float excellentSweepEnabled = itemLevel >= 7 ? 1.0 : 0.0;
-    float3 excellentSweepColor = float3(0.5, 0.3, 0.7); // Semi-transparent violet (less white, more violet)
-    
-    // Cycle with pause: sweep takes 15% of cycle, pause is 85%
-    float exCycleSpeed = 0.12; 
-    float exSweepPortion = 0.15;
-    
-    float exCycleProgress = frac(Time * exCycleSpeed);
-    float exSweepProgress = saturate(exCycleProgress / exSweepPortion);
-    
-    // Fast sweep across mesh
-    float exSweepPosition = exSweepProgress;
-    float exMeshPosition = input.TextureCoordinate.x;
-    
-    // Create sharp beam
-    float exBeamWidth = 0.18;
-    float exDistFromBeam = abs(exMeshPosition - exSweepPosition);
-    float exBeamIntensity = 1.0 - saturate(exDistFromBeam / exBeamWidth);
-    exBeamIntensity = pow(exBeamIntensity, 2.0) * 2.0; // Reduced intensity for semi-transparency
-    
-    // Fade out beam at the end of sweep
-    float exFadeOut = 1.0 - smoothstep(0.85, 1.0, exSweepProgress);
-    exBeamIntensity *= exFadeOut;
-    
-    // Add secondary vertical wave for depth
-    float exWave2 = sin(Time * 3.5 + input.TextureCoordinate.y * 6.0) * 0.3 + 0.7;
-    float exCombinedWave = exBeamIntensity * exWave2;
-    
-    float exLevelBoost = (itemLevel >= 9) ? 1.5 : 1.0; // Reduced boost for subtlety
-    color.rgb += excellentGhost1.rgb * excellentSweepColor * exCombinedWave * 1.2 * exLevelBoost * excellentSweepEnabled;
-    color.rgb += excellentGhost2.rgb * excellentSweepColor * exCombinedWave * 0.9 * exLevelBoost * excellentSweepEnabled;
-    
-    // Subtle base violet glow (always present for excellent +7+)
-    float exBaseGlow = sin(Time * 0.9) * 0.08 + 0.12; // Reduced base glow
-    float exBaseGlowIntensity = (itemLevel >= 9) ? 0.4 : 0.2; // Reduced intensity
-    color.rgb += color.rgb * excellentSweepColor * exBaseGlow * exBaseGlowIntensity * excellentSweepEnabled;
-    
-    // ==================== ENHANCED EXCELLENT EFFECT ====================
-        float excellentEnabled = 1.0;
-        
-        // 1. Fresnel/Rim lighting effect - glowing edges
-        float3 viewDir = normalize(input.ViewDirection);
-        float fresnel = 1.0 - saturate(dot(viewDir, normal));
-        fresnel = pow(fresnel, 2.5); // Sharper edge glow
-        
-        // 2. Custom spectrum color cycling (Blue -> Orange -> Violet, NO GREEN)
-        float hueBase = frac(Time * 0.15); // Slow base rotation
-        float hueSpatial = input.TextureCoordinate.x * 0.3 + input.TextureCoordinate.y * 0.2; // Spatial variation
-        float hueNormal = (normal.x + normal.y) * 0.1; // Normal-based variation
-        
-        // Blue intensity: 0.30 for +7+, 1.0 for +0-+6
-        float blueScale = (itemLevel >= 7) ? 0.01 : 1.0;
-        
-        // Excellent effect intensity scale
-        float exScale = (itemLevel >= 7) ? 1.8 : 1.8;
-        
-        // Create multiple spectrum colors at different phases
-        float3 rainbow1 = GetCustomSpectrum(hueBase + hueSpatial, blueScale);
-        float3 rainbow2 = GetCustomSpectrum(hueBase + hueSpatial + 0.33, blueScale);
-        float3 rainbow3 = GetCustomSpectrum(hueBase + hueSpatial + 0.66, blueScale);
-        float3 rainbow4 = GetCustomSpectrum(hueBase + hueNormal + 0.5, blueScale);
-        
-        // 3. Sweeping shine effect - diagonal light beams
-        float sweepSpeed1 = Time * 1.5;
-        float sweepSpeed2 = Time * 1.2;
-        float sweepSpeed3 = Time * 0.9;
-        
-        // Multiple diagonal sweeps at different angles
-        float sweep1 = input.TextureCoordinate.x + input.TextureCoordinate.y * 0.5;
-        float sweep2 = input.TextureCoordinate.x * 0.7 - input.TextureCoordinate.y * 0.3;
-        float sweep3 = input.TextureCoordinate.y + input.TextureCoordinate.x * 0.3;
-        
-        float beam1 = pow(sin(sweep1 * 6.0 - sweepSpeed1) * 0.5 + 0.5, 8.0);
-        float beam2 = pow(sin(sweep2 * 8.0 + sweepSpeed2) * 0.5 + 0.5, 10.0);
-        float beam3 = pow(sin(sweep3 * 5.0 - sweepSpeed3) * 0.5 + 0.5, 6.0);
-        
-        float combinedBeams = beam1 * 0.7 + beam2 * 0.5 + beam3 * 0.4;
-        
-        // 4. Pulsating aura
-        float pulse1 = sin(Time * 1.2) * 0.5 + 0.5;
-        float pulse2 = sin(Time * 0.8 + 1.5) * 0.5 + 0.5;
-        float pulse3 = sin(Time * 1.5 + 3.0) * 0.5 + 0.5;
-        float combinedPulse = (pulse1 + pulse2 + pulse3) / 3.0;
-        
-        // 6. Color wave effect - colors flowing across the surface
-        float colorWave1 = sin(Time * 0.6 + input.TextureCoordinate.x * 4.0) * 0.5 + 0.5;
-        float colorWave2 = sin(Time * 0.5 + input.TextureCoordinate.y * 3.0 + 1.0) * 0.5 + 0.5;
-        
-        // Blend rainbow colors based on waves
-        float3 waveColor = rainbow1 * colorWave1 + rainbow2 * colorWave2 + rainbow3 * (1.0 - colorWave1 * colorWave2);
-        waveColor = normalize(waveColor) * length(waveColor) * 0.4;
-        
-        // Apply ghost layers with rainbow colors
-        float ghostBaseIntensity = 0.2 * combinedPulse + 0.1;
-        
-        color.rgb += excellentGhost1.rgb * rainbow1 * ghostBaseIntensity * (1.0 * exScale) * excellentEnabled;
-        color.rgb += excellentGhost2.rgb * rainbow2 * ghostBaseIntensity * (0.9 * exScale) * excellentEnabled;
-        color.rgb += excellentGhost3.rgb * rainbow3 * ghostBaseIntensity * (0.8 * exScale) * excellentEnabled;
-        color.rgb += excellentGhost4.rgb * rainbow4 * ghostBaseIntensity * (0.7 * exScale) * excellentEnabled;
-        color.rgb += excellentGhost5.rgb * waveColor * ghostBaseIntensity * (0.6 * exScale) * excellentEnabled;
-        color.rgb += excellentGhost6.rgb * rainbow1 * ghostBaseIntensity * (0.5 * exScale) * excellentEnabled;
-        
-        // Apply sweeping beams with rainbow
-        float3 beamColor = lerp(rainbow1, rainbow2, sin(Time * 0.4) * 0.5 + 0.5);
-        color.rgb += beamColor * combinedBeams * 0.05 * excellentEnabled;
-        
-        // Apply rim/fresnel glow with shifting colors
-        float3 rimColor = lerp(rainbow3, rainbow4, fresnel);
-        color.rgb += rimColor * fresnel * 0.05 * excellentEnabled;
-        
-        // Subtle overall color enhancement
-        float3 overlayColor = waveColor * 0.015;
-        color.rgb += color.rgb * overlayColor * excellentEnabled;
-        
-        // Brightness boost for excellent items
-        color.rgb *= lerp(1.0, 1.4, excellentEnabled);
+        normal=normalize(normal);
+        float luminance=.8-abs(sin(Time*1.8)*.5);
+        float3 direction=float3(cos(Time),sin(Time*2),1);
+        float d=dot(normal,direction);
+        float2 chrome=float2(d+normal.y*.5+direction.y*3,1-d-normal.z*.5-frac(Time*.1)*3);
+        float3 grade=diffuse.rgb*(luminance-.1);
+        grade+=tex2D(Chrome01Sampler,uv+float2(abs(sin(Time*.5)),0)).rgb*(luminance-.3);
+        grade+=tex2D(Chrome02Sampler,chrome).rgb;
+        return float4(grade*1.6,diffuse.a*Alpha);
     }
-
-    if (useHighLevelArmor == false)
+    if(SourcePhoenixInventoryMesh>.5)
     {
-        float shadowTerm = SampleShadow(input.WorldPosition, normal);
-        float shadowMix = lerp(1.0 - ShadowStrength, 1.0, shadowTerm);
-        color.rgb *= shadowMix;
+        float pulse=(sin(Time*3)+1)*.3+.4;
+        float2 chrome=float2(normal.z*.5+frac(Time*.1),normal.y*.5+frac(Time*.1)*2);
+        return float4(diffuse.rgb+tex2D(Chrome01Sampler,chrome).rgb*pulse,diffuse.a*Alpha);
     }
-
-    return color;
+    float options=max(0,(float)ItemOptions);
+    float inputLevel=options-floor(options/16)*16;
+    float level=SourceLevel,excellentAllowed=SourceExcellent,glowMask=SourceGlowMask,shineMask=SourceShineMask,whiteShine=SourceWhiteShine;
+    float3 glow=SourceGlow,shine=SourceShine,ancient=SourceAncient;
+    normal=normalize(normal);
+    float light=max(.2,dot(normal,-LightDirection)*.8+.4);
+    float3 bodyLight=SourceUnlit>.5?float3(1,1,1):float3(light,light,light);
+    float3 result=diffuse.rgb*bodyLight*(level>=9?.9:level>=7?.8:1)*(level>=7?1.08:1);
+    float3 baseColor=result;
+    if(SourcePass==0) return float4(result*SourceEmissionGain,diffuse.a*Alpha);
+    if(SourcePass>=0) result=float3(0,0,0);
+    float wave=frac(Time*.1),wave2=frac(Time*.2)*1.2-.4;
+    float2 chromeUv=float2(normal.z*.5+wave,normal.y*.5+wave*2);
+    float2 metalUv=float2(normal.z*.5+.2,normal.y*.5+.5);
+    if(HighLevelTexturesAvailable>.5 && level>=7)
+    {
+        if(SourcePass<0 || SourcePass==3)result+=tex2D(Chrome01Sampler,chromeUv).rgb*glow*glowMask;
+        if(level>=9 && (SourcePass<0 || SourcePass==2))result+=tex2D(Shiny01Sampler,metalUv).rgb*glow*glowMask*SourceMetalDraws;
+        if(level>=11 && (SourcePass<0 || SourcePass==1))
+        {
+            float2 primaryUv=float2((normal.z+normal.x)*.8+wave2*2,normal.y+normal.x+wave2*3);
+            if(level>=13)
+            {
+                float3 animatedLight=float3(cos(Time),sin(Time*2),1);
+                float d=dot(normal,animatedLight);
+                primaryUv=float2(d+normal.y*.5+animatedLight.y*3,1-d-normal.z*.5-wave*3);
+            }
+            result+=tex2D(Chrome02Sampler,primaryUv).rgb*shine*shineMask;
+        }
+    }
+    if((SourcePass<0 || SourcePass==4) && IsExcellent && excellentAllowed>.5)
+    {
+        float pulse=sin(Time*2)*.5+.5;
+        result+=diffuse.rgb*float3(pulse,pulse*.3,1-pulse);
+    }
+    else if((SourcePass<0 || SourcePass==4) && IsAncient && HighLevelTexturesAvailable>.5)
+    {
+        float pulse=max(0,sin(Time)*.5+.4);
+        float d=dot(normal,float3(0,-.1,-.8));
+        result+=tex2D(Chrome02Sampler,float2(d,1-d)).rgb*ancient*pulse*shineMask;
+    }
+    float shadow=lerp(1-ShadowStrength,1,SampleShadow(position,normal));
+    result=SourcePass<0 ? baseColor+(result-baseColor)*SourceEmissionGain : result*SourceEmissionGain;
+    return float4(result*shadow*(SourcePass>0?Alpha:1),SourcePass>0?Alpha:diffuse.a*Alpha);
 }
+float4 MainPS_UpgradeFast(VertexShaderOutputFast input):PS_COLOR
+{return SourceItemPixel(input.WorldPosition,input.Normal,input.TextureCoordinate);}
+float4 MainPS(VertexShaderOutput input):PS_COLOR
+{return SourceItemPixel(input.WorldPosition,input.Normal,input.TextureCoordinate);}
 
 technique BasicColorDrawing_UpgradeFast
 {

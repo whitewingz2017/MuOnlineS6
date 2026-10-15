@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -263,9 +263,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private InventoryItem _mobileSelectedItem;
         private int _mobileSelectedEquipSlot = -1;
         private InventoryItem _mobilePendingItem;
+        private RequestDialog _mobileSellDialog;
         private int _mobilePendingEquipSlot = -1;
         private Point _mobilePendingStart;
-        private int _repairEnableLevel = 50;
 
         public bool IsSelfRepairMode => _isRepairMode;
         public InventoryAuxiliaryControl Auxiliary { get; set; }
@@ -501,6 +501,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         public void Hide()
         {
+            _mobileSellDialog?.Close();
+            _mobileSellDialog = null;
             ClearMobileSelection();
             if (_pickedItemRenderer.Item != null)
             {
@@ -575,7 +577,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             base.Update(gameTime);
 
-            if (Scene?.Controls.GetSnapshotArray().Any(control => control is DialogControl { Visible: true }) == true)
+            if (Scene?.Controls.GetSnapshotArray().Any(control => control is DialogControl { Visible: true }
+                && !ReferenceEquals(control, _mobileSellDialog)) == true)
             {
                 _mobilePendingItem = null;
                 return;
@@ -584,6 +587,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
             if (Auxiliary?.IsDraggingItem == true || _networkManager?.GetCharacterState()?.PendingMoveFromSlot != null)
             { Scene?.SetMouseInputConsumed(); return; }
             Point mousePos = MuGame.Instance.UiMouseState.Position;
+            if (_mobileSellDialog is { Visible: true } && _mobileSellDialog.DisplayRectangle.Contains(mousePos))
+                return;
             _hoveredItem = null;
             _hoveredSlot = new Point(-1, -1);
             _hoveredEquipSlot = GetEquipSlotAtScreenPosition(mousePos);
@@ -679,7 +684,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private void ToggleRepairMode()
         {
             var state = _networkManager?.GetCharacterState();
-            if (state == null || state.Level < _repairEnableLevel)
+            if (state == null)
             {
                 return;
             }
@@ -726,7 +731,10 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 DrawGridOverlays(spriteBatch);
                 DrawEquipHighlights(spriteBatch);
                 DrawInventoryItems(spriteBatch);
-                DrawEquippedItems(spriteBatch);
+                using (new SpriteBatchScope(spriteBatch, SpriteSortMode.Deferred, BlendState.AlphaBlend,
+                    GraphicsManager.GetQualityLinearSamplerState(), DepthStencilState.None,
+                    transform: UiScaler.SpriteTransform))
+                    DrawEquippedItems(spriteBatch);
                 DrawChrome(spriteBatch);
                 DrawTexts(spriteBatch);
                 DrawTooltip(spriteBatch);
@@ -816,7 +824,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
         {
             if (_zenText != null)
             {
-                _zenText.Text = IsSeason6 ? $"{ZenAmount:N0}" : $"Zen: {ZenAmount:N0}";
+                string amount = ZenAmount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+                _zenText.Text = IsSeason6 ? amount : $"Zen: {amount}";
             }
         }
 
@@ -1834,9 +1843,13 @@ namespace Client.Main.Controls.UI.Game.Inventory
                         {
                             var item = _hoveredItem;
                             byte slot = (byte)(InventorySlotOffsetConstant + item.GridPosition.Y * Columns + item.GridPosition.X);
-                            RemoveItemFromGrid(item);
-                            _items.Remove(item);
-                            ShowSellConfirmation(item, slot, item.GridPosition, -1);
+                            bool tappedAgain = ReferenceEquals(_mobileSelectedItem, item);
+                            _mobileSelectedItem = item;
+                            _mobileSelectedEquipSlot = -1;
+                            if (tappedAgain)
+                                ShowSellConfirmation(item, slot, item.GridPosition, -1);
+                            // First tap only selects the item for its persistent tooltip.
+                            // The second tap opens the Sell/Cancel confirmation.
                             Scene?.SetMouseInputConsumed();
                             return;
                         }
@@ -2452,7 +2465,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             if (_networkManager == null)
             {
                 MessageWindow.Show("No connection to server. Sale is not possible.");
-                RestoreItemAfterCancelledSell(item, originalGrid, fromEquipSlot);
+                if (!UiThemeManager.IsMobilePlatform) RestoreItemAfterCancelledSell(item, originalGrid, fromEquipSlot);
                 return;
             }
 
@@ -2460,7 +2473,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             if (definition == null)
             {
                 MessageWindow.Show("Cannot identify the selected item.");
-                RestoreItemAfterCancelledSell(item, originalGrid, fromEquipSlot);
+                if (!UiThemeManager.IsMobilePlatform) RestoreItemAfterCancelledSell(item, originalGrid, fromEquipSlot);
                 return;
             }
 
@@ -2469,14 +2482,46 @@ namespace Client.Main.Controls.UI.Game.Inventory
             if (!definition.CanSellToNpc)
             {
                 MessageWindow.Show($"Item '{displayName}' cannot be sold to NPC shop.");
-                RestoreItemAfterCancelledSell(item, originalGrid, fromEquipSlot);
+                if (!UiThemeManager.IsMobilePlatform) RestoreItemAfterCancelledSell(item, originalGrid, fromEquipSlot);
+                return;
+            }
+
+            if (UiThemeManager.IsMobilePlatform)
+            {
+                // Keep the inventory interactive while the selected item's full details
+                // remain visible. Tapping another item replaces this dialog's selection.
+                string details = string.Join("\n", ItemUiHelper.BuildTooltipLines(item)
+                    .Where(line => line.text != "Tap again for Use / Drop")
+                    .Select(line => line.text));
+                string price = ItemPriceCalculator.CalculateSellPrice(item)
+                    .ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+                var dialog = RequestDialog.Show($"{details}\nSell price: {price} Zen",
+                    onAccept: () =>
+                    {
+                        ClearMobileSelection();
+                        if (IsCurrentItem(item, fromEquipSlot, originalGrid) && NpcShopControl.Instance is { Visible: true })
+                            ExecuteSellToNpc(slotIndex);
+                    },
+                    onReject: ClearMobileSelection,
+                    acceptText: "Sell", rejectText: "Cancel");
+                _mobileSellDialog = dialog;
+                if (dialog != null)
+                {
+                    dialog.Align = ControlAlign.None;
+                    dialog.X = Math.Max(12, DisplayRectangle.Left - dialog.ViewSize.X - 12);
+                    dialog.Y = Math.Max(12, (UiScaler.VirtualSize.Y - dialog.ViewSize.Y) / 2);
+                    dialog.Closed += (_, _) =>
+                    {
+                        if (ReferenceEquals(_mobileSellDialog, dialog)) _mobileSellDialog = null;
+                    };
+                }
                 return;
             }
 
             var builder = new StringBuilder();
             builder.AppendLine("Are you sure to sell this?");
             builder.AppendLine(displayName);
-            builder.AppendLine($"Estimated sell price: {ItemPriceCalculator.CalculateSellPrice(item):N0} Zen");
+            builder.AppendLine($"Estimated sell price: {ItemPriceCalculator.CalculateSellPrice(item).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} Zen");
             builder.AppendLine("The server determines the final sale price.");
             if (definition.IsExpensive)
             {
@@ -2619,7 +2664,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
                 if (itemTexture != null)
                 {
-                    spriteBatch.Draw(itemTexture, itemRect, Color.White);
+                    // Render at the original slot scale, then enlarge the complete silhouette.
+                    spriteBatch.Draw(itemTexture, BmdPreviewRenderer.GetItemDrawRectangle(itemTexture, itemRect), Color.White);
 
                     if (JewelShineOverlay.ShouldShine(item))
                     {
@@ -2668,11 +2714,12 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 var item = kv.Value;
                 Rectangle itemRect = Translate(slot.Rect);
 
-                Texture2D itemTexture = ResolveItemTexture(item, itemRect.Width, itemRect.Height);
+                Texture2D itemTexture = ResolveItemTexture(item, slot.Rect.Width, slot.Rect.Height);
 
                 if (itemTexture != null)
                 {
-                    spriteBatch.Draw(itemTexture, itemRect, Color.White);
+                    // Render at the original slot scale, then enlarge the complete silhouette.
+                    spriteBatch.Draw(itemTexture, BmdPreviewRenderer.GetItemDrawRectangle(itemTexture, itemRect), Color.White);
                 }
                 else if (GraphicsManager.Instance?.Pixel != null)
                 {
@@ -2711,47 +2758,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 return texture;
             }
 
-            bool isHovered = item == _hoveredItem;
-
-            // Material animation for non-hovered items (if enabled)
-            if (!isHovered && Constants.ENABLE_ITEM_MATERIAL_ANIMATION)
-            {
-                try
-                {
-                    var animatedMaterial = BmdPreviewRenderer.GetMaterialAnimatedPreview(item, width, height, _currentGameTime);
-                    if (animatedMaterial != null)
-                    {
-                        return animatedMaterial;
-                    }
-                }
-                catch
-                {
-                    // ignore and fall back below
-                }
-            }
-
-            if (isHovered)
-            {
-                try
-                {
-                    return BmdPreviewRenderer.GetSmoothAnimatedPreview(item, width, height, _currentGameTime);
-                }
-                catch
-                {
-                    return null;
-                }
-            }
-
-            try
-            {
-                // The renderer owns the targets and invalidates them on device loss
-                // and cache eviction. A second cache can retain a freed/reused target.
-                return BmdPreviewRenderer.GetPreview(item, width, height);
-            }
-            catch
-            {
-                return null;
-            }
+            return BmdPreviewRenderer.GetOverflowPreview(item, width, height, _currentGameTime, item == _hoveredItem);
         }
 
         private bool SelectBeforePickup(InventoryItem item, int equipSlot, bool selectFirst)
@@ -3035,7 +3042,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             DrawSeason6Button(spriteBatch, _socketOptionRect, "Socket option", false, _s6ButtonDark, true);
             DrawSeason6Button(spriteBatch, _setOptionRect, "Set option", false, _s6ButtonDark, true);
-            bool canRepair = _networkManager?.GetCharacterState()?.Level >= _repairEnableLevel;
+            bool canRepair = _networkManager?.GetCharacterState() != null;
             DrawSeason6Button(spriteBatch, _repairOptionRect, _isRepairMode ? "Repair: ON" : "Repair",
                 _repairOptionHovered, _s6ButtonDark, canRepair);
             DrawSeason6Button(spriteBatch, _footerLeftButtonRect, "Personal store", _leftFooterHovered, _s6ButtonDark, true);
@@ -3159,11 +3166,14 @@ namespace Client.Main.Controls.UI.Game.Inventory
             var lines = ItemUiHelper.BuildTooltipLines(_hoveredItem);
             if (NpcShopControl.IsOpen)
             {
+                lines.RemoveAll(line => line.text == "Tap again for Use / Drop");
                 int sellPrice = ItemPriceCalculator.CalculateSellPrice(_hoveredItem);
                 if (sellPrice > 0)
                 {
-                    lines.Add(($"Sell Price: {sellPrice} Zen", Theme.TextGold));
+                    lines.Add(($"Sell Price: {sellPrice.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} Zen", Theme.TextGold));
                 }
+                if (UiThemeManager.IsMobilePlatform)
+                    lines.Add(("Tap again to sell", Theme.TextGold));
             }
             else if (_isRepairMode)
             {
@@ -3172,7 +3182,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     int repairCost = (int)(Core.Utilities.ItemPriceCalculator.CalculateRepairPrice(_hoveredItem, false) * 2.5);
                     if (repairCost > 0)
                     {
-                        lines.Add(($"Self Repair Cost: {repairCost} Zen", Theme.TextGold));
+                        lines.Add(($"Self Repair Cost: {repairCost.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} Zen", Theme.TextGold));
                     }
                 }
                 else

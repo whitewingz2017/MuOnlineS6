@@ -22,7 +22,8 @@ namespace Client.Main.Controls.UI
         private const int MAX_NOTICES = 6;
         private const float NOTICE_INTERVAL_SECONDS = 12f;
         private const float ORIGINAL_NOTICE_FIRST_LINE = 300f / 480f;
-        private const float ORIGINAL_NOTICE_LINE_HEIGHT = 13f / 480f;
+        private const float ORIGINAL_NOTICE_LINE_HEIGHT = 15f / 490f;
+        private const float NOTICE_GAP = 10f; // Includes the two 1px text-background margins.
 
         // ───────────────────────── Constructors ─────────────────────────
         public NotificationManager()
@@ -92,10 +93,18 @@ namespace Client.Main.Controls.UI
         private void RecalculateStack()
         {
             float currentY = _spawnCenter.Y;
+            float previousHeight = 0f;
+            bool first = true;
             foreach (var note in _active)
             {
+                // Advance by the measured text height rather than the original fixed
+                // line pitch: taller fonts and multi-line notices must not overlap.
+                if (!first)
+                    currentY += (previousHeight + note.ScaledHeight) * 0.5f + NOTICE_GAP;
+
                 note.SetCenterY(currentY);
-                currentY += UiScaler.VirtualSize.Y * ORIGINAL_NOTICE_LINE_HEIGHT;
+                previousHeight = note.ScaledHeight;
+                first = false;
             }
         }
 

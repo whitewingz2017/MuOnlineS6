@@ -124,6 +124,13 @@ namespace Client.Main.Scenes
             if (_active || _startRequestPending)
                 return;
 
+            if ((MuGame.Network?.GetCharacterState()?.Level ?? 0) < 20)
+            {
+                Client.Main.Controls.UI.MessageWindow.Show("MU Helper requires level 20.");
+                StateChanged?.Invoke();
+                return;
+            }
+
             Config.Normalize();
             if (!CanOperate(out string reason))
             {
@@ -330,6 +337,12 @@ namespace Client.Main.Scenes
 
         private bool CanOperate(out string reason)
         {
+            if ((MuGame.Network?.GetCharacterState()?.Level ?? 0) < 20)
+            {
+                reason = "MU Helper requires level 20";
+                return false;
+            }
+
             reason = null;
             var hero = _scene.Hero;
             if (hero == null || hero.IsDead)

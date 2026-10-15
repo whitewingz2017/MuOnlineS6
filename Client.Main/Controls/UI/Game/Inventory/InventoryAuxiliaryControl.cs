@@ -1,4 +1,4 @@
-﻿using Client.Main.Helpers;
+using Client.Main.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -52,8 +52,17 @@ public sealed class InventoryAuxiliaryControl : UIControl
         Visible = false;
     }
 
+    private bool IsInSafeZone => Scene?.World is WalkableWorldControl world && world.Walker != null &&
+        world.Terrain.RequestTerrainFlag((int)world.Walker.Location.X, (int)world.Walker.Location.Y)
+            .HasFlag(Client.Data.ATT.TWFlags.SafeZone);
+
     public void Open(bool store)
     {
+        if (store && !IsInSafeZone)
+        {
+            MessageWindow.Show("Personal Store is only available in a safe zone.");
+            return;
+        }
         if (!store && State.InventoryExpansionState == 0)
         {
             MessageWindow.Show("No expanded inventory is unlocked for this character.");
@@ -198,6 +207,7 @@ public sealed class InventoryAuxiliaryControl : UIControl
     private void StoreAction()
     {
         if (Shop.IsOpen) { _ = _network.GetCharacterService().SendPlayerShopCloseAsync(); return; }
+        if (!IsInSafeZone) { MessageWindow.Show("Personal Store can only open in a safe zone."); return; }
         if (State.PendingMoveFromSlot != null || Shop.PendingPrices.Count != 0)
         { MessageWindow.Show("Please wait for the item or price update."); return; }
         if (_items.Count == 0 || _items.Keys.Any(slot => !Shop.Prices.TryGetValue(slot, out uint price) || price == 0))
@@ -320,7 +330,7 @@ public sealed class InventoryAuxiliaryControl : UIControl
                 var item = entry.Value;
                 var rect = new Rectangle(grid.X + item.GridPosition.X * 34, grid.Y + item.GridPosition.Y * 34, item.Definition.Width * 34, item.Definition.Height * 34);
                 var texture = _inventory.ResolveAuxiliaryItemTexture(item, rect.Width, rect.Height);
-                if (texture != null) sprite.Draw(texture, rect, Color.White);
+                if (texture != null) sprite.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, rect), Color.White);
                 else Text(item.Definition.Name, rect.X - DisplayRectangle.X, rect.Y - DisplayRectangle.Y, Color.White, .25f);
                 if (_store)
                     sprite.DrawString(font, Shop.Prices.TryGetValue(entry.Key, out uint price) ? price.ToString("N0") : "Set price", new Vector2(rect.X, rect.Bottom - 12), Color.Gold, 0, Vector2.Zero, .28f, SpriteEffects.None, 0);
@@ -332,7 +342,7 @@ public sealed class InventoryAuxiliaryControl : UIControl
             if (_dragged != null && _moving)
             {
                 var texture = _inventory.ResolveAuxiliaryItemTexture(_dragged, _dragged.Definition.Width * 34, _dragged.Definition.Height * 34);
-                if (texture != null) sprite.Draw(texture, new Rectangle(MuGame.Instance.UiMouseState.X - 16, MuGame.Instance.UiMouseState.Y - 16, _dragged.Definition.Width * 34, _dragged.Definition.Height * 34), Color.White);
+                if (texture != null) sprite.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, new Rectangle(MuGame.Instance.UiMouseState.X - 16, MuGame.Instance.UiMouseState.Y - 16, _dragged.Definition.Width * 34, _dragged.Definition.Height * 34)), Color.White);
             }
         }
         finally { scope?.Dispose(); }

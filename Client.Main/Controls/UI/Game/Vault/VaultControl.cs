@@ -562,7 +562,7 @@ namespace Client.Main.Controls.UI.Game
 
             if (texture != null)
             {
-                spriteBatch.Draw(texture, destRect, Color.White * 0.9f);
+                spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, destRect), Color.White * 0.9f);
             }
             else if (GraphicsManager.Instance?.Pixel != null)
             {
@@ -865,7 +865,7 @@ namespace Client.Main.Controls.UI.Game
             // local to the render target; screen translation is only valid in live Draw().
             var rect = localRect;
             if (IsUsableTexture(texture))
-                spriteBatch.Draw(texture, rect, Color.White);
+                spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, rect), Color.White);
             else
             {
                 spriteBatch.Draw(GraphicsManager.Instance.Pixel, rect, Theme.SlotBg);
@@ -1151,7 +1151,7 @@ namespace Client.Main.Controls.UI.Game
 
                 if (texture != null)
                 {
-                    spriteBatch.Draw(texture, rect, Color.White * Alpha);
+                    spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, rect), Color.White * Alpha);
 
                     if (JewelShineOverlay.ShouldShine(item))
                     {
@@ -1347,7 +1347,7 @@ namespace Client.Main.Controls.UI.Game
 
             try
             {
-                var animated = BmdPreviewRenderer.GetAnimatedPreview(item, w, h, _currentGameTime);
+                var animated = BmdPreviewRenderer.GetOverflowPreview(item, w, h, _currentGameTime, true);
                 if (animated != null)
                 {
                     _bmdPreviewCache[key] = animated;
@@ -2012,57 +2012,8 @@ namespace Client.Main.Controls.UI.Game
                 return tex;
             }
 
-            bool isHovered = animated;
-            if (!allowGenerate)
-            {
-                var rendererCached = BmdPreviewRenderer.TryGetCachedPreview(item, width, height);
-                if (rendererCached != null)
-                    return rendererCached;
-                return null;
-            }
-
-            // Material animation for non-hovered items (if enabled)
-            if (!isHovered && Constants.ENABLE_ITEM_MATERIAL_ANIMATION)
-            {
-                try
-                {
-                    var mat = BmdPreviewRenderer.GetMaterialAnimatedPreview(item, width, height, _currentGameTime);
-                    if (mat != null)
-                    {
-                        return mat;
-                    }
-                }
-                catch { }
-            }
-
-            if (isHovered)
-            {
-                try
-                {
-                    var animatedTexture = BmdPreviewRenderer.GetAnimatedPreview(item, width, height, _currentGameTime);
-                    if (animatedTexture != null)
-                    {
-                        return animatedTexture;
-                    }
-                }
-                catch { return null; }
-            }
-
-            var cacheKey = (item, width, height, false);
-            if (_bmdPreviewCache.TryGetValue(cacheKey, out var cachedPreview) && cachedPreview != null)
-                return cachedPreview;
-
-            // Use cached static preview
-            try
-            {
-                var preview = BmdPreviewRenderer.GetPreview(item, width, height);
-                if (preview != null)
-                {
-                    _bmdPreviewCache[cacheKey] = preview;
-                }
-                return preview;
-            }
-            catch { return null; }
+            if (!allowGenerate) return BmdPreviewRenderer.TryGetCachedOverflowPreview(item, width, height);
+            return BmdPreviewRenderer.GetOverflowPreview(item, width, height, _currentGameTime, animated);
         }
 
     }

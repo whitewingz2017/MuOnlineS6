@@ -5,7 +5,7 @@ static void Check(bool result, string description) { if (!result) throw new Exce
 var manager = new BuffManager(NullLoggerFactory.Instance);
 var changes = new List<BuffStateChangedEventArgs>();
 manager.BuffStateChanged += (_, change) => changes.Add(change);
-var effects = new[] { BuffEffectId.ManaShield, BuffEffectId.CriticalDamage, BuffEffectId.Berserk, BuffEffectId.Reflection, BuffEffectId.SwellLife, BuffEffectId.SwellLifeProficiency, BuffEffectId.CriticalDamageMastery };
+var effects = new[] { BuffEffectId.ManaShield, BuffEffectId.CriticalDamage, BuffEffectId.Berserk, BuffEffectId.Reflection, BuffEffectId.SwellLife, BuffEffectId.SwellLifeProficiency, BuffEffectId.CriticalDamageMastery, BuffEffectId.IgnoreDefense, BuffEffectId.IncreaseHealth, BuffEffectId.IncreaseBlock };
 Check((byte)BuffEffectId.Berserk == 81 && (byte)BuffEffectId.Reflection == 71, "Source status IDs");
 foreach (var effect in effects) {
     manager.ProcessMagicEffectStatus(0x8123, (byte)effect, true);

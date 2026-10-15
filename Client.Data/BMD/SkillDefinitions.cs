@@ -112,8 +112,8 @@ namespace Client.Data.BMD
             { 217, SkillType.Self },   // Damage Reflection
             { 218, SkillType.Self },   // Berserker
             { 219, SkillType.Target }, // Sleep
-            { 221, SkillType.Target }, // Weakness
-            { 222, SkillType.Target }, // Innovation
+            { 221, SkillType.Area },   // Weakness: caster-centered area debuff
+            { 222, SkillType.Area },   // Innovation: caster-centered area debuff
             { 223, SkillType.Area },   // Explosion
             { 224, SkillType.Area },   // Requiem
             { 225, SkillType.Area },   // Pollution
@@ -133,7 +133,7 @@ namespace Client.Data.BMD
             { 262, SkillType.Target }, // Chain Drive
             { 263, SkillType.Target }, // Dark Side
             { 264, SkillType.Area },   // Dragon Roar (explicit area target)
-            { 265, SkillType.Area },   // Dragon Slasher
+            { 265, SkillType.Target }, // Dragon Slasher (server targeted attack)
             { 266, SkillType.Self },   // Ignore Defense
             { 267, SkillType.Self },   // Increase Health
             { 268, SkillType.Self },   // Increase Block
@@ -424,6 +424,10 @@ namespace Client.Data.BMD
             map[221] = "Sound/SE_Ch_summoner_weakness.wav";               // Weakness (ID 221)
             map[222] = "Sound/SE_Ch_summoner_innovation.wav";             // Innovation (ID 222)
 
+            map[223] = "Sound/SE_Ch_summoner_skill05_explosion01.wav";
+            map[224] = "Sound/SE_Ch_summoner_skill06_requiem01.wav";
+            map[225] = "Sound/Rargle.wav";
+
             // MASTER SKILLS
             map[218] = "Sound/Berserker.wav";            // Berserker (ID 218)
             map[230] = "Sound/lightning_shock.wav";      // Lightning Shock (ID 230)
@@ -437,6 +441,10 @@ namespace Client.Data.BMD
             map[234] = "Sound/recover.wav";              // Recovery (ID 234)
 
             // RAGE FIGHTER SKILLS
+            map[260] = "Sound/Ragefighter/Rage_Thrust.wav";
+            map[261] = "Sound/Ragefighter/Rage_Stamp.wav";
+            map[262] = "Sound/Ragefighter/Rage_Giantswing.wav";
+
             map[263] = "Sound/Ragefighter/Rage_Darkside.wav";    // Darkside (ID 263)
             map[265] = "Sound/Ragefighter/Rage_Dragonkick.wav"; // Dragon Lore (ID 265)
             map[264] = "Sound/Ragefighter/Rage_Dragonlower.wav";  // Dragon Slayer (ID 264)

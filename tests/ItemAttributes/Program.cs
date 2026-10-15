@@ -1,9 +1,38 @@
 using System.Reflection;
+using System.Text.Json;
 using Client.Main.Controls.UI.Game.Inventory;
 using Client.Main.Controls.UI.Game.Common;
 using Client.Main.Core.Utilities;
 using Microsoft.Xna.Framework;
 using MUnique.OpenMU.Network.Packets;
+
+if (args.Contains("--server-requirements-only"))
+{
+    string casesPath = Path.Combine(AppContext.BaseDirectory, "server-requirement-cases.json");
+    using var document = JsonDocument.Parse(File.ReadAllText(casesPath));
+    int checkedCases = 0;
+    foreach (var row in document.RootElement.EnumerateArray())
+    {
+        int group = row.GetProperty("Group").GetInt32(), id = row.GetProperty("Id").GetInt32();
+        int level = row.GetProperty("Level").GetInt32(), variant = row.GetProperty("Variant").GetInt32();
+        int option = row.GetProperty("Option").GetInt32();
+        var definition = new ItemDefinition(id, "Server item", 1, 1) { Group = group };
+        var rawBytes = new List<byte> { (byte)((group << 4) | ((id >> 8) & 15)), (byte)id, (byte)level, 100,
+            (byte)((option > 0 ? 1 : 0) | (variant == 1 ? 8 : 0) | (variant == 2 ? 16 : 0)) };
+        if (option > 0) rawBytes.Add((byte)option);
+        if (variant == 1) rawBytes.Add(1);
+        if (variant == 2) rawBytes.Add(1);
+        byte[] raw = rawBytes.ToArray();
+        var actual = MuMainItemRules.Requirements(new InventoryItem(definition, Point.Zero, raw));
+        int[] observed = [actual.Level, actual.Strength, actual.Agility, actual.Vitality, actual.Energy, actual.Command];
+        int[] expected = row.GetProperty("Expected").EnumerateArray().Select(x => x.GetInt32()).ToArray();
+        if (!observed.SequenceEqual(expected))
+            throw new Exception($"Item {group}:{id} +{level} variant {variant} option {option}: [{string.Join(",", observed)}] vs server [{string.Join(",", expected)}]");
+        checkedCases++;
+    }
+    Console.WriteLine($"Verified {checkedCases} server item requirement cases.");
+    return;
+}
 
 int checks = 0;
 void Check(bool condition, string message) { checks++; if (!condition) throw new Exception(message); }
@@ -47,11 +76,11 @@ var previewModelPath = typeof(BmdPreviewRenderer).GetMethod("GetPreviewModelPath
 Check((string)previewModelPath.Invoke(null, [wizardRing, 0])! == "Item/MagicRing00.bmd", "Wizard's Ring +0 uses the wrong event model.");
 for (int ringLevel = 1; ringLevel <= 3; ringLevel++)
     Check((string)previewModelPath.Invoke(null, [wizardRing, ringLevel])! == "Item/RingOfLordEvent00.bmd", "Wizard's Ring variant is missing its original model.");
-Check(MuMainItemRules.Requirements(normal) == new ItemRequirements(0, 170, 140, 80, 120, 30), "Base requirement vector differs from MuMain.");
+Check(MuMainItemRules.MuMainReferenceRequirements(normal) == new ItemRequirements(0, 170, 140, 80, 120, 30), "Base requirement vector differs from MuMain.");
 var excellent = Item(level: 15, flags: 9, options: [4, 32]);
-Check(MuMainItemRules.Requirements(excellent) == new ItemRequirements(0, 400, 308, 164, 260, 30), "+15 excellent/additional-option requirements are wrong.");
+Check(MuMainItemRules.MuMainReferenceRequirements(excellent) == new ItemRequirements(0, 400, 308, 164, 260, 30), "+15 excellent/additional-option requirements are wrong.");
 var ancient = Item(level: 15, flags: 17, options: [4, 17]);
-Check(MuMainItemRules.Requirements(ancient) == new ItemRequirements(0, 415, 320, 170, 270, 30), "Ancient +30 item level requirement bonus missing.");
+Check(MuMainItemRules.MuMainReferenceRequirements(ancient) == new ItemRequirements(0, 415, 320, 170, 270, 30), "Ancient +30 item level requirement bonus missing.");
 Check(MuMainItemStats.Calculate(excellent) == new ItemDisplayStats(191, 341, 174, 0, 125), "+15 excellent damage/defense/magic vector differs from MuMain.");
 Check(MuMainItemStats.Calculate(ancient).Defense == 243, "Ancient defense bonus differs from MuMain.");
 Check(MuMainItemStats.Calculate(Item(6, level: 15, flags: 16, options: [1])).Defense == 145, "Ancient shield formula differs from MuMain.");
@@ -60,22 +89,22 @@ Check(MuMainItemStats.Calculate(staff).DamageMax == 341 && MuMainItemStats.Calcu
 var chaos = Item(4, 6, 15, 8, 32);
 Check(MuMainItemStats.Calculate(chaos).DamageMax == 266, "Chaos weapon excellent override missing.");
 var scroll = Item(15); scroll.Definition.RequiredLevel = 50;
-Check(MuMainItemRules.Requirements(scroll).Energy == 120, "Scroll energy must use required level and divisor 100.");
+Check(MuMainItemRules.MuMainReferenceRequirements(scroll).Energy == 50, "Consumable scroll energy must use its raw requirement.");
 var book = Item(5, 21, 15);
-Check(MuMainItemRules.Requirements(book).Energy == 117, "Summoner book energy formula incorrect.");
+Check(MuMainItemRules.MuMainReferenceRequirements(book).Energy == 117, "Summoner book energy formula incorrect.");
 int[] summonEnergy = [30, 60, 90, 130, 170, 210, 300, 500];
-for (int level = 0; level < 8; level++) Check(MuMainItemRules.Requirements(Item(12, 11, level)).Energy == summonEnergy[level], "Summoning orb energy table mismatch.");
+for (int level = 0; level < 8; level++) Check(MuMainItemRules.MuMainReferenceRequirements(Item(12, 11, level)).Energy == summonEnergy[level], "Summoning orb energy table mismatch.");
 var wing2 = Item(12, 3, 15); wing2.Definition.RequiredLevel = 180; wing2.Definition.Defense = 30;
-Check(MuMainItemRules.Requirements(wing2).Level == 255 && MuMainItemStats.Calculate(wing2).Defense == 57, "Second-tier wing upgrade formula mismatch.");
+Check(MuMainItemRules.MuMainReferenceRequirements(wing2).Level == 255 && MuMainItemStats.Calculate(wing2).Defense == 57, "Second-tier wing upgrade formula mismatch.");
 var wing3 = Item(12, 36, 15); wing3.Definition.RequiredLevel = 180; wing3.Definition.Defense = 40;
-Check(MuMainItemRules.Requirements(wing3).Level == 180 && MuMainItemStats.Calculate(wing3).Defense == 86, "Third-tier wing formula mismatch.");
+Check(MuMainItemRules.MuMainReferenceRequirements(wing3).Level == 180 && MuMainItemStats.Calculate(wing3).Defense == 86, "Third-tier wing formula mismatch.");
 var fenrir = Item(13, 37, 15, 8, 32); fenrir.Definition.RequiredLevel = 300;
-Check(MuMainItemRules.Requirements(fenrir).Level == 300, "Fenrir level must not scale with upgrade/excellent options.");
-var ring = Item(13, 10, 3); Check(MuMainItemRules.Requirements(ring).Level == 50, "Transformation ring required level mismatch.");
+Check(MuMainItemRules.MuMainReferenceRequirements(fenrir).Level == 300, "Fenrir level must not scale with upgrade/excellent options.");
+var ring = Item(13, 10, 3); Check(MuMainItemRules.MuMainReferenceRequirements(ring).Level == 50, "Transformation ring required level mismatch.");
 var highArmor = Item(8, 29, 15, 8, 32); highArmor.Definition.RequiredLevel = 380;
-Check(MuMainItemRules.Requirements(highArmor).Level == 380, "Level 380 equipment must not receive excellent +20 level.");
+Check(MuMainItemRules.MuMainReferenceRequirements(highArmor).Level == 380, "Level 380 equipment must not receive excellent +20 level.");
 var regularArmor = Item(8, 1, 15, 8, 32); regularArmor.Definition.RequiredLevel = 100;
-Check(MuMainItemRules.Requirements(regularArmor).Level == 120, "Normal excellent equipment lacks +20 required level.");
+Check(MuMainItemRules.MuMainReferenceRequirements(regularArmor).Level == 120, "Normal excellent equipment lacks +20 required level.");
 Check(MuMainItemRules.CanUseClass(normal.Definition, CharacterClassNumber.BladeMaster), "Blade Master incorrectly rejected from Dark Knight equipment.");
 normal.Definition.ClassRequirements[1] = 2;
 Check(!MuMainItemRules.CanUseClass(normal.Definition, CharacterClassNumber.DarkKnight) && MuMainItemRules.CanUseClass(normal.Definition, CharacterClassNumber.BladeKnight), "Second-job minimum is not enforced.");
@@ -84,11 +113,11 @@ Check(!MuMainItemRules.CanUseClass(normal.Definition, CharacterClassNumber.Blade
 normal.Definition.ClassRequirements = [1,1,0,0,0,0,0];
 Check(MuMainItemRules.CanUseClass(normal.Definition, CharacterClassNumber.MagicGladiator), "MuMain dual DW/DK equipment rule for Magic Gladiator missing.");
 var harmony = Item(flags: 32, options: [0x30]);
-Check(MuMainItemRules.Requirements(harmony).Strength == 164, "Harmony strength reduction missing.");
+Check(MuMainItemRules.MuMainReferenceRequirements(harmony).Strength == 164, "Harmony strength reduction missing.");
 var harmonyStaff = Item(5, flags: 32, options: [0x30]);
-Check(MuMainItemRules.Requirements(harmonyStaff).Agility == 134, "Staff harmony agility option was interpreted as weapon strength.");
+Check(MuMainItemRules.MuMainReferenceRequirements(harmonyStaff).Agility == 134, "Staff harmony agility option was interpreted as weapon strength.");
 var inactiveHarmony = Item(flags: 32, options: [0x31]);
-Check(MuMainItemRules.Requirements(inactiveHarmony).Strength == 170, "Harmony reduction applied below required item upgrade.");
+Check(MuMainItemRules.MuMainReferenceRequirements(inactiveHarmony).Strength == 170, "Harmony reduction applied below required item upgrade.");
 var shield = Item(6, flags: 1, options: [4]);
 Check(MuMainItemStats.AdditionalOptions(shield).Single() == "Additional Defense Rate +20", "Shield additional option displayed as damage/defense.");
 Check(MuMainItemStats.ExcellentOptions(excellent).Single() == "Excellent Damage Rate +10%", "Excellent option flags read from durability byte.");
@@ -97,7 +126,10 @@ Check(MuMainItemStats.ExcellentOptions(excArmor).Single() == "Maximum Life Incre
 var lines = ItemUiHelper.BuildTooltipLines(staff);
 Check(lines.Any(x => x.text.Contains("100/")) == false, "Zero base durability must not invent upgrade-only durability.");
 Check(lines.Any(x => x.text == "One-handed Damage: 191 ~ 341"), "Tooltip omits staff physical min/max damage.");
-Check(lines.Any(x => x.text == "Required Vitality: 164") && lines.Any(x => x.text == "Required Command: 30"), "Tooltip drops Vitality or Command requirements.");
+var staffRequirements = MuMainItemRules.Requirements(staff);
+Check((staffRequirements.Vitality == 0 || lines.Any(x => x.text == $"Required Vitality: {staffRequirements.Vitality}"))
+    && (staffRequirements.Command == 0 || lines.Any(x => x.text == $"Required Command: {staffRequirements.Command}")),
+    "Tooltip drops a server-defined Vitality or Command requirement.");
 var orientations = typeof(BmdPreviewRenderer).Assembly.GetType("Client.Main.Core.Utilities.MuMainItemMetadata")!;
 var rotate = orientations.GetMethod("InventoryRotation", BindingFlags.Public|BindingFlags.Static)!;
 Check((Vector3)rotate.Invoke(null, [Item(4, 0).Definition])! == new Vector3(180, 270, 25), "Bow must use MuMain bow rotation rather than armor rotation.");
@@ -105,23 +137,24 @@ Check((Vector3)rotate.Invoke(null, [Item(4, 8).Definition])! == new Vector3(90, 
 Check((Vector3)rotate.Invoke(null, [Item(4, 7).Definition])! == new Vector3(0, 270, 15), "Ammunition rotation differs from MuMain.");
 Check(new InventoryItem(normal.Definition, Point.Zero, level: 15).Details.Level == 15, "Preview-only item lost its explicit upgrade level.");
 var state = (Client.Main.Core.Client.CharacterState)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Client.Main.Core.Client.CharacterState));
+var equipItem = Item(0, 500); // Synthetic MuMain reference item, outside the server item catalog.
 state.Class = CharacterClassNumber.BladeMaster; state.Level = 400;
 state.Strength = 169; state.AddedStrength = 1; state.Agility = 140; state.Vitality = 80; state.Energy = 120; state.Leadership = 30;
-Check(MuMainItemRules.MeetsRequirements(normal, state), "Equip check ignores added stats or promoted classes.");
+Check(MuMainItemRules.MeetsRequirements(equipItem, state), "Equip check ignores added stats or promoted classes.");
 state.AddedStrength = 0;
-Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows insufficient Strength."); state.AddedStrength = 1;
+Check(!MuMainItemRules.MeetsRequirements(equipItem, state), "Equip check allows insufficient Strength."); state.AddedStrength = 1;
 state.Vitality = 79;
-Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows insufficient Vitality."); state.Vitality = 80;
+Check(!MuMainItemRules.MeetsRequirements(equipItem, state), "Equip check allows insufficient Vitality."); state.Vitality = 80;
 state.Energy = 119;
-Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows insufficient Energy."); state.Energy = 120;
+Check(!MuMainItemRules.MeetsRequirements(equipItem, state), "Equip check allows insufficient Energy."); state.Energy = 120;
 state.Leadership = 29;
-Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows insufficient Command."); state.Leadership = 30;
+Check(!MuMainItemRules.MeetsRequirements(equipItem, state), "Equip check allows insufficient Command."); state.Leadership = 30;
 state.Agility = 139;
-Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows insufficient Agility."); state.Agility = 140;
-normal.Definition.RequiredLevel = 401;
-Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows insufficient Level."); normal.Definition.RequiredLevel = 0;
+Check(!MuMainItemRules.MeetsRequirements(equipItem, state), "Equip check allows insufficient Agility."); state.Agility = 140;
+equipItem.Definition.RequiredLevel = 401;
+Check(!MuMainItemRules.MeetsRequirements(equipItem, state), "Equip check allows insufficient Level."); equipItem.Definition.RequiredLevel = 0;
 state.Class = CharacterClassNumber.HighElf;
-Check(!MuMainItemRules.MeetsRequirements(normal, state), "Equip check allows the wrong character class.");
+Check(!MuMainItemRules.MeetsRequirements(equipItem, state), "Equip check allows the wrong character class.");
 var displayType = typeof(BmdPreviewRenderer).Assembly.GetType("Client.Main.Core.Utilities.MuMainInventoryDisplay")!;
 var getDisplay = displayType.GetMethod("Get", BindingFlags.Public | BindingFlags.Static)!;
 var worldMatrix = displayType.GetMethod("WorldMatrix")!;

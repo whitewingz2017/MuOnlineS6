@@ -11,5 +11,6 @@
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.5" />
     <ProjectReference Include="../../Client.Main/Client.Main.csproj" />
+    <None Include="server-requirement-cases.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -128,6 +128,8 @@ namespace Client.Main.Controls.UI.Game
         private CharacterState _characterState;
 
         private InventoryItem _hoveredItem;
+        private InventoryItem _mobileSelectedItem;
+        private RequestDialog _mobileBuyDialog;
         private Point _hoveredSlot = new(-1, -1);
         private GameTime _currentGameTime;
 
@@ -936,7 +938,7 @@ namespace Client.Main.Controls.UI.Game
 
                 if (texture != null)
                 {
-                    spriteBatch.Draw(texture, rect, Color.White * Alpha);
+                    spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, rect), Color.White * Alpha);
 
                     if (JewelShineOverlay.ShouldShine(item))
                     {
@@ -972,11 +974,15 @@ namespace Client.Main.Controls.UI.Game
             if (_hoveredItem == null || _font == null) return;
 
             var lines = ItemUiHelper.BuildTooltipLines(_hoveredItem);
+            if (UiThemeManager.IsMobilePlatform)
+                lines.RemoveAll(line => line.text == "Tap again for Use / Drop");
             int buyPrice = ItemPriceCalculator.CalculateBuyPrice(_hoveredItem);
             if (buyPrice > 0)
             {
                 lines.Add(($"Buy Price: {buyPrice} Zen", Theme.TextGold));
             }
+            if (UiThemeManager.IsMobilePlatform)
+                lines.Add(("Tap again to buy", Theme.TextGold));
             float scale = ItemUiHelper.FitTooltipScale(_font, lines, 0.44f, UiScaler.VirtualSize);
 
             const int paddingX = 4;
@@ -1070,13 +1076,38 @@ namespace Client.Main.Controls.UI.Game
             if (svc != null)
             {
                 var selectedItem = _hoveredItem;
-                RequestDialog.Show($"Are you sure to buy this?\n{selectedItem.Definition.Name}\nBuy Price: {ItemPriceCalculator.CalculateBuyPrice(selectedItem)} Zen",
+                if (UiThemeManager.IsMobilePlatform && !ReferenceEquals(_mobileSelectedItem, selectedItem))
+                {
+                    _mobileSelectedItem = selectedItem;
+                    // First tap keeps the item's tooltip visible. The confirmation
+                    // dialog is reserved for a second tap on this same item.
+                    return;
+                }
+                _mobileSelectedItem = selectedItem;
+                var dialog = RequestDialog.Show($"Are you sure to buy this?\n{selectedItem.Definition.Name}\nBuy Price: {ItemPriceCalculator.CalculateBuyPrice(selectedItem):N0} Zen",
                     onAccept: () =>
                     {
+                        _mobileSelectedItem = null;
                         if (Visible && _items.Contains(selectedItem))
                             _ = svc.SendBuyItemFromNpcRequestAsync(slot);
-                    }, acceptText: "Buy", rejectText: "Cancel");
+                    }, onReject: () => _mobileSelectedItem = null,
+                    acceptText: "Buy", rejectText: "Cancel");
+                if (UiThemeManager.IsMobilePlatform)
+                    PositionMobileBuyDialog(dialog);
             }
+        }
+
+        private void PositionMobileBuyDialog(RequestDialog dialog)
+        {
+            _mobileBuyDialog = dialog;
+            if (dialog == null) return;
+            dialog.Align = ControlAlign.None;
+            dialog.X = Math.Min(UiScaler.VirtualSize.X - dialog.ViewSize.X - 12, DisplayRectangle.Right + 12);
+            dialog.Y = Math.Max(12, (UiScaler.VirtualSize.Y - dialog.ViewSize.Y) / 2);
+            dialog.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_mobileBuyDialog, dialog)) _mobileBuyDialog = null;
+            };
         }
 
         private void UpdateHoverState()
@@ -1124,6 +1155,9 @@ namespace Client.Main.Controls.UI.Game
             _itemTextureCache.Clear();
             _bmdPreviewCache.Clear();
             _hoveredItem = null;
+            _mobileSelectedItem = null;
+            _mobileBuyDialog?.Close();
+            _mobileBuyDialog = null;
             _hoveredSlot = new Point(-1, -1);
             _isDragging = false;
             _pendingShow = false;
@@ -1141,7 +1175,8 @@ namespace Client.Main.Controls.UI.Game
             var controls = scene.Controls.GetSnapshotArray();
             for (int i = controls.Length - 1; i >= 0; i--)
             {
-                if (controls[i] is DialogControl dialog && dialog.Visible)
+                if (controls[i] is DialogControl dialog && dialog.Visible &&
+                    !ReferenceEquals(dialog, _mobileBuyDialog))
                 {
                     return true;
                 }
@@ -1260,45 +1295,7 @@ namespace Client.Main.Controls.UI.Game
                 return tex;
             }
 
-            bool isHovered = animated;
-
-            // Material animation for non-hovered items (if enabled)
-            if (!isHovered && Constants.ENABLE_ITEM_MATERIAL_ANIMATION)
-            {
-                try
-                {
-                    var mat = BmdPreviewRenderer.GetMaterialAnimatedPreview(item, width, height, _currentGameTime);
-                    if (mat != null)
-                    {
-                        return mat;
-                    }
-                }
-                catch { }
-            }
-
-            if (isHovered)
-            {
-                try
-                {
-                    return BmdPreviewRenderer.GetSmoothAnimatedPreview(item, width, height, _currentGameTime);
-                }
-                catch { return null; }
-            }
-
-            var cacheKey = (item, width, height, false);
-            if (_bmdPreviewCache.TryGetValue(cacheKey, out var cachedPreview) && cachedPreview != null)
-                return cachedPreview;
-
-            try
-            {
-                var preview = BmdPreviewRenderer.GetPreview(item, width, height);
-                if (preview != null)
-                {
-                    _bmdPreviewCache[cacheKey] = preview;
-                }
-                return preview;
-            }
-            catch { return null; }
+            return BmdPreviewRenderer.GetOverflowPreview(item, width, height, _currentGameTime, animated);
         }
 
         // ═══════════════════════════════════════════════════════════════

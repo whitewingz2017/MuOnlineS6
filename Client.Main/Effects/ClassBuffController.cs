@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System.Collections.Generic;
 using Client.Main.Controls;
 using Client.Main.Core.Client;
@@ -25,12 +25,12 @@ namespace Client.Main.Effects
 
         private void OnBuffChanged(object? sender, BuffStateChangedEventArgs e)
         {
-            if (e.EffectId is not (BuffEffectId.ManaShield or BuffEffectId.CriticalDamage or BuffEffectId.CriticalDamageMastery or BuffEffectId.Berserk or BuffEffectId.Reflection))
+            if (e.EffectId is not (BuffEffectId.IgnoreDefense or BuffEffectId.IncreaseHealth or BuffEffectId.IncreaseBlock or BuffEffectId.ManaShield or BuffEffectId.CriticalDamage or BuffEffectId.CriticalDamageMastery or BuffEffectId.Berserk or BuffEffectId.Reflection))
                 return;
             ushort playerId = (ushort)(e.PlayerId & 0x7FFF);
             MuGame.ScheduleOnMainThread(() =>
             {
-                if (_buffs.HasBuff(playerId, BuffEffectId.ManaShield) || _buffs.HasBuff(playerId, BuffEffectId.CriticalDamage) || _buffs.HasBuff(playerId, BuffEffectId.CriticalDamageMastery) || _buffs.HasBuff(playerId, BuffEffectId.Berserk) || _buffs.HasBuff(playerId, BuffEffectId.Reflection))
+                if (_buffs.HasBuff(playerId, BuffEffectId.IgnoreDefense) || _buffs.HasBuff(playerId, BuffEffectId.IncreaseHealth) || _buffs.HasBuff(playerId, BuffEffectId.IncreaseBlock) || _buffs.HasBuff(playerId, BuffEffectId.ManaShield) || _buffs.HasBuff(playerId, BuffEffectId.CriticalDamage) || _buffs.HasBuff(playerId, BuffEffectId.CriticalDamageMastery) || _buffs.HasBuff(playerId, BuffEffectId.Berserk) || _buffs.HasBuff(playerId, BuffEffectId.Reflection))
                     _players.Add(playerId);
                 else
                     _players.Remove(playerId);

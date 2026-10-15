@@ -118,7 +118,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 {
                     var item = new InventoryItem(definition, Point.Zero, _items[i].ItemData);
                     var texture = (MuGame.Instance.ActiveScene as Client.Main.Scenes.GameScene)?.InventoryControl?.ResolveAuxiliaryItemTexture(item, itemRect.Width, itemRect.Height - 12);
-                    if (texture != null) spriteBatch.Draw(texture, new Rectangle(itemRect.X, itemRect.Y, itemRect.Width, itemRect.Height - 12), Color.White);
+                    if (texture != null) spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, new Rectangle(itemRect.X, itemRect.Y, itemRect.Width, itemRect.Height - 12)), Color.White);
                 }
                 // Price text
                 string price = _items[i].Price.ToString("N0");

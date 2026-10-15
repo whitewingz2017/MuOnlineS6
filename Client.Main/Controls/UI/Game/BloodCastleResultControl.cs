@@ -217,7 +217,7 @@ namespace Client.Main.Controls.UI.Game
             y += line2Size.Y + 20;
 
             // Experience
-            string expText = $"Experience Gained: {_experience:N0}";
+            string expText = $"Experience Gained: {_experience.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}";
             Vector2 expSize = _font.MeasureString(expText) * FONT_SCALE_BODY;
             float expX = rect.X + (rect.Width - expSize.X) / 2f;
             DrawTextWithShadow(sb, _font, expText, expX, y, FONT_SCALE_BODY, Theme.ExpColor);
@@ -226,7 +226,7 @@ namespace Client.Main.Controls.UI.Game
             // Zen (only on success)
             if (_success)
             {
-                string zenText = $"Zen Gained: {_zen:N0}";
+                string zenText = $"Zen Gained: {_zen.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}";
                 Vector2 zenSize = _font.MeasureString(zenText) * FONT_SCALE_BODY;
                 float zenX = rect.X + (rect.Width - zenSize.X) / 2f;
                 DrawTextWithShadow(sb, _font, zenText, zenX, y, FONT_SCALE_BODY, Theme.ZenColor);

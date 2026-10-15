@@ -140,6 +140,7 @@ namespace Client.Main.Core.Client
         /// when the server animation packet doesn't include coordinates.
         /// </summary>
         public ushort LastAreaSkillId { get; set; } = 0;
+        public ushort LastAreaSkillTargetId { get; set; } = 0;
         public byte LastAreaSkillTargetX { get; set; } = 0;
         public byte LastAreaSkillTargetY { get; set; } = 0;
         public byte LastAreaSkillAnimationCounter { get; set; } = 0;

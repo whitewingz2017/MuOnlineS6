@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.Network;
 using Client.Main.Networking.PacketHandling;
 using System;
@@ -914,8 +914,11 @@ namespace Client.Main.Networking.Services
 
             try
             {
-                await _connectionManager.Connection.SendAsync(() =>
-                    PacketBuilder.BuildSkillRequestPacket(_connectionManager.Connection.Output, skillId, targetId));
+                if (Client.Main.Objects.Effects.Skills.SkillVisualEffectRegistry.GetBaseSkillId(skillId) == 263)
+                    await _connectionManager.Connection.SendRageAttackRangeRequestAsync(skillId, targetId);
+                else
+                    await _connectionManager.Connection.SendAsync(() =>
+                        PacketBuilder.BuildSkillRequestPacket(_connectionManager.Connection.Output, skillId, targetId));
                 _logger.LogInformation("Skill request sent: SkillID={SkillId}, TargetID={TargetId}.", skillId, targetId);
             }
             catch (Exception ex)

@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System;
 using System.Collections.Generic;
 
@@ -17,6 +17,9 @@ namespace Client.Main.Core.Client
     {
         private static readonly Dictionary<BuffEffectId, BuffDefinition> Definitions = new()
         {
+            [BuffEffectId.IgnoreDefense] = Create(BuffEffectId.IgnoreDefense, "Ignore Defense", "Defense penetration increased", null),
+            [BuffEffectId.IncreaseHealth] = Create(BuffEffectId.IncreaseHealth, "Increase Health", "Maximum health increased", null),
+            [BuffEffectId.IncreaseBlock] = Create(BuffEffectId.IncreaseBlock, "Increase Block", "Block chance increased", null),
             [BuffEffectId.GreaterDamage] = Create(BuffEffectId.GreaterDamage, "Greater Damage", "Attack increased", TimeSpan.FromSeconds(60)),
             [BuffEffectId.GreaterDefense] = Create(BuffEffectId.GreaterDefense, "Greater Defense", "Defense increased", TimeSpan.FromSeconds(60)),
             [BuffEffectId.ManaShield] = Create(BuffEffectId.ManaShield, "Mana Shield", "Damage absorbed by mana", null),

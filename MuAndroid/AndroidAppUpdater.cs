@@ -33,15 +33,14 @@ internal sealed class AndroidAppUpdater
             if (!response.IsSuccessStatusCode) return;
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
             var release = json.RootElement;
-            long code = release.GetProperty("versionCode").GetInt64();
+            string version = release.GetProperty("version").GetString();
             var installed = _activity.PackageManager.GetPackageInfo(_activity.PackageName, PackageInfoFlags.SigningCertificates);
-            if (code <= installed.LongVersionCode) return;
+            if (CompareVersions(version, installed.VersionName) <= 0) return;
             var url = new Uri(Server, release.GetProperty("downloadUrl").GetString());
             if (url.Scheme != Server.Scheme || url.Authority != Server.Authority) return;
             string hash = release.GetProperty("sha256").GetString();
             long size = release.GetProperty("fileSize").GetInt64();
             if (hash?.Length != 64 || size <= 0 || size > 2147483648L) return;
-            string version = release.GetProperty("version").GetString();
             string notes = release.GetProperty("notes").GetString();
             bool mandatory = release.TryGetProperty("mandatory", out var flag) && flag.GetBoolean();
             _activity.RunOnUiThread(() =>
@@ -50,7 +49,7 @@ internal sealed class AndroidAppUpdater
                 var dialog = new AlertDialog.Builder(_activity)
                     .SetTitle($"TwinMU update {version}")
                     .SetMessage($"A new version is available.\n\n{notes}\n\nDownload size: {size / 1048576d:0.0} MB")
-                    .SetPositiveButton("Download update", async (_, _) => await DownloadAsync(url, hash, size, code));
+                    .SetPositiveButton("Download update", async (_, _) => await DownloadAsync(url, hash, size, version));
                 if (!mandatory) dialog.SetNegativeButton("Later", (_, _) => { });
                 else dialog.SetNegativeButton("Close game", (_, _) => _activity.Finish());
                 dialog.SetCancelable(!mandatory).Show();
@@ -59,7 +58,18 @@ internal sealed class AndroidAppUpdater
         catch (Exception ex) { Android.Util.Log.Info("TwinMUUpdater", $"Update check unavailable: {ex.Message}"); }
     }
 
-    private async Task DownloadAsync(Uri url, string hash, long size, long code)
+    internal static int CompareVersions(string left, string right)
+    {
+        static Version Parse(string value)
+        {
+            if (!Version.TryParse(value?.Trim(), out var version))
+                throw new InvalidDataException($"Invalid application version: {value}");
+            return new Version(version.Major, version.Minor, Math.Max(0, version.Build), Math.Max(0, version.Revision));
+        }
+        return Parse(left).CompareTo(Parse(right));
+    }
+
+    private async Task DownloadAsync(Uri url, string hash, long size, string version)
     {
         var progress = new ProgressDialog(_activity);
         progress.SetTitle("Downloading TwinMU update");
@@ -103,9 +113,16 @@ internal sealed class AndroidAppUpdater
             var manager = _activity.PackageManager;
             var candidate = manager.GetPackageArchiveInfo(path, PackageInfoFlags.SigningCertificates);
             var installed = manager.GetPackageInfo(_activity.PackageName, PackageInfoFlags.SigningCertificates);
-            if (candidate == null || candidate.PackageName != installed.PackageName ||
-                candidate.LongVersionCode != code || candidate.LongVersionCode <= installed.LongVersionCode)
-                throw new InvalidDataException("The uploaded APK package or version does not match the release details.");
+            if (candidate == null)
+                throw new InvalidDataException("The downloaded file is not a readable Android APK.");
+            if (candidate.PackageName != installed.PackageName)
+                throw new InvalidDataException($"This APK belongs to {candidate.PackageName}; expected {installed.PackageName}.");
+            if (CompareVersions(candidate.VersionName, version) != 0)
+                throw new InvalidDataException($"The website lists version {version}, but the uploaded APK contains version {candidate.VersionName}. Upload the APK built with the listed version.");
+            if (CompareVersions(candidate.VersionName, installed.VersionName) <= 0)
+                throw new InvalidDataException($"APK version {candidate.VersionName} is not newer than installed version {installed.VersionName}.");
+            if (candidate.LongVersionCode < installed.LongVersionCode)
+                throw new InvalidDataException($"Android cannot install this APK because its internal build code ({candidate.LongVersionCode}) is lower than the installed build ({installed.LongVersionCode}). Rebuild the newer version with a higher build code.");
             var expectedSigners = installed.SigningInfo.GetApkContentsSigners().Select(s => Convert.ToHexString(SHA256.HashData(s.ToByteArray()))).OrderBy(s => s).ToArray();
             var actualSigners = candidate.SigningInfo?.GetApkContentsSigners()?.Select(s => Convert.ToHexString(SHA256.HashData(s.ToByteArray()))).OrderBy(s => s).ToArray();
             if (actualSigners == null || !expectedSigners.SequenceEqual(actualSigners))
@@ -185,6 +202,31 @@ public sealed class UpdateInstallReceiver : BroadcastReceiver
             context.StartActivity(confirmation);
         }
         else if (status != 0)
+        {
             Android.Widget.Toast.MakeText(context, "TwinMU update was not installed. You can try again next launch.", Android.Widget.ToastLength.Long).Show();
+        }
+        else
+            UpdateRestartReceiver.LaunchAfterUpdate(context);
+    }
+}
+
+// Package replacement ends the running game process. Android delivers this to the
+// newly installed package, so relaunch does not depend on the old process surviving.
+[BroadcastReceiver(Enabled = true, Exported = false)]
+[IntentFilter(new[] { Intent.ActionMyPackageReplaced })]
+public sealed class UpdateRestartReceiver : BroadcastReceiver
+{
+    public override void OnReceive(Context context, Intent intent) => LaunchAfterUpdate(context);
+
+    internal static void LaunchAfterUpdate(Context context)
+    {
+        var preferences = context.GetSharedPreferences("twinmu_update", FileCreationMode.Private);
+        long now = SystemClock.ElapsedRealtime();
+        if (now - preferences.GetLong("last_relaunch_at", 0) < 10000) return;
+        preferences.Edit().PutLong("last_relaunch_at", now).Commit();
+        var launch = context.PackageManager.GetLaunchIntentForPackage(context.PackageName);
+        if (launch == null) return;
+        launch.AddFlags(ActivityFlags.NewTask | ActivityFlags.ClearTask);
+        context.StartActivity(launch);
     }
 }

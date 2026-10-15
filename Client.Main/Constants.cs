@@ -267,7 +267,7 @@ namespace Client.Main
             ENABLE_BMD_MESH_BATCHING = true;
             ENABLE_EFFECT_POOLING = true;
             ENABLE_STATIC_CHUNK_CACHING = true;
-            ENABLE_ITEM_MATERIAL_ANIMATION = false;
+            ENABLE_ITEM_MATERIAL_ANIMATION = true;
             ENABLE_DYNAMIC_BUFFER_POOL = true;
             RENDER_METRICS_LEVEL = 1;
             RENDER_SCALE = 1.0f;

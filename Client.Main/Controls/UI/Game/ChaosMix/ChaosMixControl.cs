@@ -298,7 +298,7 @@ namespace Client.Main.Controls.UI.Game
 
             if (texture != null)
             {
-                spriteBatch.Draw(texture, rect, Color.White * 0.9f);
+                spriteBatch.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, rect), Color.White * 0.9f);
             }
         }
 
@@ -669,7 +669,7 @@ namespace Client.Main.Controls.UI.Game
 
                 if (texture != null)
                 {
-                    sb.Draw(texture, rect, Color.White * Alpha);
+                    sb.Draw(texture, BmdPreviewRenderer.GetItemDrawRectangle(texture, rect), Color.White * Alpha);
                 }
                 else
                 {
@@ -1438,64 +1438,8 @@ namespace Client.Main.Controls.UI.Game
                 return tex;
             }
 
-            if (!allowGenerate)
-            {
-                var cachedPreview = BmdPreviewRenderer.TryGetCachedPreview(item, width, height);
-                return cachedPreview;
-            }
-
-            bool isHovered = animated;
-            if (!isHovered && Constants.ENABLE_ITEM_MATERIAL_ANIMATION)
-            {
-                try
-                {
-                    var mat = BmdPreviewRenderer.GetMaterialAnimatedPreview(item, width, height, _currentGameTime);
-                    if (mat != null)
-                    {
-                        return mat;
-                    }
-                }
-                catch
-                {
-                    // ignore
-                }
-            }
-
-            if (isHovered)
-            {
-                try
-                {
-                    var animatedTexture = BmdPreviewRenderer.GetAnimatedPreview(item, width, height, _currentGameTime);
-                    if (animatedTexture != null)
-                    {
-                        return animatedTexture;
-                    }
-                }
-                catch
-                {
-                    return null;
-                }
-            }
-
-            var key = (item, width, height, false);
-            if (_bmdPreviewCache.TryGetValue(key, out var cachedStatic) && cachedStatic != null)
-            {
-                return cachedStatic;
-            }
-
-            try
-            {
-                var preview = BmdPreviewRenderer.GetPreview(item, width, height);
-                if (preview != null)
-                {
-                    _bmdPreviewCache[key] = preview;
-                }
-                return preview;
-            }
-            catch
-            {
-                return null;
-            }
+            if (!allowGenerate) return BmdPreviewRenderer.TryGetCachedOverflowPreview(item, width, height);
+            return BmdPreviewRenderer.GetOverflowPreview(item, width, height, _currentGameTime, animated);
         }
 
         // ═══════════════════════════════════════════════════════════════

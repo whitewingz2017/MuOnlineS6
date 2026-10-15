@@ -20,7 +20,7 @@ namespace Client.Main.Controls.UI
         private const int DEFAULT_SHOWING_LINES = 6;
         private const int MIN_SHOWING_LINES = 3;
         private const int MAX_SHOWING_LINES = 15;
-        private const int FONT_LEADING = 4;
+        private const int FONT_LEADING = 6;
         private const int WND_TOP_BOTTOM_EDGE = 2;
         private const int WND_LEFT_RIGHT_EDGE = 4;
         private const int RESIZING_BTN_HEIGHT = 10;

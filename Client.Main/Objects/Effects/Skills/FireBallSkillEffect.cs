@@ -37,7 +37,7 @@ namespace Client.Main.Objects.Effects.Skills
             }
             else
             {
-                targetPosition = caster.WorldPosition.Translation + Vector3.UnitZ * 80f;
+                targetPosition = (context.TargetPosition ?? caster.WorldPosition.Translation) + Vector3.UnitZ * 80f;
             }
 
             return new ScrollOfFireBallEffect(startPosition, targetPosition);

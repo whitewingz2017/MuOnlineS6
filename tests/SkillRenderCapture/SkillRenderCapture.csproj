@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ClientMainTargetFramework>net10.0-windows</ClientMainTargetFramework>
+    <MonoGameFramework>MonoGame.Framework.WindowsDX</MonoGameFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Client.Main/Client.Main.csproj" AdditionalProperties="MonoGameFramework=MonoGame.Framework.WindowsDX;ClientMainTargetFramework=net10.0-windows;EnableMGCBItems=false" />
+    <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.5" />
+    <Content Include="../../MuWinDX/bin/Debug/net10.0-windows/win-x64/Content/**/*" Link="Content/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -82,19 +82,19 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 {
                     // Prefer cached previews to avoid render-target switching during the final draw pass.
                     // Try current drag size first (cached), then common UI sizes (inventory 35px, vault 25px), and scale if needed.
-                    itemTexture = BmdPreviewRenderer.TryGetCachedPreview(Item, ViewSize.X, ViewSize.Y);
+                    itemTexture = BmdPreviewRenderer.TryGetCachedOverflowPreview(Item, ViewSize.X, ViewSize.Y);
                     if (itemTexture == null)
                     {
                         int invW = Item.Definition.Width * InventoryControl.INVENTORY_SQUARE_WIDTH;
                         int invH = Item.Definition.Height * InventoryControl.INVENTORY_SQUARE_HEIGHT;
-                        itemTexture = BmdPreviewRenderer.TryGetCachedPreview(Item, invW, invH);
+                        itemTexture = BmdPreviewRenderer.TryGetCachedOverflowPreview(Item, invW, invH);
                     }
                     if (itemTexture == null)
                     {
                         const int VaultCell = 25; // matches VaultControl cell size
                         int vW = Item.Definition.Width * VaultCell;
                         int vH = Item.Definition.Height * VaultCell;
-                        itemTexture = BmdPreviewRenderer.TryGetCachedPreview(Item, vW, vH);
+                        itemTexture = BmdPreviewRenderer.TryGetCachedOverflowPreview(Item, vW, vH);
                     }
                     // If still null, skip generating to prevent flicker; fallback rectangle will be drawn this frame.
                 }
@@ -103,7 +103,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             if (itemTexture != null)
             {
                 // Draw the actual item texture with slight transparency to show it's being dragged
-                spriteBatch.Draw(itemTexture, destRect, Color.White * 0.9f);
+                spriteBatch.Draw(itemTexture, BmdPreviewRenderer.GetItemDrawRectangle(itemTexture, destRect), Color.White * 0.9f);
             }
             else
             {

@@ -27,36 +27,34 @@ namespace Client.Main.Objects.Effects
         // Original parameters from ZzzEffectJoint.cpp SubType 0
         private const float InitialZOffset = 100f;
         private const float TargetZOffset = 80f;
-        private const float Velocity = 40f;
+        private const float Velocity = 70f;
         private const float LifeTimeFrames = 49f;
-        private const int BaseMaxTails = 11;
-        private const int MaxTailCapacity = 24;
+        private const int BaseMaxTails = 6;
+        private const int MaxTailCapacity = 200;
         private const int SpiritCount = 4;
-        private const float HummingTurnRate = 12f;
+        private const float HummingTurnRate = 10f;
 
         // Keep cloud-like trail volume close to prior implementation.
-        private const float MainSpiritScale = 84f;
+        private const float MainSpiritScale = 80f;
         private const float VisualSpiritScale = 20f;
-        private const float AlphaMultiplier = 0.32f;
-        private const float RibbonVisibility = 0.62f;
         private const bool RenderVisualRibbonLayer = true;
         private const float TailOpacityRiseSpeed = 0.45f;
-        private const float TailOpacityDecaySpeed = 0.12f;
-        private const float TailShrinkRate = 0.35f;
 
         // Terrain darkening for spirit wake.
-        private const float DarkLightRadius = 330f;
-        private const float DarkLightIntensity = 1.45f;
+        private const float DarkLightRadius = 400f;
+        private const float DarkLightIntensity = 1f;
 
         // Subtractive blend state (RENDER_TYPE_ALPHA_BLEND_MINUS)
         private static readonly BlendState SubtractiveBlend = new BlendState
         {
-            ColorSourceBlend = Blend.SourceAlpha,
-            ColorDestinationBlend = Blend.One,
-            ColorBlendFunction = BlendFunction.ReverseSubtract,
-            AlphaSourceBlend = Blend.SourceAlpha,
-            AlphaDestinationBlend = Blend.One,
-            AlphaBlendFunction = BlendFunction.ReverseSubtract
+            // MuMain BlendMode::Subtract is GL_ZERO, GL_ONE_MINUS_SRC_COLOR,
+            // not a reverse-subtract blend equation.
+            ColorSourceBlend = Blend.Zero,
+            ColorDestinationBlend = Blend.InverseSourceColor,
+            ColorBlendFunction = BlendFunction.Add,
+            AlphaSourceBlend = Blend.Zero,
+            AlphaDestinationBlend = Blend.InverseSourceAlpha,
+            AlphaBlendFunction = BlendFunction.Add
         };
 
         private readonly WalkerObject _caster;
@@ -66,12 +64,12 @@ namespace Client.Main.Objects.Effects
 
         private readonly SpiritBolt[] _spirits = new SpiritBolt[SpiritCount * 2];
         private int _spiritCount;
+        private int _targetTailCount;
 
         // Dark lights for shadow effect (one per main spirit).
         private readonly DynamicLight[] _darkLights = new DynamicLight[SpiritCount];
 
-        // Characteristic "ghost figures" rendered by MODEL_LASER in original client.
-        // 3-layer stack creates heavy blur impression: core + two translucent trailing layers.
+        // MuMain emits MODEL_LASER once per source tick for each main spirit.
         private readonly EvilSpiritGhostModel?[] _spiritHeadCore = new EvilSpiritGhostModel?[SpiritCount];
         private readonly EvilSpiritGhostModel?[] _spiritHeadBlurA = new EvilSpiritGhostModel?[SpiritCount];
         private readonly EvilSpiritGhostModel?[] _spiritHeadBlurB = new EvilSpiritGhostModel?[SpiritCount];
@@ -140,6 +138,7 @@ namespace Client.Main.Objects.Effects
 
             _initialized = true;
             _spiritCount = 0;
+            _targetTailCount = ResolveTargetTailCount(FPSCounter.Instance.FPS_ANIMATION_FACTOR);
 
             Vector3 casterPos = _caster.WorldPosition.Translation;
             Vector3 startPos = casterPos + new Vector3(0, 0, InitialZOffset);
@@ -181,7 +180,7 @@ namespace Client.Main.Objects.Effects
                 {
                     Owner = this,
                     Position = startPos,
-                    Color = new Vector3(-0.82f, -0.82f, -0.82f), // Negative color = shadow/darkness
+                    Color = Vector3.Zero,
                     Radius = DarkLightRadius,
                     Intensity = DarkLightIntensity
                 };
@@ -300,7 +299,7 @@ namespace Client.Main.Objects.Effects
             EnsureSpiritHeads();
 
             float frameFactor = FPSCounter.Instance.FPS_ANIMATION_FACTOR;
-            int targetTailCount = ResolveTargetTailCount(frameFactor);
+            int targetTailCount = _targetTailCount;
 
             if (!_soundPlayed)
             {
@@ -364,7 +363,7 @@ namespace Client.Main.Objects.Effects
                     Vector3 forward = new Vector3(
                         MathF.Sin(yawRad) * MathF.Cos(pitchRad),
                         -MathF.Cos(yawRad) * MathF.Cos(pitchRad),
-                        MathF.Sin(pitchRad)
+                        -MathF.Sin(pitchRad)
                     );
 
                     spirit.Position += forward * Velocity * frameFactor;
@@ -389,44 +388,10 @@ namespace Client.Main.Objects.Effects
                 }
                 else
                 {
-                    // Smooth post-life fade: keep flying while the tail and opacity decay.
-                    spirit.TailOpacity = MathHelper.Clamp(
-                        spirit.TailOpacity - TailOpacityDecaySpeed * frameFactor,
-                        0f,
-                        1f);
-
-                    // Continue drifting forward during fade-out, so ghosts do not "freeze" in place.
-                    float fadeDrift = 0.25f + 0.65f * spirit.TailOpacity;
-                    float yawRad = MathHelper.ToRadians(spirit.Angle.Z);
-                    float pitchRad = MathHelper.ToRadians(spirit.Angle.X);
-                    Vector3 fadeForward = new Vector3(
-                        MathF.Sin(yawRad) * MathF.Cos(pitchRad),
-                        -MathF.Cos(yawRad) * MathF.Cos(pitchRad),
-                        MathF.Sin(pitchRad)
-                    );
-                    spirit.Position += fadeForward * Velocity * fadeDrift * frameFactor;
-
-                    // Keep the newest tail point attached to moving spirit while old segments fade out.
-                    if (spirit.NumTails > 0)
-                    {
-                        for (int t = spirit.NumTails - 1; t > 0; t--)
-                        {
-                            spirit.Tails[t] = spirit.Tails[t - 1];
-                        }
-                        CreateTail(ref spirit);
-                    }
-
-                    if (spirit.NumTails > 0)
-                    {
-                        spirit.TailShrinkAccumulator += frameFactor * TailShrinkRate;
-                        while (spirit.TailShrinkAccumulator >= 1f && spirit.NumTails > 0)
-                        {
-                            spirit.NumTails--;
-                            spirit.TailShrinkAccumulator -= 1f;
-                        }
-                    }
-
-                    spiritActive = spirit.NumTails > 0 && spirit.TailOpacity > 0.01f;
+                    // MuMain deletes the joint when its 49-frame lifetime ends.
+                    // Additional flight and a shrinking trail extended this cast.
+                    spirit.NumTails = 0;
+                    spirit.TailOpacity = 0f;
                 }
 
                 // Update corresponding dark light (main spirits at even indices: 0,2,4,6 -> light 0,1,2,3)
@@ -444,12 +409,11 @@ namespace Client.Main.Objects.Effects
                     {
                         _darkLights[lightIdx].Position = spirit.Position;
 
-                        float lifeFactor = MathHelper.Clamp(spirit.LifeTime / LifeTimeFrames, 0f, 1f);
-                        float tailFactor = MathHelper.Clamp(spirit.NumTails / (float)Math.Max(1, targetTailCount), 0f, 1f);
-                        float opacityFactor = tailFactor * spirit.TailOpacity;
-                        float darkness = -0.62f - 0.55f * Math.Max(lifeFactor, opacityFactor);
+                        // MuMain adds -(rand() % 4 + 4) * .01 terrain light
+                        // over four tiles; the old custom wake was over ten times darker.
+                        float darkness = spiritActive ? -(MuGame.Random.Next(4) + 4) * 0.01f : 0f;
                         _darkLights[lightIdx].Color = new Vector3(darkness, darkness, darkness);
-                        _darkLights[lightIdx].Intensity = DarkLightIntensity * Math.Max(lifeFactor, opacityFactor * 0.95f);
+                        _darkLights[lightIdx].Intensity = DarkLightIntensity;
                     }
                 }
 
@@ -467,9 +431,9 @@ namespace Client.Main.Objects.Effects
 
         private static int ResolveTargetTailCount(float frameFactor)
         {
-            float safeFactor = MathF.Max(frameFactor, 0.1f);
-            int scaled = (int)MathF.Ceiling(BaseMaxTails / safeFactor);
-            return Math.Clamp(scaled, BaseMaxTails, MaxTailCapacity);
+            float safeFactor = MathF.Max(frameFactor, 0.01f);
+            int scaled = (int)(BaseMaxTails / safeFactor);
+            return Math.Clamp(scaled, 2, MaxTailCapacity);
         }
 
         private void EnsureSpiritHeads()
@@ -490,28 +454,13 @@ namespace Client.Main.Objects.Effects
                     ref _spiritHeadCore[i],
                     _laserModel,
                     spawnPosition,
-                    1.1f,
-                    0.24f,
-                    0.46f,
+                    1.3f,
+                    1.0f,
+                    1.0f,
                     1.0f);
 
-                EnsureHeadLayer(
-                    ref _spiritHeadBlurA[i],
-                    _laserModel,
-                    spawnPosition,
-                    1.55f,
-                    0.1f,
-                    0.26f,
-                    0.8f);
-
-                EnsureHeadLayer(
-                    ref _spiritHeadBlurB[i],
-                    _laserModel,
-                    spawnPosition,
-                    2.05f,
-                    0.04f,
-                    0.16f,
-                    0.62f);
+                // MuMain emits a single MODEL_LASER at scale 1.3 per main spirit.
+                // Enlarged translucent duplicate heads were a custom addition.
             }
 
             _spiritHeadsSpawned = true;
@@ -522,12 +471,9 @@ namespace Client.Main.Objects.Effects
             if ((uint)headIndex >= SpiritCount)
                 return;
 
-            float lifeFactor = MathHelper.Clamp(spirit.LifeTime / LifeTimeFrames, 0f, 1f);
-            float tailFactor = MathHelper.Clamp(spirit.NumTails / (float)Math.Max(1, targetTailCount), 0f, 1f);
-            float fadeFactor = tailFactor * spirit.TailOpacity;
-            float brightness = forceFadeOut
-                ? fadeFactor * 0.45f
-                : Math.Max(lifeFactor, fadeFactor * 0.95f);
+            // MODEL_LASER copies the joint light (LifeTime * .1) into
+            // BlendMeshLight. A .45 floor left heads visible at cast expiry.
+            float brightness = forceFadeOut ? 0f : spirit.LifeTime * 0.1f;
 
             UpdateSpiritHeadLayer(_spiritHeadCore[headIndex], spirit, 0, brightness);
             UpdateSpiritHeadLayer(_spiritHeadBlurA[headIndex], spirit, 2, brightness * 0.86f);
@@ -591,7 +537,7 @@ namespace Client.Main.Objects.Effects
 
             head.Position = ResolveTrailPosition(in spirit, trailOffset);
             head.Angle = new Vector3(
-                MathHelper.ToRadians(spirit.Angle.X + 30f),
+                MathHelper.ToRadians(spirit.Angle.X),
                 0f,
                 MathHelper.ToRadians(spirit.Angle.Z));
             head.SetBrightness(brightness);
@@ -643,7 +589,9 @@ namespace Client.Main.Objects.Effects
 
             float horizontalDist = MathF.Sqrt(dx * dx + dy * dy);
             float dz = targetPosition.Z - position.Z;
-            float targetPitch = MathHelper.ToDegrees(MathF.Atan2(dz, horizontalDist));
+            // MuMain rotates (0, -velocity, 0) around X: positive pitch
+            // moves down. Its MoveHumming therefore negates the elevation.
+            float targetPitch = -MathHelper.ToDegrees(MathF.Atan2(dz, horizontalDist));
 
             angle.X = TurnAngle(angle.X, targetPitch, turn);
         }
@@ -740,31 +688,21 @@ namespace Client.Main.Objects.Effects
                 if (spirit.NumTails < 2)
                     continue;
 
-                float lifeLuminosity = MathHelper.Clamp(spirit.LifeTime * 0.1f, 0f, 1f);
-                float tailLuminosity = MathHelper.Clamp(spirit.NumTails / (float)MaxTailCapacity, 0f, 1f) * 0.6f;
-                float luminosity = Math.Max(lifeLuminosity, tailLuminosity) * MathHelper.Clamp(spirit.TailOpacity, 0f, 1f);
-                float tailDenominator = Math.Max(1f, spirit.NumTails - 1f);
+                float luminosity = MathHelper.Clamp(spirit.LifeTime * 0.1f, 0f, 1f);
+                float tailDenominator = Math.Max(1f, _targetTailCount - 1f);
 
                 for (int j = 0; j < spirit.NumTails - 1; j++)
                 {
                     ref var current = ref spirit.Tails[j];
                     ref var next = ref spirit.Tails[j + 1];
 
-                    // Light falloff along tail
-                    float light1 = (spirit.NumTails - j) / tailDenominator;
-                    float light2 = (spirit.NumTails - (j + 1)) / tailDenominator;
-
-                    // Apply transparency multiplier for more ethereal look
-                    float alpha1 = luminosity * light1 * AlphaMultiplier * RibbonVisibility;
-                    float alpha2 = luminosity * light2 * AlphaMultiplier * RibbonVisibility;
-
-                    // White color for subtractive blend -> appears dark
-                    Color c1 = new Color(alpha1, alpha1, alpha1, alpha1);
-                    Color c2 = new Color(alpha2, alpha2, alpha2, alpha2);
-
-                    // UV coordinates
-                    float u1 = light1;
-                    float u2 = light2;
+                    // MuMain's ordinary spirit joints use one face colour and
+                    // alpha 1. Texture coordinates, rather than a custom vertex
+                    // fade, shape the wake along the occupied tail points.
+                    Color c1 = new Color(luminosity, luminosity, luminosity, 1f);
+                    Color c2 = c1;
+                    float u1 = (spirit.NumTails - 1 - j) / tailDenominator;
+                    float u2 = (spirit.NumTails - 2 - j) / tailDenominator;
 
                     // FACE ONE: Quad from V2-V3 (vertical ribbon)
                     if (quadIndex * 4 + 4 <= _vertices.Length)
@@ -834,15 +772,19 @@ namespace Client.Main.Objects.Effects
                 _alphaMax = MathHelper.Clamp(Math.Max(alphaMax, _alphaMin), 0f, 1f);
                 _brightnessFactor = brightnessFactor;
 
-                ContinuousAnimation = true;
-                AnimationSpeed = 4f;
+                // Each native head lives one frame and starts at animation zero.
+                ContinuousAnimation = false;
+                AnimationSpeed = 0f;
                 Scale = scale;
 
                 LightEnabled = false;
+                // Unlit meshes still use their explicit vertex colour. Zero
+                // source colour makes GL_ZERO / ONE_MINUS_SRC_COLOR invisible.
+                Light = Vector3.One;
                 IsTransparent = true;
                 DepthState = DepthStencilState.DepthRead;
-                BlendState = BlendState.NonPremultiplied;
-                BlendMeshState = BlendState.NonPremultiplied;
+                BlendState = SubtractiveBlend;
+                BlendMeshState = SubtractiveBlend;
                 BlendMesh = 0;
                 BlendMeshLight = 0.9f;
                 Alpha = (_alphaMin + _alphaMax) * 0.5f;
@@ -858,8 +800,8 @@ namespace Client.Main.Objects.Effects
 
             public void SetBrightness(float brightness)
             {
-                float adjusted = MathHelper.Clamp(brightness * _brightnessFactor, 0f, 1.25f);
-                BlendMeshLight = MathHelper.Clamp(0.45f + adjusted * 0.7f, 0.45f, 1.2f);
+                float adjusted = Math.Max(0f, brightness * _brightnessFactor);
+                BlendMeshLight = adjusted;
                 Alpha = MathHelper.Clamp(_alphaMin + adjusted * (_alphaMax - _alphaMin), _alphaMin, _alphaMax);
             }
         }

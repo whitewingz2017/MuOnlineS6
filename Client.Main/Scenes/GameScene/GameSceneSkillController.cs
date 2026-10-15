@@ -4,9 +4,12 @@ using Client.Data.ATT;
 using Client.Main.Controls;
 using Client.Main.Controls.UI.Game.Hud;
 using Client.Main.Controls.UI.Game.Skills;
+using Client.Main.Controllers;
+using Client.Main.Models;
 using Client.Main.Core.Utilities;
 using Client.Main.Objects;
 using Client.Main.Objects.Effects;
+using Client.Main.Objects.Effects.Skills;
 using Client.Main.Objects.Player;
 using Client.Main.Objects.Pets;
 using Microsoft.Extensions.Logging;
@@ -50,6 +53,7 @@ namespace Client.Main.Scenes
         private readonly Dictionary<ushort, double> _nextSkillAllowedMs = new();
         private byte _nextAreaSkillAnimationCounter;
         private bool _novaCharging;
+        private double _nextSummonPartyNoticeMs;
 
         public GameSceneSkillController(
             GameScene scene,
@@ -887,6 +891,17 @@ namespace Client.Main.Scenes
                 if (candidate is PlayerObject player && !friendly && !_isDuelAttackTarget(player)) return;
                 if (candidate is MonsterObject && friendly) return;
                 float distance = Vector2.DistanceSquared(location, candidate.Location);
+                // Power Wave is targeted in MuMain, but its travelling visual follows
+                // the aim bearing. Select a victim along that path, not only its end.
+                if (skill.SkillId == 11)
+                {
+                    Vector2 offset = candidate.Location - hero.Location;
+                    float along = Vector2.Dot(offset, direction);
+                    float acrossSquared = MathF.Max(0f, offset.LengthSquared() - along * along);
+                    if (along < 0f || along > range || acrossSquared > 0.75f * 0.75f)
+                        return;
+                    distance = along * along / (range * range) * 2.25f;
+                }
                 if (distance <= best && IsInSkillRange(candidate.Location, skill.SkillId))
                 {
                     best = distance;
@@ -897,9 +912,13 @@ namespace Client.Main.Scenes
             foreach (var player in _scene.World.Players) Consider(player);
             hero.FaceTowards(location, immediate: true);
             if (SkillDatabase.IsAreaSkill(skill.SkillId))
-                return UseAreaSkill(skill, target?.NetworkId ?? (ushort)0, location);
+                return SkillCastRules.UsesCasterAreaPosition(skill.SkillId)
+                    ? UseAreaSkill(skill, target?.NetworkId ?? (ushort)0, hero.Location)
+                    : UseAreaSkill(skill, target?.NetworkId ?? (ushort)0, location);
             if (target is PlayerObject playerTarget) return UseSkillOnPlayerTarget(skill, playerTarget);
-            return target is MonsterObject monsterTarget && UseSkillOnTarget(skill, monsterTarget);
+            return target is MonsterObject monsterTarget
+                ? UseSkillOnTarget(skill, monsterTarget)
+                : UseSkillWithoutTarget(skill, location);
         }
 
         private bool CanRepeatTouchSkill(Core.Client.SkillEntryState skill, MonsterObject target) =>
@@ -928,12 +947,66 @@ namespace Client.Main.Scenes
 
             if (SkillDatabase.IsAreaSkill(skill.SkillId))
             {
+                if (SkillCastRules.UsesCasterAreaPosition(skill.SkillId) &&
+                    !SkillCastRules.RequiresExplicitAreaTarget(skill.SkillId))
+                    return UseAreaSkill(skill, 0, hero.Location);
+
                 Vector2 targetLocation = target?.Location ?? hero.Location;
                 ushort targetId = target?.NetworkId ?? (ushort)0;
                 return UseAreaSkill(skill, targetId, targetLocation);
             }
 
-            return target != null && UseSkillOnTarget(skill, target);
+            return target != null ? UseSkillOnTarget(skill, target) : UseSkillWithoutTarget(skill);
+        }
+
+        private bool UseSkillWithoutTarget(Core.Client.SkillEntryState skill, Vector2? aimedLocation = null)
+        {
+            var hero = _scene.Hero;
+            if (skill == null || hero == null || hero.IsDead)
+                return false;
+
+            // Sword, lance, and close-combat target skills still need a victim.
+            // Ranged skills follow MuMain's 0xFFFF untargeted request path.
+            if (skill.SkillId is >= 19 and <= 23 or >= 43 and <= 49 or >= 260 and <= 270 ||
+                GetCastRange(skill.SkillId, hasTarget: false) <= 2f)
+                return false;
+
+            if (!TryBeginSkillCast(skill, hero))
+                return false;
+
+            // MuMain uses 0xFFFF when the player casts without a selected target.
+            // OpenMU does not echo that request when there is no attackable target,
+            // so create the same local cast visual that MuMain creates immediately.
+            if (_scene.World is WalkableWorldControl world)
+            {
+                Vector2 tile = aimedLocation ?? hero.Location + new Vector2(
+                    MathF.Sin(hero.Angle.Z), -MathF.Cos(hero.Angle.Z)) *
+                    MathF.Min(4f, GetCastRange(skill.SkillId, hasTarget: false));
+                tile = Vector2.Clamp(tile, Vector2.Zero, new Vector2(Constants.TERRAIN_SIZE - 1));
+                float x = (tile.X + 0.5f) * Constants.TERRAIN_SCALE;
+                float y = (tile.Y + 0.5f) * Constants.TERRAIN_SCALE;
+                Vector3 destination = new(x, y, world.Terrain.RequestTerrainHeight(x, y));
+                var context = new SkillEffectContext
+                {
+                    Caster = hero,
+                    TargetId = 0,
+                    SkillId = skill.SkillId,
+                    TargetPosition = destination,
+                    World = world
+                };
+                if (SkillVisualEffectRegistry.TrySpawn(skill.SkillId, context, out var effect) && effect != null)
+                {
+                    if (effect.World == null)
+                        world.Objects.Add(effect);
+                    if (effect.Status == GameControlStatus.NonInitialized)
+                        MuGame.TaskScheduler?.QueueTask(
+                            async () => await effect.Load(),
+                            Controllers.TaskScheduler.Priority.High,
+                            $"SkillEffect.Load.{effect.GetType().Name}");
+                }
+            }
+            _ = MuGame.Network.GetCharacterService().SendSkillRequestAsync(skill.SkillId, 0xFFFF);
+            return true;
         }
 
         private bool UseSelfSkill(Core.Client.SkillEntryState skill, PlayerObject hero)
@@ -1059,6 +1132,7 @@ namespace Client.Main.Scenes
             if (characterState != null)
             {
                 characterState.LastAreaSkillId = skill.SkillId;
+                characterState.LastAreaSkillTargetId = extraTargetId;
                 characterState.LastAreaSkillTargetX = requestTargetX;
                 characterState.LastAreaSkillTargetY = requestTargetY;
                 characterState.LastAreaSkillAnimationCounter = animationCounter;
@@ -1103,6 +1177,22 @@ namespace Client.Main.Scenes
 
         private bool TryBeginSkillCast(Core.Client.SkillEntryState skill, PlayerObject hero)
         {
+            // MuMain explicitly marks party teleport as party-only. OpenMU rejects
+            // solo requests without an animation response, so do not play a misleading
+            // cast animation or consume the local cooldown for that rejected request.
+            if (SkillVisualEffectRegistry.GetBaseSkillId(skill.SkillId) == 63 &&
+                MuGame.Network?.GetPartyManager()?.IsPartyActive() != true)
+            {
+                double now = GetNowMs();
+                if (now >= _nextSummonPartyNoticeMs)
+                {
+                    _scene.ShowNotificationMessage(
+                        MUnique.OpenMU.Network.Packets.ServerToClient.ServerMessage.MessageType.BlueNormal,
+                        "Summon requires a party.");
+                    _nextSummonPartyNoticeMs = now + 3000;
+                }
+                return false;
+            }
             if (skill.SkillId == 76 && MuGame.Network?.GetCharacterState()?.IsFenrirEquipped != true)
                 return false;
             if (!CanStartCast(hero))

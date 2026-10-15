@@ -103,7 +103,7 @@ namespace Client.Main.Objects.Effects
                 float cos = MathF.Cos((phase + 11111) * 0.1113f);
                 // Store offsets: old tails follow the recipient when they move.
                 _tails[trail, _tailHead] = new Vector3((cos * y - sin * z) * 80f,
-                    (sin * y + cos * z) * 80f, 110f + x * 120f);
+                    (sin * y + cos * z) * 80f, (_soulBarrier ? 120f : 110f) + x * 120f);
             }
         }
 
@@ -114,7 +114,7 @@ namespace Client.Main.Objects.Effects
             DrawWorldGeometry(_auraTexture, _vertices, BuildAuraVertices());
         }
 
-        internal static void DrawWorldGeometry(Texture2D drawTexture, VertexPositionColorTexture[] vertices, int count)
+        internal static void DrawWorldGeometry(Texture2D drawTexture, VertexPositionColorTexture[] vertices, int count, BlendState? blendOverride = null, SamplerState? samplerOverride = null)
         {
             if (count == 0)
                 return;
@@ -134,10 +134,10 @@ namespace Client.Main.Objects.Effects
             int referenceAlpha = effect.ReferenceAlpha;
             try
             {
-                gd.BlendState = Blendings.OneOneAdditive;
+                gd.BlendState = blendOverride ?? Blendings.OneOneAdditive;
                 gd.DepthStencilState = DepthStencilState.DepthRead;
                 gd.RasterizerState = RasterizerState.CullNone;
-                gd.SamplerStates[0] = SamplerState.LinearWrap;
+                gd.SamplerStates[0] = samplerOverride ?? SamplerState.LinearWrap;
                 effect.World = Matrix.Identity;
                 effect.View = Camera.Instance.View;
                 effect.Projection = Camera.Instance.Projection;
@@ -204,7 +204,9 @@ namespace Client.Main.Objects.Effects
         {
             int count = 0;
             Vector3 center = Owner.WorldPosition.Translation;
-            // MuMain's scale-20 joint has two crossed ribbon faces.
+            // WSclient creates Soul Barrier's subtype-0 joints at scale 50;
+            // elf aura joints use scale 20. Each face spans half that width.
+            float halfWidth = _soulBarrier ? 25f : 10f;
             for (int trail = 0; trail < TrailCount; trail++)
             {
                 for (int tail = 0; tail < _tailLength - 1; tail++)
@@ -214,8 +216,8 @@ namespace Client.Main.Objects.Effects
                     float height = MathF.Max(0f, (a.Z - center.Z - 50f) * 0.01f);
                     var color = AuraColor(height);
                     float u = (_tailLength - tail) / 16f;
-                    AddFace(ref count, a, b, Vector3.UnitX * 10f, u, color);
-                    AddFace(ref count, a, b, Vector3.UnitZ * 10f, u, color);
+                    AddFace(ref count, a, b, Vector3.UnitX * halfWidth, u, color);
+                    AddFace(ref count, a, b, Vector3.UnitZ * halfWidth, u, color);
                 }
             }
             return count;

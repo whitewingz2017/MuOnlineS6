@@ -222,6 +222,9 @@ namespace Client.Main.Objects.Player
             Children.Add(EquippedHelper);
             Children.Add(Vehicle);
             Children.Add(FullSetAura);
+            Grade15ArmorEffect.Attach(this);
+            Children.Add(new Grade15WeaponEffect(this));
+            Children.Add(new GameMasterBadgeEffect(this));
 
             // Enable mouse hover interactions so the name is shown
             Interactive = true;

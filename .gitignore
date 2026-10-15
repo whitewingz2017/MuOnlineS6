@@ -20,3 +20,6 @@ Thumbs.db
 /MGUI
 *.apk
 /artifacts
+/buff-reference-build
+/Publish
+/Publish/Windows

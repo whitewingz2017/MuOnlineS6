@@ -185,10 +185,13 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                             var moneyUpdate = new InventoryMoneyUpdate(packet);
                             EconomyTrace.Record("PickupMoneyUpdate", moneyUpdate.Money, packet.Span);
                             bool hadPendingPickup = _characterState.PendingPickupRawId.HasValue;
+                            uint previousZen = _characterState.InventoryZen;
                             _characterState.UpdateInventoryZen(moneyUpdate.Money);
                             if (hadPendingPickup)
                             {
-                                ShowPickupChatMessage($"Picked up Zen. Total: {moneyUpdate.Money:N0}");
+                                uint obtained = moneyUpdate.Money >= previousZen ? moneyUpdate.Money - previousZen : 0;
+                                if (obtained > 0)
+                                    ShowPickupChatMessage($"{obtained.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} Zen Obtained", sender: string.Empty);
                             }
                             else
                             {
@@ -237,7 +240,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     _characterState.ClearPendingPickedItem();
                     string itemName = ItemDatabase.GetItemName(itemData) ?? "Item";
                     _logger.LogInformation("Item '{ItemName}' picked up successfully into slot {Slot}.", itemName, targetSlot);
-                    ShowPickupChatMessage($"Picked up '{itemName}'.");
+                    ShowPickupChatMessage($"{itemName} Obtained.", sender: string.Empty);
                     SoundController.Instance.PlayBuffer("Sound/pGetItem.wav");
                     ResetPendingPickupObject();
                     return Task.CompletedTask;
@@ -317,12 +320,12 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             return Task.CompletedTask;
         }
 
-        private void ShowPickupChatMessage(string message, MessageType messageType = MessageType.System)
+        private void ShowPickupChatMessage(string message, MessageType messageType = MessageType.System, string sender = "System")
         {
             MuGame.ScheduleOnMainThread(() =>
             {
                 var gameScene = MuGame.Instance?.ActiveScene as Client.Main.Scenes.GameScene;
-                gameScene?.ChatLog?.AddMessage("System", message, messageType);
+                gameScene?.ChatLog?.AddMessage(sender, message, messageType);
             });
         }
 

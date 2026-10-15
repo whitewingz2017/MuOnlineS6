@@ -39,6 +39,24 @@ try
 
     if (areaSkills.Count < 50) throw new Exception("Server audit did not find the expected skill definitions.");
     int assertions = 0;
+    // Exercise the production decoder, including mixed endianness, status bits,
+    // target sentinels and rejection of incomplete/cross-family packets.
+    byte[] targetPacket=[0xC1,16,0x4B,0,7,1,0x23,0x81,0x24,1,0x10,0x27,0xFF,0xFF,0x25,1];
+    ushort[] decodedTargets=new ushort[5];
+    if(!Client.Main.Networking.PacketHandling.RageFighterSkillPackets.TryReadTargets(targetPacket,decodedTargets,out ushort rageSkill) || rageSkill!=263 || decodedTargets[0]!=0x8123)
+        throw new Exception("Dark Side targets must use the server's little-endian layout.");
+    foreach(int length in Enumerable.Range(0,16))
+        if(Client.Main.Networking.PacketHandling.RageFighterSkillPackets.TryReadTargets(targetPacket.AsSpan(0,length),decodedTargets,out _))
+            throw new Exception("Truncated Dark Side packet accepted.");
+    if(Client.Main.Networking.PacketHandling.RageFighterSkillPackets.TryGetTarget(10000,out _) || Client.Main.Networking.PacketHandling.RageFighterSkillPackets.TryGetTarget(0xFFFF,out _) ||
+        !Client.Main.Networking.PacketHandling.RageFighterSkillPackets.TryGetTarget(0x8123,out ushort masked) || masked!=0x123)
+        throw new Exception("Dark Side sentinel/recipient masking failure.");
+    byte[] attackPacket=[0xC1,9,0x4A,1,7,0x81,0x23,0x01,0x24];
+    if(!Client.Main.Networking.PacketHandling.RageFighterSkillPackets.TryReadAttack(attackPacket,out rageSkill,out ushort rageSource,out ushort rageTarget) ||
+        rageSkill!=263 || rageSource!=0x123 || rageTarget!=0x124)
+        throw new Exception("Remote Rage Attack must use big-endian fields.");
+    if(Client.Main.Networking.PacketHandling.RageFighterSkillPackets.TryReadAttack(targetPacket,out _,out _,out _))throw new Exception("Wrong packet family accepted.");
+    assertions+=20;
     foreach (var skill in areaSkills)
     {
         int id = ids[skill.Key];
@@ -60,7 +78,7 @@ try
             throw new Exception($"Explicit area skill {skill.Key} must require ExtraTargetId.");
         assertions++;
     }
-    foreach (int id in new[] { 19, 20, 21, 22, 23, 43, 47, 51, 260, 261, 262, 263 })
+    foreach (int id in new[] { 19, 20, 21, 22, 23, 43, 47, 51, 260, 261, 262, 263, 265 })
     {
         if (!SkillDefinitions.IsTargetSkill(id)) throw new Exception($"Direct skill {id} must retain targeted routing.");
         assertions++;
@@ -134,7 +152,7 @@ try
     }
     var factories = (System.Collections.IDictionary)typeof(SkillVisualEffectRegistry)
         .GetField("_effects", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-    if (factories[(ushort)518] is not FireScreamSkillEffect || SkillVisualEffectRegistry.HasEffect(515))
+    if (factories[(ushort)518] is not FireScreamSkillEffect || factories[(ushort)515] is not ClassBuffSkillEffect)
         throw new Exception("Fire Scream / Critical Damage master IDs must not use Earthquake effects.");
     assertions++;
     foreach (float yaw in new[] { 0f, MathHelper.PiOver2, MathHelper.Pi, -MathHelper.PiOver2 })

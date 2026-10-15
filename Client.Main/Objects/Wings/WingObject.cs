@@ -71,6 +71,8 @@ namespace Client.Main.Objects.Wings
                     return;
 
                 itemIndex = value;
+                MaterialItemGroup = value >= 0 ? 12 : -1;
+                MaterialItemIndex = value;
                 int changeVersion = Interlocked.Increment(ref _changeVersion);
                 _ = OnChangeIndex(itemIndex, changeVersion);
             }
@@ -90,6 +92,8 @@ namespace Client.Main.Objects.Wings
 
             _capeCloth = new CapeClothObject();
             Children.Add(_capeCloth);
+            Children.Add(new WingOfStormEffect(this));
+            Children.Add(new ReferenceWingEffect(this));
         }
 
         internal bool IsCapeLike => _isCapeLike;
@@ -97,7 +101,8 @@ namespace Client.Main.Objects.Wings
         protected override bool ForceTwoSidedMeshes => _isCapeLike;
         protected override bool AllowGpuSkinning => !_isCapeLike;
         protected override bool AllowDynamicLightingShader => !_isCapeLike;
-        protected override bool PreserveBlendMeshesInLowQuality => _isCapeLike;
+        protected override bool PreserveBlendMeshesInLowQuality => _isCapeLike || ItemIndex == 36;
+        protected override bool IsBlendMesh(int mesh) => ItemIndex == 36 && mesh < 2 || base.IsBlendMesh(mesh);
 
         protected override float GetDepthBias()
         {

@@ -18,7 +18,6 @@ namespace Client.Main.Objects.Effects
         private readonly int _part;
         private float _frames;
         private float _accumulator;
-        private float _velocity = .1f;
         private readonly string _path;
         public override WorldObjectRenderPolicy RenderPolicy => base.RenderPolicy.With(forceVisible: true, alwaysUpdate: true);
 
@@ -32,9 +31,10 @@ namespace Client.Main.Objects.Effects
             Angle = critical ? new Vector3(MathHelper.PiOver4, MathHelper.ToRadians(45 - 90 * part), 0) : Vector3.Zero;
             Light = critical ? new Vector3(1f, .6f, .3f) : berserker ? new Vector3(1f, .1f, .2f) : new Vector3(.8f, .5f, .2f);
             Alpha = critical ? 1f : 0f;
-            BlendMesh = -2; BlendMeshState = Blendings.OneOneAdditive;
+            BlendMesh = critical ? -1 : -2; BlendMeshState = Blendings.OneOneAdditive;
+            BlendState = critical ? BlendState.Opaque : Blendings.OneOneAdditive;
             BlendMeshLight = critical ? 1f : 0f;
-            LightEnabled = true; IsTransparent = true; AffectedByTransparency = false;
+            LightEnabled = !critical; IsTransparent = true; AffectedByTransparency = false;
             DepthState = DepthStencilState.DepthRead; RenderShadow = false;
             BoundingBoxLocal = new BoundingBox(new Vector3(-300), new Vector3(300));
             if (critical && owner.TryGetBoneWorldMatrix(part == 0 ? 33 : 42, out var bone)) Position = bone.Translation;
@@ -45,6 +45,7 @@ namespace Client.Main.Objects.Effects
             Model = await BMDLoader.Instance.Prepare(_path);
             await base.Load();
         }
+        protected override bool AllowDynamicLightingShader => !_critical;
 
         public override void Update(GameTime gameTime)
         {
@@ -57,8 +58,8 @@ namespace Client.Main.Objects.Effects
                 _accumulator -= 1f;
                 if (_critical)
                 {
-                    Scale += _velocity; _velocity += .02f;
-                    if (_frames < 7) BlendMeshLight /= 1.8f;
+                    // MuMain's MODEL_DARKLORD_SKILL move handler is empty:
+                    // this short casting ring does not expand or fade.
                 }
                 else
                 {

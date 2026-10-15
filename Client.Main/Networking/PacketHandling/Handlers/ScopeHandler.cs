@@ -2370,7 +2370,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         var objToMove = world.FindWalkerById(maskedId);
                         if (objToMove != null)
                         {
-                            objToMove.ApplyServerPosition(new Vector2(x, y));
+                            objToMove.ApplyServerForcedMove(new Vector2(x, y));
                             _logger.LogDebug("Updated visual position for {Type} {Id:X4}", objToMove.GetType().Name, maskedId);
                         }
                     }

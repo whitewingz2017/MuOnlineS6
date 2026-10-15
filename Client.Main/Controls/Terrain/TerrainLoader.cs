@@ -35,6 +35,7 @@ namespace Client.Main.Controls.Terrain
             private readonly TextureUploadEntry[] _entries;
             private readonly TaskCompletionSource<bool> _completion;
             private readonly string _label;
+            private readonly int _totalRequestedCount;
             private int _nextEntry;
             private int _loadedCount;
 
@@ -42,12 +43,14 @@ namespace Client.Main.Controls.Terrain
                 TerrainLoader owner,
                 TextureUploadEntry[] entries,
                 TaskCompletionSource<bool> completion,
-                string label)
+                string label,
+                int totalRequestedCount)
             {
                 _owner = owner;
                 _entries = entries;
                 _completion = completion;
                 _label = label;
+                _totalRequestedCount = totalRequestedCount;
             }
 
             public void ProcessNextBatch()
@@ -87,7 +90,7 @@ namespace Client.Main.Controls.Terrain
                         return;
                     }
 
-                    Console.WriteLine($"[TerrainLoader] Uploaded {_loadedCount}/{_entries.Length} {_label} textures for World{_owner._worldIndex}.");
+                    Console.WriteLine($"[TerrainLoader] Uploaded {_loadedCount}/{_totalRequestedCount} {_label} textures for World{_owner._worldIndex} ({_totalRequestedCount - _entries.Length} unavailable during preparation).");
 
                     // Diagnostic: entries that never resolved leave their tiles permanently
                     // skipped (silent holes). List them once so missing map assets can be
@@ -245,21 +248,47 @@ namespace Client.Main.Controls.Terrain
         {
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var entries = new List<TextureUploadEntry>();
+            var missingPaths = new List<TextureUploadEntry>();
+            var textureLoader = TextureLoader.Instance;
 
             for (int textureIndex = 0; textureIndex < texturePaths.Length; textureIndex++)
             {
                 string path = texturePaths[textureIndex];
-                if (!string.IsNullOrEmpty(path))
-                    entries.Add(new TextureUploadEntry(target, textureIndex, path));
+                if (string.IsNullOrEmpty(path))
+                    continue;
+
+                var entry = new TextureUploadEntry(target, textureIndex, path);
+                if (textureLoader.Get(path) == null)
+                {
+                    // Prepare() already ran for all available files. Do not schedule a
+                    // graphics-thread dispatch for paths that failed to resolve/decode;
+                    // otherwise each missing terrain layer costs an entire frame.
+                    missingPaths.Add(entry);
+                    continue;
+                }
+
+                entries.Add(entry);
             }
 
+            foreach (TextureUploadEntry missing in missingPaths)
+            {
+                Console.WriteLine($"[TerrainLoader] Terrain texture MISSING (tiles using it will be skipped): index {missing.TextureIndex} '{missing.Path}' for World{_worldIndex}.");
+            }
+
+            int totalRequestedCount = entries.Count + missingPaths.Count;
             if (entries.Count == 0)
             {
+                Console.WriteLine($"[TerrainLoader] Uploaded 0/{totalRequestedCount} {label} textures for World{_worldIndex} ({missingPaths.Count} unavailable during preparation).");
                 completion.TrySetResult(true);
                 return completion.Task;
             }
 
-            var state = new TerrainTextureUploadState(this, entries.ToArray(), completion, label);
+            var state = new TerrainTextureUploadState(
+                this,
+                entries.ToArray(),
+                completion,
+                label,
+                totalRequestedCount);
             if (MuGame.IsMainThread)
             {
                 state.ProcessNextBatch();

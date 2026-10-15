@@ -254,7 +254,7 @@ namespace Client.Main.Objects.Effects
         /// (0, -(rand() % 8 + 40), 0) which decays *0.4 per frame while the sprite grows
         /// +0.1 per frame and its light fades with LifeTime / 8.
         /// </summary>
-        private sealed class PowerWaveSmoke : SourceParticleSystem
+        internal sealed class PowerWaveSmoke : SourceParticleSystem
         {
             private const string SmokeTexturePath = "Effect/smoke01.jpg";
             private const int MaxParticles = 64;
@@ -266,8 +266,8 @@ namespace Client.Main.Objects.Effects
             protected override Texture2D? ParticleTexture => _texture;
             protected override Vector2 ParticleTextureCenter => _textureCenter;
 
-            public PowerWaveSmoke()
-                : base(MaxParticles)
+            public PowerWaveSmoke(int capacity = MaxParticles)
+                : base(capacity)
             {
                 BlendState = BlendState.Additive;
                 MaxDistance = 2000f;
@@ -305,6 +305,19 @@ namespace Client.Main.Objects.Effects
 
             protected override void OnParticleCreated(ref SourceParticle particle)
             {
+                if (particle.SubType == 11)
+                {
+                    float factor = FPSCounter.Instance.FPS_ANIMATION_FACTOR;
+                    particle.LifeTime = 50f / LegacyFramesPerSecond;
+                    particle.MaxLifeTime = particle.LifeTime;
+                    particle.Position += new Vector3(MuGame.Random.Next(-32, 32), MuGame.Random.Next(-32, 32), MuGame.Random.Next(32, 96)) * factor;
+                    particle.TurningForce = particle.Light;
+                    particle.Rotation = MathHelper.ToRadians(MuGame.Random.Next(360));
+                    particle.Angle = new Vector3(MathHelper.ToRadians(MuGame.Random.Next(-45, 45)), 0f, MathHelper.ToRadians(MuGame.Random.Next(360)));
+                    particle.Velocity = SourceJointMath.MuMainRotate(new Vector3(0f, -MuGame.Random.Next(40, 48), 0f),
+                        new Vector3(MathHelper.ToDegrees(particle.Angle.X), 0f, MathHelper.ToDegrees(particle.Angle.Z)));
+                    return;
+                }
                 particle.LifeTime = 10f / LegacyFramesPerSecond;
                 particle.MaxLifeTime = particle.LifeTime;
                 particle.Scale = (MuGame.Random.Next(32) + 80) * 0.01f;
@@ -327,6 +340,15 @@ namespace Client.Main.Objects.Effects
             {
                 float legacyDelta = dt * LegacyFramesPerSecond;
 
+                if (particle.SubType == 11)
+                {
+                    particle.Position += particle.Velocity * legacyDelta - Vector3.UnitZ * legacyDelta;
+                    particle.Velocity *= MathF.Pow(.4f, legacyDelta);
+                    particle.Scale += .05f * legacyDelta;
+                    particle.Light = particle.TurningForce * (particle.LifeTime * LegacyFramesPerSecond / 50f);
+                    return;
+                }
+
                 particle.Position += particle.Velocity * legacyDelta;
                 particle.Velocity *= MathF.Pow(0.4f, legacyDelta);
                 particle.Scale += 0.1f * legacyDelta;
@@ -341,6 +363,13 @@ namespace Client.Main.Objects.Effects
             {
                 // The source overwrites o->Light every frame; no extra life fade.
                 return new Color(particle.Light.X, particle.Light.Y, particle.Light.Z, 1f);
+            }
+
+            internal void EmitSlashSmoke(Vector3 position, Vector3 angle, Vector3 light, float factor)
+            {
+                EmitTick(position, angle, light, factor, 4);
+                if (FPSCounter.Instance.RandFPSCheck(1))
+                    CreateParticle(0, position, angle, light, 11, MuGame.Random.Next(80, 112) * .015f);
             }
         }
 

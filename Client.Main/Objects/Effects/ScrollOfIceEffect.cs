@@ -18,7 +18,7 @@ namespace Client.Main.Objects.Effects
     {
         private const string IceBaseName = "Ice";
         private const float TotalLifeFrames = 58f;
-        private const float CoreLifeFrames = 48f;
+        private const float CoreLifeFrames = 50f;
         private const float ShardLifeFrames = 44f;
         private const int ShardCount = 5;
 
@@ -113,7 +113,7 @@ namespace Client.Main.Objects.Effects
             {
                 Position = Vector3.Zero,
                 Angle = Vector3.Zero,
-                Scale = 0.88f
+                Scale = 0.8f
             };
             Children.Add(core);
             _ = core.Load();

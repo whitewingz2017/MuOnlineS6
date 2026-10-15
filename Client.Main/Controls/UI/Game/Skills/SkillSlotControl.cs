@@ -10,6 +10,7 @@ using Client.Main.Controllers;
 using Client.Main.Core.Client;
 using Client.Main.Core.Utilities;
 using Client.Main.Models;
+using Client.Main.Helpers;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -147,6 +148,12 @@ namespace Client.Main.Controls.UI.Game.Skills
                 return;
             }
 
+            DrawTooltipText(_tooltipText);
+        }
+
+        internal static void DrawTooltipText(string tooltipText)
+        {
+            if (string.IsNullOrWhiteSpace(tooltipText)) return;
             var spriteBatch = GraphicsManager.Instance.Sprite;
             var pixel = GraphicsManager.Instance.Pixel;
             var font = GraphicsManager.Instance.Font;
@@ -155,7 +162,10 @@ namespace Client.Main.Controls.UI.Game.Skills
                 return;
             }
 
-            string[] lines = _tooltipText.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            using var tooltipScope = new SpriteBatchScope(spriteBatch, SpriteSortMode.Deferred,
+                BlendState.AlphaBlend, SamplerState.LinearClamp, DepthStencilState.None,
+                null, null, UiScaler.SpriteTransform);
+            string[] lines = tooltipText.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             if (lines.Length == 0)
             {
                 return;
@@ -482,20 +492,17 @@ namespace Client.Main.Controls.UI.Game.Skills
             };
         }
 
-        private void BuildTooltip()
-        {
-            if (_skill == null)
-            {
-                _tooltipText = string.Empty;
-                return;
-            }
+        private void BuildTooltip() => _tooltipText = BuildTooltipText(_skill);
 
-            var skillDef = SkillDatabase.GetSkillDefinition(_skill.SkillId);
-            string skillName = SkillDatabase.GetSkillName(_skill.SkillId);
-            ushort manaCost = SkillDatabase.GetSkillManaCost(_skill.SkillId);
-            ushort agCost = SkillDatabase.GetSkillAGCost(_skill.SkillId);
-            uint range = SkillDatabase.GetSkillRange(_skill.SkillId);
-            var skillType = SkillDatabase.GetSkillType(_skill.SkillId);
+        internal static string BuildTooltipText(SkillEntryState skill)
+        {
+            if (skill == null) return string.Empty;
+            var skillDef = SkillDatabase.GetSkillDefinition(skill.SkillId);
+            string skillName = SkillDatabase.GetSkillName(skill.SkillId);
+            ushort manaCost = SkillDatabase.GetSkillManaCost(skill.SkillId);
+            ushort agCost = SkillDatabase.GetSkillAGCost(skill.SkillId);
+            uint range = SkillDatabase.GetSkillRange(skill.SkillId);
+            var skillType = SkillDatabase.GetSkillType(skill.SkillId);
 
             string typeText = skillType switch
             {
@@ -505,7 +512,7 @@ namespace Client.Main.Controls.UI.Game.Skills
                 _ => "Unknown"
             };
 
-            var tooltip = $"{skillName}\nType: {typeText}  •  Lv {_skill.SkillLevel}";
+            var tooltip = $"{skillName}\nType: {typeText}  •  Lv {skill.SkillLevel}";
 
             if (manaCost > 0 || agCost > 0)
             {
@@ -553,7 +560,7 @@ namespace Client.Main.Controls.UI.Game.Skills
                     tooltip += $"\nMastery: Tier {skillDef.MasteryType}";
             }
 
-            _tooltipText = tooltip;
+            return tooltip;
         }
 
         private void RefreshSkillIconTexture()

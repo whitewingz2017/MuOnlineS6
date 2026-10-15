@@ -69,6 +69,9 @@ namespace Client.Main.Objects.Effects
         private float _legacyAccumulator;
         private int _activeSetIndex = -1;
         private int _auraTier;
+        public int AuraTier => _auraTier;
+        public int ExpandingTrailSpawns { get; private set; }
+        public int RisingTrailSpawns { get; private set; }
         private Vector3 _auraColor = new(0.72f, 0.78f, 0.90f);
         private Vector3 _torsoColor;
         private bool _hasTorsoParticles;
@@ -180,7 +183,7 @@ namespace Client.Main.Objects.Effects
                 _auraTier = tier;
                 _auraColor = GetSetAuraColor(setIndex);
                 _hasTorsoParticles = TryGetTorsoParticleColor(setIndex, out _torsoColor);
-                _primeAuraPending = tier >= 11;
+                _primeAuraPending = false;
             }
 
             Hidden = false;
@@ -237,7 +240,7 @@ namespace Client.Main.Objects.Effects
                 _trails[i] = new OrbitTrail();
 
             _billboardVertices = new VertexPositionColorTexture[MaxBillboardQuads * 4];
-            _trailVertices = new VertexPositionColorTexture[MaxTrails * MaxTrailRenderPoints * 2];
+            _trailVertices = new VertexPositionColorTexture[MaxTrails * (MaxTrailRenderPoints - 1) * 12];
             _trailIndices = new short[MaxTrails * (MaxTrailRenderPoints - 1) * 6];
         }
 
@@ -302,31 +305,25 @@ namespace Client.Main.Objects.Effects
                     SpawnTorsoBurst(player, _auraTier >= 13 ? TorsoOffsets13 : TorsoOffsets11);
             }
 
-            // Keep the original stochastic character, but make the aura easier to read in
-            // the wider/high-resolution MonoGame camera.
-            if (_auraTier <= 9 || MuGame.Random.Next(14) != 0)
-                return;
-
+            // MuMain EquipmentLevelSet: the outer roll is 1/20 at the source 25-Hz tick.
+            if (_auraTier <= 9 || MuGame.Random.Next(20) != 0) return;
             if (_auraTier == 11)
             {
-                if (MuGame.Random.Next(6) == 0)
-                    SpawnClassicTrail(player);
-                else
-                    SpawnOrbitParticle();
+                if (MuGame.Random.Next(8) == 0) SpawnClassicTrail(player);
+                else SpawnOrbitParticle();
             }
             else
             {
-                // +13 layer A: two counter-rotating expanding spirals.
-                if (MuGame.Random.Next(5) == 0)
+                if (MuGame.Random.Next(6) == 0)
                 {
-                    SpawnExpandingTrail(player, direction: 1);
-                    SpawnExpandingTrail(player, direction: -1);
+                    SpawnExpandingTrail(player, 1);
+                    SpawnExpandingTrail(player, -1);
                 }
-
-                // +13 layer B: keep the small orbiting flare. The large blue
-                // spatial orb was intentionally removed because it dominated the aura.
-                if (MuGame.Random.Next(3) == 0)
+                if (MuGame.Random.Next(4) == 0)
+                {
                     SpawnOrbitParticle();
+                    SpawnRisingTrail(player);
+                }
             }
         }
 
@@ -343,6 +340,7 @@ namespace Client.Main.Objects.Effects
             {
                 SpawnExpandingTrail(player, direction: 1);
                 SpawnExpandingTrail(player, direction: -1);
+                SpawnRisingTrail(player);
             }
         }
 
@@ -413,7 +411,7 @@ namespace Client.Main.Objects.Effects
             particle.Height = RandomRange(24f, 62f);
             particle.VerticalSpeedPerTick = RandomRange(1f, 4.96f);
             particle.Scale = RandomRange(0.19f, 0.24f);
-            particle.Color = Vector3.Lerp(_auraColor, Vector3.One, 0.28f);
+            particle.Color = Vector3.One;
             particle.LifeTicks = 60;
             particle.MaxLifeTicks = 60;
         }
@@ -445,32 +443,40 @@ namespace Client.Main.Objects.Effects
             trail.Activate(
                 TrailKind.Classic,
                 player,
-                _auraColor,
+                Vector3.One,
                 direction: MuGame.Random.Next(2) == 0 ? -1 : 1,
                 lifeTicks: 100,
                 tailLimit: 20,
                 phase: RandomRange(0f, MathHelper.TwoPi),
                 radius: 40f,
-                width: 5.5f,
+                width: 10f,
                 verticalSpeed: RandomRange(0.45f, 1.4f),
                 seed: NextSeed());
         }
 
         private void SpawnExpandingTrail(PlayerObject player, int direction)
         {
+            ExpandingTrailSpawns++;
             OrbitTrail trail = GetTrailSlot();
             trail.Activate(
                 TrailKind.Expanding,
                 player,
-                Vector3.Lerp(_auraColor, Vector3.One, 0.2f),
+                Vector3.One,
                 direction,
                 lifeTicks: 50,
                 tailLimit: 20,
-                phase: RandomRange(0f, MathHelper.TwoPi),
+                phase: RandomRange(-25f, 25f) + 10f,
                 radius: 40f,
-                width: 7.5f,
-                verticalSpeed: RandomRange(0.8f, 1.7f),
+                width: 20f,
+                verticalSpeed: RandomRange(2f, 4.49f),
                 seed: NextSeed());
+        }
+
+        private void SpawnRisingTrail(PlayerObject player)
+        {
+            RisingTrailSpawns++;
+            GetTrailSlot().Activate(TrailKind.Rising, player, Vector3.One, 1, 40, 16,
+                RandomRange(0, MathHelper.TwoPi), 15, 20, 10, NextSeed());
         }
 
         private void UpdateTrails(PlayerObject player)
@@ -709,93 +715,35 @@ namespace Client.Main.Objects.Effects
 
         private void DrawTrails(float parentAlpha, PlayerObject player, float interpolation)
         {
-            if (_flareTexture == null || _flareTexture.IsDisposed)
-                return;
-
-            int vertexCount = 0;
-            int indexCount = 0;
-            Vector3 cameraPosition = Camera.Instance.Position;
-            Vector3 cameraRight = Camera.Instance.Right;
-
-            for (int trailIndex = 0; trailIndex < _trails.Length; trailIndex++)
+            if (_flareTexture == null || _flareTexture.IsDisposed) return;
+            int count=0;
+            for(int i=0;i<_trails.Length;i++)
             {
-                OrbitTrail trail = _trails[trailIndex];
-                if (!trail.Active || trail.TailCount < 2)
-                    continue;
-
-                int renderPointCount = Math.Min(
-                    MaxTrailRenderPoints,
-                    trail.TailCount + (interpolation > 0.001f ? 1 : 0));
-                if (renderPointCount < 2)
-                    continue;
-
-                int baseVertex = vertexCount;
-                for (int pointIndex = 0; pointIndex < renderPointCount; pointIndex++)
+                var trail=_trails[i];
+                if(!trail.Active || trail.TailCount<2)continue;
+                int points=Math.Min(MaxTrailRenderPoints,trail.TailCount+(interpolation>.001f?1:0));
+                float denominator=trail.Kind==TrailKind.Rising?15f:19f;
+                var color=ToColor(trail.Color*trail.GetRenderLifeRatio(interpolation)*parentAlpha);
+                // MuMain CreateTail keeps two crossing planes, with U along the tail.
+                var rotation=Matrix.CreateRotationZ(trail.Rotation);
+                for(int face=0;face<2;face++)
                 {
-                    Vector3 current = trail.GetRenderPoint(player, pointIndex, interpolation);
-                    Vector3 tangent;
-                    if (pointIndex == 0)
-                        tangent = trail.GetRenderPoint(player, 1, interpolation) - current;
-                    else if (pointIndex == renderPointCount - 1)
-                        tangent = current - trail.GetRenderPoint(player, pointIndex - 1, interpolation);
-                    else
-                        tangent = trail.GetRenderPoint(player, pointIndex + 1, interpolation) -
-                                  trail.GetRenderPoint(player, pointIndex - 1, interpolation);
-
-                    Vector3 view = cameraPosition - current;
-                    Vector3 side = Vector3.Cross(tangent, view);
-                    if (side.LengthSquared() < 0.0001f)
-                        side = cameraRight;
-                    else
-                        side.Normalize();
-
-                    float progress = pointIndex / (float)(renderPointCount - 1);
-                    float tailFade = MathF.Pow(1f - progress, 0.72f);
-                    float widthPulse = 0.94f + MathF.Sin(_auraTime * 5f + trailIndex) * 0.06f;
-                    float width = trail.Width * widthPulse * MathHelper.Lerp(1.12f, 0.12f, progress);
-                    Vector3 offset = side * (width * 0.5f);
-                    float lifeRatio = trail.GetRenderLifeRatio(interpolation);
-                    Color color = ToColor(trail.Color * (lifeRatio * tailFade * 1.32f * parentAlpha));
-
-                    _trailVertices[vertexCount++] = new VertexPositionColorTexture(
-                        current - offset,
-                        color,
-                        new Vector2(0f, progress));
-                    _trailVertices[vertexCount++] = new VertexPositionColorTexture(
-                        current + offset,
-                        color,
-                        new Vector2(1f, progress));
-                }
-
-                for (int segment = 0; segment < renderPointCount - 1; segment++)
-                {
-                    short left0 = checked((short)(baseVertex + segment * 2));
-                    short right0 = checked((short)(left0 + 1));
-                    short left1 = checked((short)(left0 + 2));
-                    short right1 = checked((short)(left0 + 3));
-
-                    _trailIndices[indexCount++] = left0;
-                    _trailIndices[indexCount++] = right0;
-                    _trailIndices[indexCount++] = left1;
-                    _trailIndices[indexCount++] = right0;
-                    _trailIndices[indexCount++] = right1;
-                    _trailIndices[indexCount++] = left1;
+                    var side=face==0?Vector3.TransformNormal(Vector3.UnitX,rotation):Vector3.UnitZ;
+                    var width=side*trail.Width*.5f;
+                    for(int point=0;point<points-1;point++)
+                    {
+                        var first=trail.GetRenderPoint(player,point,interpolation);
+                        var second=trail.GetRenderPoint(player,point+1,interpolation);
+                        float u=(points-1-point)/denominator;
+                        float v=(points-2-point)/denominator;
+                        SourceEffectGeometry.Quad(_trailVertices,ref count,first,second,width,color,u,v);
+                    }
                 }
             }
-
-            if (vertexCount == 0 || indexCount == 0)
-                return;
-
-            _effect.Texture = _flareTexture;
+            if(count==0)return;
+            _effect.Texture=_flareTexture;
             _effect.CurrentTechnique.Passes[0].Apply();
-            GraphicsDevice.DrawUserIndexedPrimitives(
-                PrimitiveType.TriangleList,
-                _trailVertices,
-                0,
-                vertexCount,
-                _trailIndices,
-                0,
-                indexCount / 3);
+            GraphicsDevice.DrawUserPrimitives(PrimitiveType.TriangleList,_trailVertices,0,count/3);
         }
 
         private void DrawBillboardBatch(Texture2D texture, int quadCount)
@@ -1103,7 +1051,8 @@ namespace Client.Main.Objects.Effects
         private enum TrailKind : byte
         {
             Classic,
-            Expanding
+            Expanding,
+            Rising
         }
 
         private sealed class OrbitTrail
@@ -1117,11 +1066,15 @@ namespace Client.Main.Objects.Effects
             private float _verticalSpeed;
             private int _direction;
             private uint _seed;
+            private Vector3 _start;
+            private Vector3 _lastCenter;
+            private bool _emitting;
 
             public bool Active { get; private set; }
             public TrailKind Kind { get; private set; }
             public Vector3 Color { get; private set; }
             public float Width { get; private set; }
+            public float Rotation { get; private set; }
             public int LifeTicks { get; private set; }
             public int MaxLifeTicks { get; private set; }
             public int TailCount { get; private set; }
@@ -1139,6 +1092,9 @@ namespace Client.Main.Objects.Effects
                 uint seed)
             {
                 Kind = kind;
+                _lastCenter=player.WorldPosition.Translation;
+                _emitting=true;
+                Rotation = player.Angle.Z;
                 Color = color;
                 _direction = direction >= 0 ? 1 : -1;
                 LifeTicks = Math.Max(1, lifeTicks);
@@ -1148,7 +1104,8 @@ namespace Client.Main.Objects.Effects
                 _radius = radius;
                 Width = width;
                 _verticalSpeed = verticalSpeed;
-                _height = RandomHeight(seed);
+                _height = 0;
+                _start = player.WorldPosition.Translation + new Vector3(MathF.Cos(phase)*40, -MathF.Sin(phase)*40, 0);
                 _seed = seed == 0 ? 1u : seed;
                 _tailStart = 0;
                 TailCount = 0;
@@ -1163,8 +1120,13 @@ namespace Client.Main.Objects.Effects
                 if (!Active)
                     return false;
 
-                if (Kind == TrailKind.Classic && player.IsMoving && LifeTicks > 20)
-                    LifeTicks = 20;
+                if (Kind != TrailKind.Rising)
+                {
+                    var center=player.WorldPosition.Translation;
+                    if (Vector3.DistanceSquared(center,_lastCenter)>10000){Reset();return true;}
+                    _lastCenter=center;
+                    if(player.IsMoving){_emitting=false;LifeTicks=Math.Min(10,LifeTicks);}
+                }
 
                 LifeTicks--;
                 if (LifeTicks <= 0)
@@ -1173,6 +1135,7 @@ namespace Client.Main.Objects.Effects
                     return true;
                 }
 
+                if(!_emitting)return false;
                 switch (Kind)
                 {
                     case TrailKind.Classic:
@@ -1184,17 +1147,25 @@ namespace Client.Main.Objects.Effects
                     case TrailKind.Expanding:
                         _phase += _direction * 0.2f;
                         _radius += 0.1f;
-                        Width += 0.08f;
+                        Width += 0.2f;
                         _height += _verticalSpeed * 1.1f;
                         break;
                 }
 
+                if (Kind == TrailKind.Rising)
+                {
+                    _height += _verticalSpeed;
+                    _verticalSpeed -= .1f;
+                    _radius -= .1f;
+                }
                 PushTail(CalculatePosition(player));
                 return false;
             }
 
             private Vector3 CalculatePosition(PlayerObject player, float tickFraction = 0f)
             {
+                if (Kind == TrailKind.Rising)
+                    return _start + new Vector3(MathF.Sin((LifeTicks-tickFraction)/2.5f)*(_radius-.1f*tickFraction),0,_height+_verticalSpeed*tickFraction);
                 Vector3 center = player.WorldPosition.Translation;
                 float phaseSpeed = Kind == TrailKind.Expanding ? 0.2f : 0.1f;
                 float phase = _phase + _direction * phaseSpeed * tickFraction;
@@ -1209,7 +1180,7 @@ namespace Client.Main.Objects.Effects
 
             public Vector3 GetRenderPoint(PlayerObject player, int index, float interpolation)
             {
-                if (interpolation > 0.001f)
+                if (_emitting && interpolation > 0.001f)
                 {
                     if (index == 0)
                         return CalculatePosition(player, interpolation);
@@ -1221,29 +1192,33 @@ namespace Client.Main.Objects.Effects
 
             public float GetRenderLifeRatio(float interpolation) =>
                 MaxLifeTicks > 0
-                    ? MathHelper.Clamp((LifeTicks - interpolation) / MaxLifeTicks, 0f, 1f)
+                    ? Kind == TrailKind.Rising
+                        ? MathF.Pow(1f/1.2f, MathF.Max(0,15-LifeTicks+interpolation))
+                        : MathF.Pow(1f/1.2f, MathF.Max(0,10-LifeTicks+interpolation))
                     : 0f;
 
             private void PushTail(Vector3 position)
             {
+                // Rising trails use 16 of the 20 allocated slots. Both ends of the
+                // ring must wrap at that active limit or rendering reads empty points.
                 if (TailCount < _tailLimit)
                 {
-                    int index = (_tailStart + TailCount) % MaxTailPoints;
+                    int index = (_tailStart + TailCount) % _tailLimit;
                     _tails[index] = position;
                     TailCount++;
                     return;
                 }
 
                 _tails[_tailStart] = position;
-                _tailStart = (_tailStart + 1) % MaxTailPoints;
+                _tailStart = (_tailStart + 1) % _tailLimit;
             }
 
             public Vector3 GetTailPoint(int index)
             {
                 int newestToOldest = TailCount - 1 - index;
-                int actual = (_tailStart + newestToOldest) % MaxTailPoints;
+                int actual = (_tailStart + newestToOldest) % _tailLimit;
                 if (actual < 0)
-                    actual += MaxTailPoints;
+                    actual += _tailLimit;
                 return _tails[actual];
             }
 

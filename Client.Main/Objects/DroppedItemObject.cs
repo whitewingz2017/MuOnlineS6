@@ -30,7 +30,7 @@ namespace Client.Main.Objects
     {
         // ─────────────────── constants
         private const float TerrainPenetrationClearance = 2f;
-        private const float PickupRange = 300f;
+        private const int PickupReachTiles = 1;
         private const float LabelOffsetZ = 10f;
         private const int LabelPixelGap = 20;
         private const float BoundingPadding = 2f; // Small padding for interaction
@@ -51,6 +51,7 @@ namespace Client.Main.Objects
 
         private SpriteFont _font;
         private bool _pickedUp;
+        private bool _walkToPickup;
         private ModelObject _modelObj; // Optional 3D model when available
         private ItemDefinition _definition;
         private bool _isMoney;
@@ -156,6 +157,7 @@ namespace Client.Main.Objects
             Hidden = false;
             Status = GameControlStatus.NonInitialized;
             _pickedUp = false;
+            _walkToPickup = false;
             _modelObj = null;
             _definition = null;
             _isMoney = false;
@@ -189,7 +191,7 @@ namespace Client.Main.Objects
             }
             else if (scope is MoneyScopeObject moneyScope)
             {
-                baseName = $"{moneyScope.Amount} Zen";
+                baseName = $"{moneyScope.Amount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} Zen";
                 _isMoney = true;
             }
 
@@ -583,6 +585,17 @@ _modelObj = model;
         // =====================================================================
         public override void Update(GameTime gameTime)
         {
+            if (_walkToPickup && World is Controls.WalkableWorldControl walkable && walkable.Walker != null)
+            {
+                var tile = new Vector2(_scope.PositionX, _scope.PositionY);
+                if (MathF.Max(MathF.Abs(walkable.Walker.Location.X - tile.X),
+                        MathF.Abs(walkable.Walker.Location.Y - tile.Y)) <= PickupReachTiles)
+                {
+                    _walkToPickup = false;
+                    RequestPickup();
+                }
+            }
+
             if (!_terrainPlacementReady && _visualContentReady && World != null)
                 TryFinalizeTerrainPlacement(World);
 
@@ -656,16 +669,21 @@ _modelObj = model;
             if (World is not Controls.WalkableWorldControl w || w.Walker == null) return;
             if (w.Walker.NetworkId != _mainPlayerId) return;
 
-            float d = Vector3.Distance(w.Walker.Position, Position);
-            if (d > PickupRange)
+            var tile = new Vector2(_scope.PositionX, _scope.PositionY);
+            if (MathF.Max(MathF.Abs(w.Walker.Location.X - tile.X),
+                    MathF.Abs(w.Walker.Location.Y - tile.Y)) > PickupReachTiles)
             {
-                if (World.Scene is GameScene scene)
-                {
-                    scene.ChatLog?.AddMessage("System", "Item is too far away.", MessageType.System);
-                }
+                _walkToPickup = true;
+                w.Walker.MoveTo(tile);
                 return;
             }
 
+            RequestPickup();
+        }
+
+        private void RequestPickup()
+        {
+            if (_pickedUp || _scope == null) return;
             // Stash the item data BEFORE sending the request
             CharacterState charState = MuGame.Network?.GetCharacterState();
             if (charState == null)

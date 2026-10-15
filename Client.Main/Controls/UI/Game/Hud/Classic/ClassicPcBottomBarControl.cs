@@ -79,6 +79,8 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
         private bool _skillListOpen;
         private int _hoveredSkillListIndex = -1;
         private int _hoveredButton = -1;
+        private SkillEntryState _tooltipSkill;
+        private string _skillTooltipText = string.Empty;
         private SpriteFont _font;
         private Texture2D _mainLeft;
         private Texture2D _mainCenter;
@@ -91,6 +93,7 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
         private Texture2D _agGauge;
         private Texture2D _expGauge;
         private Texture2D _masterExpGauge;
+        private Texture2D _numberAtlas;
         private Texture2D _skillFrame;
         private Texture2D _skillFrameActive;
         private readonly Texture2D[] _buttonTextures = new Texture2D[5];
@@ -125,6 +128,7 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
             _agGauge = await LoadInterfaceTextureAsync(AgGaugePath);
             _expGauge = await LoadInterfaceTextureAsync(ExpGaugePath);
             _masterExpGauge = await LoadInterfaceTextureAsync(MasterExpGaugePath);
+            _numberAtlas = await LoadInterfaceTextureAsync("Interface/newui_number1.ozt");
             _skillFrame = await LoadInterfaceTextureAsync(SkillFramePath);
             _skillFrameActive = await LoadInterfaceTextureAsync(SkillFrameActivePath);
             for (int i = 0; i < ButtonPaths.Length; i++)
@@ -192,6 +196,35 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
             DrawRightButtons(sprite, barRect);
             DrawSkillTray(sprite, pixel);
             DrawPotionHints(sprite, barRect);
+        }
+
+        public override void DrawAfter(GameTime gameTime)
+        {
+            base.DrawAfter(gameTime);
+            if (!Visible || Status != GameControlStatus.Ready) return;
+
+            Point mouse = MuGame.Instance.UiMouseState.Position;
+            SkillEntryState hovered = null;
+            Rectangle tooltipAnchor = _skillTabRect;
+            if (_skillListOpen)
+            {
+                foreach (var hit in _skillListHits)
+                    if (hit.Rect.Contains(mouse)) { hovered = hit.Skill; tooltipAnchor = hit.Rect; break; }
+            }
+            if (hovered == null && _skillTabRect.Contains(mouse))
+                hovered = _hud.SelectedSkill;
+            if (hovered == null)
+            {
+                for (int i = 0; i < _skillRects.Length; i++)
+                    if (_skillRects[i].Contains(mouse)) { hovered = _hud.GetHotbarSkillAt(i); tooltipAnchor = _skillRects[i]; break; }
+            }
+            if (!ReferenceEquals(hovered, _tooltipSkill))
+            {
+                _tooltipSkill = hovered;
+                _skillTooltipText = ClassicSkillTooltip.BuildText(hovered);
+            }
+            if (hovered != null)
+                ClassicSkillTooltip.Draw(_skillTooltipText, tooltipAnchor);
         }
 
         private void DrawMainFrame(SpriteBatch sprite, Texture2D pixel, Rectangle frameRect)
@@ -273,11 +306,14 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
 
             double progress = Client.Main.Core.Utilities.ExperienceProgress.For(_state);
             double ratio = Client.Main.Core.Utilities.ExperienceProgress.Segment(progress);
-            var font = GraphicsManager.Instance.Font;
-            if (font != null)
-                sprite.DrawString(font, Client.Main.Core.Utilities.ExperienceProgress.Digit(progress).ToString(),
-                    new Vector2(rect.Right - ScaleValue(12), rect.Top + ScaleValue(ReferenceExpY) - ScaleValue(5)), Color.White,
-                    0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
+            if (_numberAtlas != null)
+            {
+                int digit = Client.Main.Core.Utilities.ExperienceProgress.Digit(progress);
+                // MuMain RenderNumber(scale=1): 12*(1-.3) by 16*(1-.3).
+                var numberRect = new Rectangle(rect.Right - ScaleValue(12),
+                    rect.Top + ScaleValue(ReferenceExpY) - ScaleValue(7), ScaleValue(8.4f), ScaleValue(11.2f));
+                sprite.Draw(_numberAtlas, numberRect, new Rectangle(digit * 12, 0, 12, 14), Color.White);
+            }
             int filledWidth = (int)(ScaleValue(629) * ratio);
             int height = ScaleValue(4);
             if (filledWidth <= 0) return;
@@ -289,6 +325,7 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
         {
             // Classic PC follows MuMain: blit the complete 20x28 atlas cell.
             SkillIconRenderer.DrawSkillRect(sprite, skillId, dest, Color.White);
+            SkillCooldownRenderer.Draw(sprite, skillId, dest);
         }
         private void DrawSkillSlots(SpriteBatch sprite, Rectangle rect)
         {
@@ -687,7 +724,7 @@ namespace Client.Main.Controls.UI.Game.Hud.Classic
             ? 0f
             : MathHelper.Clamp(current / (float)maximum, 0f, 1f);
 
-        private int ScaleValue(int value) => Math.Max(1, (int)MathF.Round(value * HudScale));
+        private int ScaleValue(float value) => Math.Max(1, (int)MathF.Round(value * HudScale));
 
         private void DrawValue(SpriteBatch sprite, string value, float x, float y, float size, Color? color = null)
         {

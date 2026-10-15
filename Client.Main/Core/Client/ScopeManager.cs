@@ -642,7 +642,7 @@ namespace Client.Main.Core.Client
                         name = ((ItemScopeObject)scopeObject).ItemDescription;
                         return true;
                     case ScopeObjectType.Money:
-                        name = $"Zen ({((MoneyScopeObject)scopeObject).Amount})";
+                        name = $"Zen ({((MoneyScopeObject)scopeObject).Amount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)})";
                         return true;
                     default:
                         name = $"Unknown Object Type ({scopeObject.ObjectType})";

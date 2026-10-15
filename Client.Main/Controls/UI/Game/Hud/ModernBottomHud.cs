@@ -621,6 +621,9 @@ namespace Client.Main.Controls.UI.Game.Hud
 
             _slotSkills[targetSlot] = skill;
             _activeSkillSlot = targetSlot;
+            // The Hybrid picker replaces any unassigned Classic PC selection.
+            _selectedSkillOverride = null;
+            (Scene as GameScene)?.SkillController?.ClearPending();
             _pendingAssignSlot = -1;
             SyncHotbarSkills();
             PersistQuickSlots();
@@ -792,6 +795,14 @@ namespace Client.Main.Controls.UI.Game.Hud
                     if (BmdPreviewRenderer.TryGetCachedPreview(definition, PotionIconCacheSize, PotionIconCacheSize) == null)
                         BmdPreviewRenderer.GetPreview(definition, PotionIconCacheSize, PotionIconCacheSize);
                 }
+            }
+
+            foreach (var candidate in _consumableCandidateView)
+            {
+                ItemDefinition? definition = ItemDatabase.GetItemDefinition(candidate.Group, (short)candidate.Id);
+                if (definition?.TexturePath?.EndsWith(".bmd", StringComparison.OrdinalIgnoreCase) == true &&
+                    BmdPreviewRenderer.TryGetCachedPreview(definition, PotionIconCacheSize, PotionIconCacheSize) == null)
+                    BmdPreviewRenderer.GetPreview(definition, PotionIconCacheSize, PotionIconCacheSize);
             }
         }
 

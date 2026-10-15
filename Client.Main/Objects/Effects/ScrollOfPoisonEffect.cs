@@ -32,7 +32,6 @@ namespace Client.Main.Objects.Effects
         private bool _pathsResolved;
         private bool _initialized;
         private float _lifeFrames = TotalLifeFrames;
-        private float _time;
 
         private Texture2D _smokeTexture = null!;
 
@@ -68,9 +67,9 @@ namespace Client.Main.Objects.Effects
             {
                 Owner = this,
                 Position = center,
-                Color = new Vector3(0.35f, 0.95f, 0.45f),
-                Radius = 230f,
-                Intensity = 1.15f
+                Color = new Vector3(0.3f, 1f, 0.6f),
+                Radius = 2f * Constants.TERRAIN_SIZE,
+                Intensity = ModelLifeFrames * .1f
             };
         }
 
@@ -109,7 +108,6 @@ namespace Client.Main.Objects.Effects
             float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
             float factor = FPSCounter.Instance.FPS_ANIMATION_FACTOR;
             _lifeFrames -= factor;
-            _time += dt;
 
             UpdateSmokeParticles(dt);
             UpdateDynamicLight();
@@ -201,12 +199,11 @@ namespace Client.Main.Objects.Effects
 
         private void UpdateDynamicLight()
         {
-            float alpha = MathHelper.Clamp(_lifeFrames / TotalLifeFrames, 0f, 1f);
-            float pulse = 0.78f + 0.22f * MathF.Sin(_time * 10f);
-
+            // MuMain Move_MODEL_POISON: terrain light follows the core's
+            // remaining lifetime, rather than the longer smoke lifetime.
+            float modelLife = MathF.Max(0f, _lifeFrames - (TotalLifeFrames - ModelLifeFrames));
             _poisonLight.Position = _center;
-            _poisonLight.Intensity = 1.15f * alpha * pulse;
-            _poisonLight.Radius = 210f + (28f * MathF.Sin(_time * 6f));
+            _poisonLight.Intensity = modelLife * .1f;
         }
 
         private static async Task<string> ResolveModelPath(string baseName, int index, params string[] fallbackCandidates)
