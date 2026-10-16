@@ -1076,6 +1076,12 @@ namespace Client.Main.Controls.UI.Game
             if (svc != null)
             {
                 var selectedItem = _hoveredItem;
+                if(!UiThemeManager.IsMobilePlatform && !UiThemeManager.IsMobileInterfaceActive)
+                {
+                    _mobileSelectedItem=null;
+                    _ = svc.SendBuyItemFromNpcRequestAsync(slot);
+                    return;
+                }
                 if (UiThemeManager.IsMobilePlatform && !ReferenceEquals(_mobileSelectedItem, selectedItem))
                 {
                     _mobileSelectedItem = selectedItem;

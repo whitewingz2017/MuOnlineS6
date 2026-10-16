@@ -6,6 +6,8 @@ using Client.Main.Objects;
 using Client.Main.Objects.Effects.Skills;
 using Client.Main.Scenes;
 using Microsoft.Xna.Framework;
+using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 public sealed class SkillCaptureScene : BaseScene
 {
@@ -13,6 +15,8 @@ public sealed class SkillCaptureScene : BaseScene
     public static bool CaptureLocalTargetImpact { get; set; }
     public static string OutputDirectory { get; set; } = "";
     private SkillCaptureWorld _world;
+    private Client.Main.Objects.MonsterObject _captureMonster;
+    private Client.Main.Controls.UI.UIControl _captureHelper;
     private WorldObject _effect;
     private Client.Main.Core.Client.BuffManager _rageBuffs;
     private Client.Main.Objects.Effects.RageFighterBuffWindEffect _rageWind;
@@ -26,6 +30,7 @@ public sealed class SkillCaptureScene : BaseScene
     private bool _actorsPrepared;
     private bool _actorsPreparing;
     private int _lastCapturedFrame = -1;
+    private bool _panelPk;
     private static int[] CaptureFrames => SkillId == 0 && Environment.GetEnvironmentVariable("TWINMU_ITEM_CAPTURE_AURA")=="1" ? AuraCaptureFrames : SkillId is >= 260 and <= 270 ? RageCaptureFrames : SkillId is 223 or 224 or 225 ? BookCaptureFrames : SkillId is 219 or 221 or 222 ? DebuffCaptureFrames : SkillId == 214 ? DrainCaptureFrames : SkillId == 215 ? ChainCaptureFrames : SkillId == 238 ? ChaoticCaptureFrames : SkillId == 63 ? SummonCaptureFrames : SkillId == 3 ? LightningCaptureFrames : SkillId is 13 or 56 or 77 ? CometCaptureFrames : DefaultCaptureFrames;
     private static readonly int[] AuraCaptureFrames = [1,24,64,156,256,400];
     private static readonly int[] RageCaptureFrames = [1, 5, 12, 24, 48, 156];
@@ -50,6 +55,288 @@ public sealed class SkillCaptureScene : BaseScene
             IsFullScreen = false
         });
         Constants.RENDER_SCALE = 1f;
+        if(Environment.GetEnvironmentVariable("TWINMU_INVENTORY_SAFETY_CHECK")=="1")
+        {
+            const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+            var state=new Client.Main.Core.Client.CharacterState(Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+            var network=(Client.Main.Networking.NetworkManager)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Client.Main.Networking.NetworkManager));
+            typeof(Client.Main.Networking.NetworkManager).GetField("_characterState",flags)!.SetValue(network,state);
+            var inventory=new Client.Main.Controls.UI.Game.Inventory.InventoryControl(network);
+            inventory.Align=0;inventory.X=0;inventory.Y=0;inventory.ControlSize=inventory.ViewSize=new Point(400,600);
+            var definition=new Client.Main.Controls.UI.Game.Inventory.ItemDefinition(0,"Unusable armor",2,3){Group=8,RequiredStrength=9999};
+            var item=new InventoryItem(definition,Point.Zero);
+            inventory._pickedItemRenderer.PickUpItem(item);
+            typeof(Client.Main.Controls.UI.Game.Inventory.InventoryControl).GetField("_pickedItemOriginalGrid",flags)!.SetValue(inventory,Point.Zero);
+            bool placed=(bool)typeof(Client.Main.Controls.UI.Game.Inventory.InventoryControl).GetMethod("TryPlacePickedItemIntoEquipSlot",flags)!.Invoke(inventory,new object[]{(byte)3})!;
+            if(placed || !ReferenceEquals(inventory.GetDraggedItem(),item))throw new InvalidOperationException("Rejected equipment placement lost the held item.");
+            var pointer=typeof(MuGame).GetProperty("UiMousePosition")!;object old=pointer.GetValue(MuGame.Instance)!;
+            pointer.SetValue(MuGame.Instance,new Point(50,50));
+            typeof(Client.Main.Controls.UI.Game.Inventory.InventoryControl).GetMethod("HandleDropOutsideInventory",flags)!.Invoke(inventory,null);
+            pointer.SetValue(MuGame.Instance,old);
+            if(!ReferenceEquals(inventory.GetDraggedItem(),item))throw new InvalidOperationException("Empty inventory chrome dropped the held item.");
+            inventory.Dispose();
+            Console.WriteLine("PASS: unmet equipment requirements and inventory chrome keep the held item without sending a move/drop.");
+        }
+        if(Environment.GetEnvironmentVariable("TWINMU_LOGIN_CAPTURE") is {} loginCapture)
+        {
+            UiScaler.Configure(1024,768,1024,768);
+            Client.Main.Controls.UI.UiThemeManager.Initialize("Modern");
+            var login=new Client.Main.Controls.UI.Login.LoginDialog{Align=ControlAlign.HorizontalCenter|ControlAlign.VerticalCenter};
+            Controls.Add(login);await login.Initialize();
+            const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+            Client.Main.Controls.UI.Common.ButtonControl Button(string name)=>(Client.Main.Controls.UI.Common.ButtonControl)typeof(Client.Main.Controls.UI.Login.LoginDialog).GetField(name,flags)!.GetValue(login)!;
+            Client.Main.Controls.UI.TextFieldControl Field(string name)=>(Client.Main.Controls.UI.TextFieldControl)typeof(Client.Main.Controls.UI.Login.LoginDialog).GetField(name,flags)!.GetValue(login)!;
+            if(Button("_loginTab").Interactive || !Button("_registerTab").Interactive)throw new InvalidOperationException("Active login tab is not disabled.");
+            login.SetRegistrationMode(true);
+            if(!Button("_loginTab").Interactive || Button("_registerTab").Interactive)throw new InvalidOperationException("Active registration tab is not disabled.");
+            if(new[]{"_userInput","_emailInput","_passwordInput","_confirmInput"}.Any(name=>!Field(name).Visible || !Field(name).Interactive))throw new InvalidOperationException("Registration does not expose four inputs.");
+            Field("_passwordInput").Value="secret";Field("_confirmInput").Value="secret";
+            login.SetSubmitting(true);login.SetRegistrationMode(false);
+            if(!login.IsRegistration || Button("_classicOkButton").Interactive)throw new InvalidOperationException("Submitting registration can be submitted twice or switched away.");
+            login.SetSubmitting(false);Button("_classicCancelButton").OnClick();
+            if(login.IsRegistration || Field("_emailInput").Visible || login.Password.Length!=0 || login.Confirmation.Length!=0)throw new InvalidOperationException("Cancel did not return to login and clear registration passwords.");
+            if(loginCapture=="register")login.SetRegistrationMode(true);
+            Console.WriteLine("PASS: Login/Register tabs disable the active tab; four fields, busy guard and Cancel work.");
+            var authScene=new LoginScene();
+            typeof(LoginScene).GetField("_networkManager",flags)!.SetValue(authScene,MuGame.Network);
+            typeof(LoginScene).GetField("_previousStateHandled",flags)!.SetValue(authScene,Client.Main.Core.Client.ClientConnectionState.ConnectedToGameServer);
+            var authDialog=(Client.Main.Controls.UI.Login.LoginDialog)typeof(LoginScene).GetField("_loginDialog",flags)!.GetValue(authScene)!;
+            authDialog.SetRegistrationMode(true);
+            typeof(LoginScene).GetMethod("HandleConnectionStateChange",flags)!.Invoke(authScene,new object[]{MuGame.Network,Client.Main.Core.Client.ClientConnectionState.Disconnected});
+            typeof(LoginScene).GetMethod("HandleNetworkError",flags)!.Invoke(authScene,new object[]{MuGame.Network,"Login timeout"});
+            await MuGame.YieldToNextFrameAsync("Registration.TimeoutRegression",MainThreadDispatcher.WorkPriority.Low);
+            if(!authDialog.Visible || !authDialog.IsRegistration || authScene.Controls.OfType<Client.Main.Controls.UI.MessageWindow>().Any(m=>m.Visible))
+                throw new InvalidOperationException($"Login timeout regression: visible={authDialog.Visible}, registration={authDialog.IsRegistration}, messages={authScene.Controls.OfType<Client.Main.Controls.UI.MessageWindow>().Count(m=>m.Visible)}.");
+            authScene.Dispose();
+            Console.WriteLine("PASS: simulated login disconnect/timeout preserves registration without an exit dialog.");
+        }
+        if(Environment.GetEnvironmentVariable("TWINMU_MOBILE_INTERFACE_CAPTURE") is { } mobileCapture)
+        {
+            UiScaler.Configure(1024,768,1024,768);
+            Client.Main.Controls.UI.UiThemeManager.Initialize("Classic");
+            if(mobileCapture=="pickup")
+            {
+                int pickupRequests=0;
+                var pickup=new Client.Main.Controls.UI.Game.Hud.MobilePickupControl(()=>pickupRequests++);Controls.Add(pickup);await pickup.Initialize();
+                var mouseProperty=typeof(MuGame).GetProperty(nameof(MuGame.UiMouseState))!;
+                var previousProperty=typeof(MuGame).GetProperty(nameof(MuGame.PrevUiMouseState))!;
+                var savedMouse=MuGame.Instance.UiMouseState;var savedPrevious=MuGame.Instance.PrevUiMouseState;
+                var actionButtons=new Client.Main.Controls.UI.Game.Hud.TouchActionButtonsControl();Controls.Add(actionButtons);await actionButtons.Initialize();
+                var center=Client.Main.Controls.UI.Game.Hud.MobilePickupControl.ButtonBounds.Center;
+                var find=typeof(BaseScene).GetMethod("FindTopmostUiControlsAtPoint",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+                void Route(Point point,Client.Main.Controls.GameControl expected)
+                {
+                    object[] arguments={point,null!,null!};find.Invoke(this,arguments);
+                    if(!ReferenceEquals(arguments[1],expected))throw new InvalidOperationException($"HUD tap blocked by {arguments[1]?.GetType().Name} instead of {expected.GetType().Name}.");
+                    MouseHoverControl=expected;
+                    typeof(BaseScene).GetField("_pointerGestureControl",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.SetValue(this,expected);
+                }
+                Route(center,pickup);
+                var released=new Microsoft.Xna.Framework.Input.MouseState(center.X,center.Y,0,Microsoft.Xna.Framework.Input.ButtonState.Released,0,0,0,0);
+                var pressed=new Microsoft.Xna.Framework.Input.MouseState(center.X,center.Y,0,Microsoft.Xna.Framework.Input.ButtonState.Pressed,0,0,0,0);
+                previousProperty.SetValue(MuGame.Instance,released);mouseProperty.SetValue(MuGame.Instance,pressed);
+                pickup.Update(new GameTime());
+                if(pickupRequests!=1)throw new InvalidOperationException("Pickup tap did not dispatch a pickup request.");
+                previousProperty.SetValue(MuGame.Instance,pressed);mouseProperty.SetValue(MuGame.Instance,released);
+                pickup.Update(new GameTime());
+                if(pickupRequests!=1)throw new InvalidOperationException("Pickup release dispatched a duplicate request.");
+                mouseProperty.SetValue(MuGame.Instance,savedMouse);previousProperty.SetValue(MuGame.Instance,savedPrevious);
+                Console.WriteLine("PASS: pickup press dispatches once; release does not repeat.");
+                var hud=new Client.Main.Controls.UI.Game.Hud.ModernBottomHud(MuGame.Network.GetCharacterState(),new Client.Main.Controls.UI.Game.Skills.SkillSelectionPanel());
+                hud.GetConsumableCandidates();
+                const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+                var candidates=(System.Collections.IList)typeof(Client.Main.Controls.UI.Game.Hud.ModernBottomHud).GetField("_consumableCandidateView",flags)!.GetValue(hud)!;
+                candidates.Clear();candidates.Add(((byte)14,0,"Small Healing Potion",(string?)null,10));
+                var potionBar=new Client.Main.Controls.UI.Game.Hud.BottomBarControl(MuGame.Network.GetCharacterState(),hud);
+                Controls.Add(potionBar);await potionBar.Initialize();actionButtons.BringToFront();
+                MuGame.AppSettings.MobilePotionsRight=true;
+                var slot=(Rectangle)typeof(Client.Main.Controls.UI.Game.Hud.BottomBarControl).GetMethod("GetPotionSlotRectangle",System.Reflection.BindingFlags.Static|System.Reflection.BindingFlags.NonPublic)!.Invoke(null,new object[]{0})!;
+                potionBar.Update(new GameTime());Route(slot.Center,potionBar);
+                void TapPotion(Point point)
+                {
+                    Route(point,potionBar);
+                    previousProperty.SetValue(MuGame.Instance,new Microsoft.Xna.Framework.Input.MouseState(point.X,point.Y,0,Microsoft.Xna.Framework.Input.ButtonState.Released,0,0,0,0));
+                    mouseProperty.SetValue(MuGame.Instance,new Microsoft.Xna.Framework.Input.MouseState(point.X,point.Y,0,Microsoft.Xna.Framework.Input.ButtonState.Pressed,0,0,0,0));
+                    potionBar.Update(new GameTime());
+                }
+                TapPotion(slot.Center);
+                if((int)typeof(Client.Main.Controls.UI.Game.Hud.BottomBarControl).GetField("_potionPickerSlot",flags)!.GetValue(potionBar)!=0)throw new InvalidOperationException("Potion tap did not open chooser.");
+                var rows=(Rectangle[])typeof(Client.Main.Controls.UI.Game.Hud.BottomBarControl).GetField("_potionPickerItems",flags)!.GetValue(potionBar)!;
+                TapPotion(rows[0].Center);
+                if(hud.GetItemAssignmentAt(0)!=((byte)14,0))throw new InvalidOperationException("Potion selection did not assign the chosen item.");
+                mouseProperty.SetValue(MuGame.Instance,savedMouse);previousProperty.SetValue(MuGame.Instance,savedPrevious);
+                MouseHoverControl=null;typeof(BaseScene).GetField("_pointerGestureControl",flags)!.SetValue(this,null);
+                Console.WriteLine("PASS: stacked HUD routes pickup and potion taps; chooser opens and assigns selected potion.");
+                var previewScene=(GameScene)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(GameScene));
+                var previewHero=(Client.Main.Objects.Player.HeroObject)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Client.Main.Objects.Player.HeroObject));
+                typeof(GameScene).GetField("_hero",flags)!.SetValue(previewScene,previewHero);
+                typeof(BaseScene).GetProperty("World")!.SetValue(previewScene,_world);
+                var combatVisible=typeof(GameScene).GetProperty("MobileCombatControlsVisible",flags)!;
+                var locationField=typeof(Client.Main.Objects.WalkerObject).GetField("_location",flags)!;
+                bool sawSafe=false,sawBattle=false;
+                for(int y=0;y<256 && !(sawSafe && sawBattle);y++)for(int x=0;x<256 && !(sawSafe && sawBattle);x++)
+                {
+                    bool safe=_world.Terrain.RequestTerrainFlag(x,y).HasFlag(Client.Data.ATT.TWFlags.SafeZone);
+                    if(safe?sawSafe:sawBattle)continue;
+                    locationField.SetValue(previewHero,new Vector2(x,y));
+                    if((bool)combatVisible.GetValue(previewScene)! == safe)throw new InvalidOperationException("Combat HUD visibility does not follow safe-zone terrain flags.");
+                    if(safe)sawSafe=true;else sawBattle=true;
+                }
+                if(!sawSafe || !sawBattle)throw new InvalidOperationException("Safe-zone fixture did not cover both terrain types.");
+                Console.WriteLine("PASS: combat HUD visibility switches between actual safe-zone and battle terrain tiles.");
+                MuGame.AppSettings.MobilePotionsRight=false;
+                var fixedBounds=Client.Main.Controls.UI.Game.Hud.MobilePickupControl.ButtonBounds;
+                MuGame.AppSettings.MobilePotionsRight=true;
+                if(fixedBounds!=Client.Main.Controls.UI.Game.Hud.MobilePickupControl.ButtonBounds)
+                    throw new InvalidOperationException("Pickup button follows the potion-side setting.");
+                Console.WriteLine("PASS: pickup button stays fixed on the right when potion placement changes.");
+            }
+            if(mobileCapture=="menu")
+            {
+                var menu=new Client.Main.Controls.UI.Game.Hud.TouchMenuControl();Controls.Add(menu);await menu.Initialize();menu.Open();
+                Controls.Add(new Client.Main.Controls.UI.Game.Hud.BatteryStatusControl());
+                var layout=typeof(Client.Main.Controls.UI.Game.Hud.TouchMenuControl).GetMethod("LayoutRects",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+                var rectField=typeof(Client.Main.Controls.UI.Game.Hud.TouchMenuControl).GetField("_rects",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+                var menuProgress=typeof(Client.Main.Controls.UI.Game.Hud.TouchMenuControl).GetField("_menuProgress",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+                menuProgress.SetValue(menu,1f);
+                foreach(int width in new[]{480,640,800,1024,1280,1600,2400})
+                {
+                    UiScaler.Configure(width,768,width,768);layout.Invoke(menu,null);
+                    var rectangles=(Microsoft.Xna.Framework.Rectangle[])rectField.GetValue(menu)!;
+                    var profile=Client.Main.Controls.UI.Game.Hud.MobilePlayerPanel.LayoutBounds;
+                    var map=Client.Main.Controls.UI.Game.Hud.TouchMenuControl.MobileMapRectangle;
+                    var toggle=(Microsoft.Xna.Framework.Rectangle)typeof(Client.Main.Controls.UI.Game.Hud.TouchMenuControl).GetField("_menuRect",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(menu)!;
+                    menuProgress.SetValue(menu,0f);layout.Invoke(menu,null);
+                    var closedToggle=(Microsoft.Xna.Framework.Rectangle)typeof(Client.Main.Controls.UI.Game.Hud.TouchMenuControl).GetField("_menuRect",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(menu)!;
+                    menuProgress.SetValue(menu,1f);layout.Invoke(menu,null);
+                    if(toggle!=closedToggle || rectangles.Any(r=>r.Intersects(toggle)))
+                        throw new InvalidOperationException("Menu toggle overlaps the adjacent shortcut list or HUD.");
+                    if(rectangles.Select(r=>r.Y).Distinct().Count()>3)throw new InvalidOperationException("Responsive menu exceeds three rows.");
+                    for(int i=0;i<rectangles.Length;i++)
+                    {
+                        if(rectangles[i].Width<24 || !UiScaler.WindowBounds.Contains(rectangles[i]) || rectangles[i].Intersects(profile) || rectangles[i].Intersects(map))
+                            throw new InvalidOperationException($"Menu intersects a top HUD or screen edge at width {width}.");
+                        for(int j=0;j<i;j++)if(rectangles[i].Intersects(rectangles[j]))throw new InvalidOperationException("Menu icons overlap.");
+                    }
+                    Console.WriteLine($"PASS: width {width}: {rectangles.Select(r=>r.X).Distinct().Count()} columns, {rectangles.Select(r=>r.Y).Distinct().Count()} rows; no HUD overlap.");
+                }
+                UiScaler.Configure(1024,768,1024,768);layout.Invoke(menu,null);
+            }
+            var log=new Client.Main.Controls.UI.ChatLogWindow();Controls.Add(log);await log.Initialize();
+            log.ShowFrame(true);log.SetShowingLines(mobileCapture=="expanded"?15:6);
+            typeof(Client.Main.Controls.UI.ChatLogWindow).GetMethod("AnchorAbove",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(log,new object[]{Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatX,Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatBottom});
+            if(mobileCapture=="expanded")
+            {
+                log.SetShowingLines(6);
+                const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+                var handle=(Microsoft.Xna.Framework.Rectangle)typeof(Client.Main.Controls.UI.ChatLogWindow).GetField("_resizeHandleArea",flags)!.GetValue(log)!;
+                var resize=typeof(Client.Main.Controls.UI.ChatLogWindow).GetMethod("HandleResizeInteraction",flags)!;
+                Microsoft.Xna.Framework.Input.MouseState Mouse(int y,Microsoft.Xna.Framework.Input.ButtonState button)=>new(handle.Center.X,y,0,button,Microsoft.Xna.Framework.Input.ButtonState.Released,Microsoft.Xna.Framework.Input.ButtonState.Released,Microsoft.Xna.Framework.Input.ButtonState.Released,Microsoft.Xna.Framework.Input.ButtonState.Released);
+                var press=Mouse(handle.Center.Y,Microsoft.Xna.Framework.Input.ButtonState.Pressed);
+                resize.Invoke(log,new object[]{press,Mouse(handle.Center.Y,Microsoft.Xna.Framework.Input.ButtonState.Released)});
+                resize.Invoke(log,new object[]{Mouse(handle.Center.Y-150,Microsoft.Xna.Framework.Input.ButtonState.Pressed),press});
+                if(log.NumberOfShowingLines<=6)throw new InvalidOperationException("Upward chat drag did not increase its height.");
+                if(log.Y+log.ViewSize.Y!=Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatBottom)throw new InvalidOperationException("Chat bottom moved while resizing.");
+                Console.WriteLine("PASS: upward chat drag expands while keeping its bottom anchored.");
+            }
+            for(int i=0;i<18;i++)log.AddMessage(i%2==0?"Player":"TwinMU",$"Preview message {i+1}: Welcome to Lorencia",i%3==0?MessageType.System:MessageType.Chat);
+            if(mobileCapture=="composer")
+            {
+                var input=new Client.Main.Controls.UI.ChatInputBoxControl(log,MuGame.AppLoggerFactory);
+                Controls.Add(input);await input.Initialize();input.Show(focusInput:false);
+                const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+                var field=(Client.Main.Controls.UI.TextFieldControl)typeof(Client.Main.Controls.UI.ChatInputBoxControl).GetField("_chatInput",flags)!.GetValue(input)!;
+                string? sent=null;input.MessageSendRequested+=(_,args)=>sent=args.Message;
+                foreach(var test in new[]{(InputMessageType.Chat,"hello","hello"),(InputMessageType.Party,"hello","~hello"),(InputMessageType.Guild,"hello","@hello"),(InputMessageType.Gens,"hello","$hello"),(InputMessageType.Chat,"@@hello","@@hello")})
+                {
+                    input.Show(focusInput:false);field.Value=test.Item2;
+                    typeof(Client.Main.Controls.UI.ChatInputBoxControl).GetField("_currentInputType",flags)!.SetValue(input,test.Item1);
+                    typeof(Client.Main.Controls.UI.ChatInputBoxControl).GetField("_lastChatTime",flags)!.SetValue(input,0L);
+                    typeof(Client.Main.Controls.UI.ChatInputBoxControl).GetMethod("ProcessEnterKey",flags)!.Invoke(input,null);
+                    if(sent!=test.Item3)throw new InvalidOperationException($"Chat route sent {sent}, expected {test.Item3}.");
+                }
+                input.Show(focusInput:false);
+                Console.WriteLine("PASS: normal, party, guild, Gens, and explicit alliance chat preserve server routing prefixes.");
+                input.X=log.X;input.Y=log.Y-60;
+            }
+            var bar=new Client.Main.Controls.UI.Game.Hud.BottomBarControl(MuGame.Network.GetCharacterState());
+            Controls.Add(bar);await bar.Initialize();
+            if(mobileCapture=="travel")
+            {
+                var travel=new Client.Main.Controls.UI.Game.MoveCommandWindow(MuGame.AppLoggerFactory,MuGame.Network);
+                Controls.Add(travel);await travel.Initialize();travel.ToggleVisibility();
+            }
+            if(mobileCapture.StartsWith("helper-"))
+            {
+                var assembly=typeof(MuGame).Assembly;
+                var controllerType=assembly.GetType("Client.Main.Scenes.MuHelperController")!;
+                object controller=System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(controllerType);
+                var configuration=new Client.Main.Configuration.MuHelperConfig{BasicSkillId=11};
+                controllerType.GetMethod("Load")!.Invoke(controller,new object[]{configuration});
+                var helperType=assembly.GetType("Client.Main.Controls.UI.Game.Helper.MobileHelperSettingsControl")!;
+                var helper=(Client.Main.Controls.UI.UIControl)Activator.CreateInstance(helperType,new[]{controller})!;
+                _captureHelper=helper;
+                Controls.Add(helper);helperType.GetMethod("Toggle")!.Invoke(helper,null);
+                const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+                var draft=(Client.Main.Configuration.MuHelperConfig)helperType.GetField("_draft",flags)!.GetValue(helper)!;
+                draft.HuntingRange=12;
+                helperType.GetMethod("Cancel",flags)!.Invoke(helper,null);
+                var actual=(Client.Main.Configuration.MuHelperConfig)controllerType.GetProperty("Config")!.GetValue(controller)!;
+                if(actual.HuntingRange!=configuration.HuntingRange)throw new InvalidOperationException("Cancel changed saved Helper settings.");
+                helperType.GetMethod("Toggle")!.Invoke(helper,null);
+                helperType.GetField("_tab",flags)!.SetValue(helper,mobileCapture=="helper-recovery"?1:mobileCapture=="helper-loot"?2:0);
+                Console.WriteLine("PASS: mobile Helper Cancel preserves the saved configuration.");
+            }
+        }
+        if(Environment.GetEnvironmentVariable("TWINMU_MOBILE_TARGET_CAPTURE") is { } targetCapture)
+        {
+            UiScaler.Configure(1024,768,1024,768);
+            Client.Main.Controls.UI.UiThemeManager.Initialize("Classic");
+            if(targetCapture.StartsWith("monster"))
+            {
+                _captureMonster=new Client.Main.Objects.Monsters.Giant{NetworkId=77,Location=SkillCaptureWorld.CasterTile+new Vector2(-2,2)};
+                _world.Objects.Add(_captureMonster);await _captureMonster.Load();
+                if(targetCapture!="monster-unknown")_captureMonster.UpdateHealthFractions(.64f,null);
+            }
+            _world.Victim.Name="Target Player";
+            _world.Victim.UpdateHealthFraction(.72f);
+            _world.Victim.UpdateHealthFraction(null);
+            if(Math.Abs(_world.Victim.HealthFraction!.Value-.72f)>.0001f)
+                throw new InvalidOperationException("Unknown health update replaced a known server value.");
+            Console.WriteLine("PASS: remote player health preserves the latest known server fraction.");
+            var target=new Client.Main.Controls.UI.Game.Hud.MobileTargetControl(()=>_captureMonster is not null?_captureMonster:_world.Victim);
+            Controls.Add(target);await target.Initialize();
+        }
+        if(Environment.GetEnvironmentVariable("TWINMU_MOBILE_PANEL_CAPTURE")=="1")
+        {
+            var state=MuGame.Network.GetCharacterState();state.Name="KeViN";state.Level=400;
+            state.CurrentHealth=7501;state.MaximumHealth=8335;state.CurrentMana=1480;state.MaximumMana=2210;
+            state.CurrentShield=18567;state.MaximumShield=18587;state.CurrentAbility=2100;state.MaximumAbility=3684;
+            var panel=new Client.Main.Controls.UI.Game.Hud.MobilePlayerPanel(state,()=>_world.Caster,()=>_panelPk,()=>_panelPk=!_panelPk,true);
+            Controls.Add(panel);await panel.Initialize();
+            if(Environment.GetEnvironmentVariable("TWINMU_MOBILE_MODE_LIST_CAPTURE")=="1")
+            {
+                const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+                var press=typeof(Client.Main.Controls.UI.Game.Hud.MobilePlayerPanel).GetMethod("HandlePointerPress",flags)!;
+                var option=typeof(Client.Main.Controls.UI.Game.Hud.MobilePlayerPanel).GetMethod("ModeOptionBounds",flags)!;
+                void Click(Microsoft.Xna.Framework.Point point)=>press.Invoke(panel,new object[]{point});
+                if(!(bool)press.Invoke(panel,new object[]{Client.Main.Controls.UI.Game.Hud.MobilePlayerPanel.HelperSettingsBounds.Center})! ||
+                   !(bool)press.Invoke(panel,new object[]{Client.Main.Controls.UI.Game.Hud.MobilePlayerPanel.HelperStartBounds.Center})!)
+                    throw new InvalidOperationException("Mobile Helper buttons are outside their input owner's hit areas.");
+                Console.WriteLine("PASS: portrait panel owns the mobile Helper button hit areas.");
+                void Choose(int index)=>Click(((Microsoft.Xna.Framework.Rectangle)option.Invoke(panel,new object[]{index})!).Center);
+                Click(panel.ModeBounds.Center);
+                if(_panelPk)throw new InvalidOperationException("Opening the mode list changed attack mode.");
+                Choose(1);
+                if(!_panelPk)throw new InvalidOperationException("Selecting PK did not enable it.");
+                Click(panel.ModeBounds.Center);Choose(1);
+                if(!_panelPk)throw new InvalidOperationException("Reselecting PK toggled it off.");
+                Click(panel.ModeBounds.Center);Choose(0);
+                if(_panelPk)throw new InvalidOperationException("Selecting Normal did not disable PK.");
+                Click(panel.ModeBounds.Center);
+                Console.WriteLine("PASS: mode list opens without toggling, selects PK/Normal, and preserves repeated selections.");
+            }
+        }
     }
 
     public override void Update(GameTime gameTime)
@@ -69,6 +356,7 @@ public sealed class SkillCaptureScene : BaseScene
             gameTime = new GameTime(gameTime.TotalGameTime,
                 TimeSpan.FromSeconds(FPSCounter.Instance.FPS_ANIMATION_FACTOR / 25f));
         base.Update(gameTime);
+        if (_captureHelper?.Visible == true) _captureHelper.BringToFront();
         if (_world?.Caster.Status == GameControlStatus.Ready)
         {
             // Reference default zoom step is 1300; the mounted reference raises
@@ -249,6 +537,11 @@ public sealed class SkillCaptureScene : BaseScene
                 var persistent=new Client.Main.Objects.Effects.ClassBuffEffect(_world.Caster,_rageBuffs);
                 _effect.Children.Add(persistent);
             }
+            if(Environment.GetEnvironmentVariable("TWINMU_LEVELUP_CAPTURE") is { } levelUp)
+            {
+                _effect=new Client.Main.Objects.Effects.LevelUpEffect(_world.Caster.Position,levelUp=="master",_world.Caster.Angle);
+                hasRenderer=true;
+            }
             if (!hasRenderer || _effect == null)
             {
                 File.WriteAllText(Path.Combine(OutputDirectory, "missing-renderer.txt"), $"Skill {SkillId} has no registry renderer. This is a failed case, not a visual match.");
@@ -280,6 +573,18 @@ public sealed class SkillCaptureScene : BaseScene
         {
             _animationFrame += FPSCounter.Instance.FPS_ANIMATION_FACTOR;
             _frame = (int)_animationFrame;
+            if(Environment.GetEnvironmentVariable("TWINMU_MOBILE_TARGET_CAPTURE")!=null)
+            {
+                if(_frame==24)_world.Victim.UpdateHealthFraction(.35f);
+                if(_frame==48)_world.Victim.UpdateHealthFraction(.15f);
+            }
+            if(Environment.GetEnvironmentVariable("TWINMU_MOBILE_PANEL_CAPTURE")=="1")
+            {
+                var state=MuGame.Network.GetCharacterState();_panelPk=_frame>=48;
+                state.CurrentHealth=_frame is >=24 and <48?0u:7501u;
+                state.MaximumMana=_frame is >=24 and <48?0u:2210u;
+                state.CurrentMana=state.MaximumMana==0?0u:1480u;
+            }
             if(SkillId==0 && Environment.GetEnvironmentVariable("TWINMU_WING_CAPTURE")!=null)
             {
                 // Show the full spread instead of the old edge-on fixture angle.
@@ -303,6 +608,14 @@ public sealed class SkillCaptureScene : BaseScene
     public override void Draw(GameTime gameTime)
     {
         base.Draw(gameTime);
+        if(Environment.GetEnvironmentVariable("TWINMU_UPDATE_SCREEN_CAPTURE")=="1")
+        {
+            Client.Main.Helpers.AppUpdateScreen.Show("• Fixed NPC names\n• Improved mobile chat and Helper\n• Updated target health bars\n• Added potion slot placement",104857600);
+            Client.Main.Helpers.AppUpdateScreen.Downloaded=65011712;
+            Client.Main.Helpers.AppUpdateScreen.BytesPerSecond=2097152;
+            Client.Main.Helpers.AppUpdateScreen.Draw();
+            Client.Main.Helpers.AppUpdateScreen.Close();
+        }
         if (SkillId == 0 && Environment.GetEnvironmentVariable("TWINMU_ITEM_CAPTURE_INVENTORY") == "1")
         {
             bool general = Environment.GetEnvironmentVariable("TWINMU_ITEM_CAPTURE_GENERAL") == "1";
@@ -460,5 +773,3 @@ public sealed class SkillCaptureScene : BaseScene
         };
     }
 }
-
-

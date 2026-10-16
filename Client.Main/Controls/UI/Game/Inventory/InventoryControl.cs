@@ -658,8 +658,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     return;
                 }
 
-                if (_hoveredEquipSlot >= 0 && TryPlacePickedItemIntoEquipSlot((byte)_hoveredEquipSlot))
+                if (_hoveredEquipSlot >= 0)
                 {
+                    TryPlacePickedItemIntoEquipSlot((byte)_hoveredEquipSlot);
                     return;
                 }
 
@@ -1984,6 +1985,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         private void HandleDropOutsideInventory()
         {
+            // Empty inventory chrome and rejected equipment placements are not
+            // world-drop targets. Use the real pointer, not a branch-masked one.
+            if(DisplayRectangle.Contains(MuGame.Instance.UiMousePosition))return;
             var item = _pickedItemRenderer.Item;
             if (item == null)
             {
@@ -2105,6 +2109,11 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
             else if (Scene?.World is Controls.WalkableWorldControl world && _network_manager_exists())
             {
+                if(Scene.MouseHoverControl is { } hovered && hovered != world && hovered != this)
+                {
+                    RestorePickedItemToOriginalLocation();
+                    return;
+                }
                 string dropError = ItemDropPolicy.GetBlockReason(item);
                 if (item.Definition.Group == 14 && item.Definition.Id == 28 && world.WorldIndex >= 45 && world.WorldIndex <= 50)
                     dropError = "This item cannot be dropped in Illusion Temple.";
@@ -2119,19 +2128,15 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 byte tileX = world.MouseTileX;
                 byte tileY = world.MouseTileY;
 
-                _ = Task.Run(async () =>
+                var expectedData = item.RawData?.ToArray();
+                RestorePickedItemToOriginalLocation();
+                RequestDialog.Show($"Drop {BuildItemDisplayName(item)}?", () =>
                 {
-                    var svc = _networkManager.GetCharacterService();
-                    await svc.SendDropItemRequestAsync(tileX, tileY, slotIndex);
-                    await Task.Delay(1200);
-                    var state = _networkManager.GetCharacterState();
-                    if (state.HasInventoryItem(slotIndex))
-                    {
-                        MuGame.ScheduleOnMainThread(() => state.RaiseInventoryChanged());
-                    }
-                });
-
-                ReleasePickedItem();
+                    var state = _networkManager?.GetCharacterState();
+                    if(state == null || !state.GetInventoryItems().TryGetValue(slotIndex,out var current) ||
+                       expectedData == null || !current.SequenceEqual(expectedData)) return;
+                    _ = _networkManager.GetCharacterService().SendDropItemRequestAsync(tileX,tileY,slotIndex);
+                }, acceptText: "Drop", rejectText: "Cancel");
             }
             else
             {
@@ -2964,10 +2969,13 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             Rectangle rect = Translate(layout.Rect);
             Color overlay = layout.AccentRed ? Theme.Danger * 0.45f : Theme.Secondary * 0.45f;
+            bool requirementsFail = _pickedItemRenderer.Item is { } picked && _networkManager?.GetCharacterState() is { } state && !MuMainItemRules.MeetsRequirements(picked,state);
+            if(requirementsFail)overlay=Color.Red*.55f;
             spriteBatch.Draw(pixel, rect, overlay);
 
             // Border highlight
             Color light = layout.AccentRed ? Theme.Danger : Theme.Accent;
+            if(requirementsFail)light=Color.Red;
             spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Y, rect.Width, 1), light * 0.8f);
             spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Bottom - 1, rect.Width, 1), Theme.BorderOuter);
             spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Y, 1, rect.Height), light * 0.6f);

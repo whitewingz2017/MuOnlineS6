@@ -64,6 +64,9 @@ namespace Client.Main.Controls.UI
         private bool _isDraggingScrollbar = false;
         private bool _isDraggingResize = false;
         private float _dragStartOffsetY;
+        private int _mobileResizeStartLines;
+        private bool _mobileBodyDrag;
+        private int _mobileBodyY,_mobileBodyOffset;
 
         private Rectangle _scrollBarArea;
         private Rectangle _scrollThumbArea;
@@ -248,7 +251,10 @@ namespace Client.Main.Controls.UI
         /// </summary>
         public void SetShowingLines(int lines)
         {
-            int newLinesClamped = Math.Clamp(lines, MIN_SHOWING_LINES, MAX_SHOWING_LINES);
+            int maxLines=UiThemeManager.IsMobileInterfaceActive
+                ? Math.Clamp((int)((Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatBottom-UiScaler.WindowBounds.Top-100)/Math.Max(1,_lineHeight)),MIN_SHOWING_LINES,MAX_SHOWING_LINES)
+                :MAX_SHOWING_LINES;
+            int newLinesClamped = Math.Clamp(lines, MIN_SHOWING_LINES, maxLines);
             if (_showingLines != newLinesClamped)
             {
                 _showingLines = newLinesClamped;
@@ -349,11 +355,33 @@ namespace Client.Main.Controls.UI
         {
             if (Status != GameControlStatus.Ready || !Visible || _font == null) return;
 
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                Interactive=true;
+                if(!_showFrame)ShowFrame(true);
+                if(Width!=Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatWidth)UpdateLayout();
+                SetShowingLines(_showingLines);
+            }
             base.Update(gameTime); // Updates IsMouseOver among other things
 
             var mouse = MuGame.Instance.UiMouseState;
             var prevMouse = MuGame.Instance.PrevUiMouseState;
+            if(UiThemeManager.IsMobileInterfaceActive && !_isDraggingResize && !_isDraggingScrollbar && !_mobileBodyDrag &&
+                Scene?.MouseHoverControl is { } hovered && hovered!=this && hovered!=Scene.World)return;
 
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                if(mouse.LeftButton==ButtonState.Pressed && prevMouse.LeftButton==ButtonState.Released &&
+                    DisplayRectangle.Contains(mouse.Position) && !_scrollBarArea.Contains(mouse.Position))
+                {_mobileBodyDrag=true;_mobileBodyY=mouse.Y;_mobileBodyOffset=_scrollOffset;}
+                if(_mobileBodyDrag)
+                {
+                    Scene?.SetMouseInputConsumed();
+                    _scrollOffset=_mobileBodyOffset+(int)((mouse.Y-_mobileBodyY)/Math.Max(1,_lineHeight));
+                    ClampScrollOffset();UpdateScrollbar();
+                    if(mouse.LeftButton==ButtonState.Released)_mobileBodyDrag=false;
+                }
+            }
             _hoveredMessageGlobalIndex = -1; // Reset hover state
 
             bool mouseInInteractableArea =
@@ -398,6 +426,9 @@ namespace Client.Main.Controls.UI
                 if (_isDraggingResize && mouse.LeftButton == ButtonState.Released) _isDraggingResize = false;
             }
         }
+
+        public override bool ContainsPointerPoint(Point point) => base.ContainsPointerPoint(point) ||
+            (UiThemeManager.IsMobileInterfaceActive && _resizeHandleArea.Contains(point));
 
         public override void Draw(GameTime gameTime)
         {
@@ -478,7 +509,12 @@ namespace Client.Main.Controls.UI
             if (_showFrame)
             {
                 DrawScrollbar(spriteBatch);
-                DrawResizeHandle(spriteBatch);
+                if(UiThemeManager.IsMobileInterfaceActive)
+                {
+                    spriteBatch.Draw(GraphicsManager.Instance.Pixel,_resizeHandleArea,new Color(30,100,120,210));
+                    Client.Main.Controls.UI.Game.Hud.MobileHudLayout.Text(spriteBatch,"^",_resizeHandleArea,13,Color.White);
+                }
+                else DrawResizeHandle(spriteBatch);
             }
         }
 
@@ -556,19 +592,25 @@ namespace Client.Main.Controls.UI
             if (_resizeHandleArea.IsEmpty) return;
             bool hoverResize = _resizeHandleArea.Contains(mouse.Position);
 
-            // For now, clicking the handle = resize (like F4)
-            if (hoverResize && mouse.LeftButton == ButtonState.Pressed && prevMouse.LeftButton == ButtonState.Released)
+            if(UiThemeManager.IsMobileInterfaceActive)
             {
-                CycleSize();
-                // Sound is played by ChatInputBoxControl when F4 is pressed or button is clicked
+                if(hoverResize && mouse.LeftButton==ButtonState.Pressed && prevMouse.LeftButton==ButtonState.Released)
+                {
+                    _isDraggingResize=true;
+                    _dragStartOffsetY=mouse.Y;
+                    _mobileResizeStartLines=_showingLines;
+                }
+                if(_isDraggingResize)
+                {
+                    Scene?.SetMouseInputConsumed();
+                    if(mouse.LeftButton==ButtonState.Pressed)
+                        SetShowingLines(_mobileResizeStartLines+(int)((_dragStartOffsetY-mouse.Y)/Math.Max(1,_lineHeight)));
+                    else _isDraggingResize=false;
+                }
+                return;
             }
-            // Dragging logic can be added here if needed
-            else if (_isDraggingResize && mouse.LeftButton == ButtonState.Pressed) { }
-            else if (_isDraggingResize && mouse.LeftButton == ButtonState.Released) { _isDraggingResize = false; }
-            else if (hoverResize && mouse.LeftButton == ButtonState.Pressed && prevMouse.LeftButton != ButtonState.Pressed)
-            {
-                _isDraggingResize = true; // Start dragging if clicked
-            }
+            if(hoverResize && mouse.LeftButton==ButtonState.Pressed && prevMouse.LeftButton==ButtonState.Released)CycleSize();
+
         }
 
         private void DetectHoveredMessage(Point mousePos)
@@ -642,7 +684,12 @@ namespace Client.Main.Controls.UI
 
         private void UpdateLayout()
         {
-            if (IsSeason6)
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                Width=Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatWidth;
+                _fontScale=.44f;
+            }
+            else if (IsSeason6)
             {
                 Width = UiThemeManager.Current.Metrics.ChatLogSize.X;
                 _fontScale = 0.48f;

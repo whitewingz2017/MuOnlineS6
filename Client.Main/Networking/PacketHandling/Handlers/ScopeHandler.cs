@@ -1824,6 +1824,8 @@ namespace Client.Main.Networking.PacketHandling.Handlers
 
                     if (target is MonsterObject monster)
                         monster.UpdateHealthFractions(healthFraction, shieldFraction, healthDmg, shieldDmg);
+                    else if(target is PlayerObject player)
+                        player.UpdateHealthFraction(healthFraction);
 
                     Color dmgColor;
                     string dmgText;

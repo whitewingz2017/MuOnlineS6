@@ -59,7 +59,7 @@
 #begin Background.png
 /importer:TextureImporter
 /processor:TextureProcessor
-/build:Background.jpg
+/build:Background.png
 
 #begin Bubbles.png
 /importer:TextureImporter

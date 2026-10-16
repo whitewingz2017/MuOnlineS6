@@ -112,9 +112,9 @@ namespace Client.Main.Controls.UI
         public static void ShowDisconnected()
         {
 #if IOS
-            const string message = "Connection to the server was lost.";
+            const string message = "Disconnected from the server.";
 #else
-            const string message = "Connection to the server was lost. Press OK to close the application.";
+            const string message = "Disconnected from the server.";
 #endif
             if (MuGame.Instance?.ActiveScene?.Controls.OfType<MessageWindow>().Any(window => window.Text == message) == true)
                 return;

@@ -565,17 +565,9 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                         }
 
                         var heroPosition = gameScene.Hero.Position;
-                        bool isMasterClass = gameScene.Hero.CharacterClass is
-                            CharacterClassNumber.GrandMaster or
-                            CharacterClassNumber.BladeMaster or
-                            CharacterClassNumber.HighElf or
-                            CharacterClassNumber.LordEmperor or
-                            CharacterClassNumber.DuelMaster or
-                            CharacterClassNumber.DimensionMaster or
-                            CharacterClassNumber.FistMaster;
                         var levelUpEffect = new LevelUpEffect(
                             heroPosition,
-                            masterLevel: isMasterClass,
+                            masterLevel: false,
                             angle: gameScene.Hero.Angle);
                         gameScene.World.Objects.Add(levelUpEffect);
                         await levelUpEffect.Load(); // Asynchronously load the effect and its children

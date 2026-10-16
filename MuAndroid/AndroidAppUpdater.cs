@@ -20,6 +20,7 @@ internal sealed class AndroidAppUpdater
     private string _pendingApk;
     private bool _installing;
     private bool _checked;
+    private int _downloading;
     public AndroidAppUpdater(Activity activity) => _activity = activity;
 
     public async Task CheckAsync()
@@ -43,17 +44,14 @@ internal sealed class AndroidAppUpdater
             if (hash?.Length != 64 || size <= 0 || size > 2147483648L) return;
             string notes = release.GetProperty("notes").GetString();
             bool mandatory = release.TryGetProperty("mandatory", out var flag) && flag.GetBoolean();
-            _activity.RunOnUiThread(() =>
+            Client.Main.Helpers.AppUpdateScreen.Retry = () => _activity.RunOnUiThread(async () => await DownloadAsync(url, hash, size, version));
+            Client.Main.Helpers.AppUpdateScreen.Continue = mandatory ? null : () =>
             {
-                if (_activity.IsFinishing || _activity.IsDestroyed) return;
-                var dialog = new AlertDialog.Builder(_activity)
-                    .SetTitle($"TwinMU update {version}")
-                    .SetMessage($"A new version is available.\n\n{notes}\n\nDownload size: {size / 1048576d:0.0} MB")
-                    .SetPositiveButton("Download update", async (_, _) => await DownloadAsync(url, hash, size, version));
-                if (!mandatory) dialog.SetNegativeButton("Later", (_, _) => { });
-                else dialog.SetNegativeButton("Close game", (_, _) => _activity.Finish());
-                dialog.SetCancelable(!mandatory).Show();
-            });
+                Client.Main.Helpers.AppUpdateScreen.Close();
+                _ = Client.Main.MuGame.Network.ForceReconnectToConnectServerAsync();
+            };
+            Client.Main.Helpers.AppUpdateScreen.Show(notes, size);
+            await DownloadAsync(url, hash, size, version);
         }
         catch (Exception ex) { Android.Util.Log.Info("TwinMUUpdater", $"Update check unavailable: {ex.Message}"); }
     }
@@ -71,13 +69,11 @@ internal sealed class AndroidAppUpdater
 
     private async Task DownloadAsync(Uri url, string hash, long size, string version)
     {
-        var progress = new ProgressDialog(_activity);
-        progress.SetTitle("Downloading TwinMU update");
-        progress.SetMessage("Your game data will be kept.");
-        progress.SetProgressStyle(ProgressDialogStyle.Horizontal);
-        progress.Max = 100;
-        progress.SetCancelable(false);
-        progress.Show();
+        if(System.Threading.Interlocked.Exchange(ref _downloading,1)!=0)return;
+        Client.Main.Helpers.AppUpdateScreen.Error = "";
+        Client.Main.Helpers.AppUpdateScreen.Status = "Downloading update...";
+        Client.Main.Helpers.AppUpdateScreen.Downloaded = 0;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         string path = Path.Combine(_activity.CacheDir.AbsolutePath, "twinmu-update.apk");
         try
         {
@@ -100,11 +96,13 @@ internal sealed class AndroidAppUpdater
                     if (percent != lastPercent)
                     {
                         lastPercent = percent;
-                        _activity.RunOnUiThread(() => progress.Progress = percent);
+                        Client.Main.Helpers.AppUpdateScreen.Downloaded = total;
+                        Client.Main.Helpers.AppUpdateScreen.BytesPerSecond = total / Math.Max(.01, clock.Elapsed.TotalSeconds);
                     }
                 }
                 if (total != size) throw new InvalidDataException("The update download is incomplete.");
             }
+            Client.Main.Helpers.AppUpdateScreen.Status = "Verifying update...";
             await using (var input = File.OpenRead(path))
             {
                 string actual = Convert.ToHexString(await SHA256.HashDataAsync(input).ConfigureAwait(false));
@@ -128,18 +126,14 @@ internal sealed class AndroidAppUpdater
             if (actualSigners == null || !expectedSigners.SequenceEqual(actualSigners))
                 throw new InvalidDataException("This update was not signed with the game's signing certificate.");
             _pendingApk = path;
-            _activity.RunOnUiThread(() => { progress.Dismiss(); RequestInstall(); });
+            _activity.RunOnUiThread(() => { Client.Main.Helpers.AppUpdateScreen.Status = "Installing update..."; RequestInstall(); });
         }
         catch (Exception ex)
         {
             try { File.Delete(path); } catch { }
-            _activity.RunOnUiThread(() =>
-            {
-                progress.Dismiss();
-                new AlertDialog.Builder(_activity).SetTitle("Update could not be installed")
-                    .SetMessage(ex.Message).SetPositiveButton("OK", (_, _) => { }).Show();
-            });
+            Client.Main.Helpers.AppUpdateScreen.Fail(ex.Message);
         }
+        finally { System.Threading.Interlocked.Exchange(ref _downloading,0); }
     }
 
     private void RequestInstall()
@@ -150,7 +144,7 @@ internal sealed class AndroidAppUpdater
                 .SetMessage("Allow TwinMU to install updates in the next Android settings screen, then return to the game.")
                 .SetPositiveButton("Open settings", (_, _) => _activity.StartActivity(new Intent(Settings.ActionManageUnknownAppSources,
                     Android.Net.Uri.Parse("package:" + _activity.PackageName))))
-                .SetNegativeButton("Later", (_, _) => { }).Show();
+                .SetNegativeButton("Later", (_, _) => Client.Main.Helpers.AppUpdateScreen.Fail("Installation permission was not granted.")).Show();
             return;
         }
         ResumeInstall();
@@ -182,8 +176,7 @@ internal sealed class AndroidAppUpdater
         }
         catch (Exception ex)
         {
-            new AlertDialog.Builder(_activity).SetTitle("Update installation failed")
-                .SetMessage(ex.Message).SetPositiveButton("OK", (_, _) => { }).Show();
+            Client.Main.Helpers.AppUpdateScreen.Fail(ex.Message);
         }
         finally { _installing = false; }
     }
@@ -203,7 +196,7 @@ public sealed class UpdateInstallReceiver : BroadcastReceiver
         }
         else if (status != 0)
         {
-            Android.Widget.Toast.MakeText(context, "TwinMU update was not installed. You can try again next launch.", Android.Widget.ToastLength.Long).Show();
+            Client.Main.Helpers.AppUpdateScreen.Fail("Android did not install the update. Tap Retry to try again.");
         }
         else
             UpdateRestartReceiver.LaunchAfterUpdate(context);

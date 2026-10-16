@@ -35,7 +35,7 @@ namespace Client.Main.Scenes
         private readonly GameScene _scene;
         private readonly ModernBottomHud _hud;
         private readonly ILogger _logger;
-        private readonly Func<PlayerObject, bool> _isDuelAttackTarget;
+        private readonly Func<PlayerObject, bool> _isPlayerAttackTarget;
 
         private Core.Client.SkillEntryState _pendingSkill;
         private ushort _pendingSkillTargetId;
@@ -59,12 +59,12 @@ namespace Client.Main.Scenes
             GameScene scene,
             ModernBottomHud hud,
             ILogger logger,
-            Func<PlayerObject, bool> isDuelAttackTarget)
+            Func<PlayerObject, bool> isPlayerAttackTarget)
         {
             _scene = scene ?? throw new ArgumentNullException(nameof(scene));
             _hud = hud ?? throw new ArgumentNullException(nameof(hud));
             _logger = logger;
-            _isDuelAttackTarget = isDuelAttackTarget ?? (_ => false);
+            _isPlayerAttackTarget = isPlayerAttackTarget ?? (_ => false);
         }
 
         public void Update()
@@ -478,7 +478,7 @@ namespace Client.Main.Scenes
                 return monster.NetworkId;
             }
 
-            if (hoveredTarget is PlayerObject player && !player.IsDead && _isDuelAttackTarget(player))
+            if (hoveredTarget is PlayerObject player && !player.IsDead && _isPlayerAttackTarget(player))
             {
                 hero.FaceTowards(player.Location, immediate: true);
                 return player.NetworkId;
@@ -536,7 +536,7 @@ namespace Client.Main.Scenes
                 player != _scene.Hero &&
                 !player.IsDead &&
                 player.World == _scene.World &&
-                _isDuelAttackTarget(player);
+                _isPlayerAttackTarget(player);
         }
 
         private bool HasValidPersistentSkill(Core.Client.SkillEntryState selectedSkill)
@@ -549,7 +549,7 @@ namespace Client.Main.Scenes
             }
 
             return _persistentSkillFromTouch
-                ? CanRepeatTouchSkill(_persistentSkill, _persistentSkillTarget as MonsterObject)
+                ? CanRepeatTouchSkill(_persistentSkill, _persistentSkillTarget)
                 : CanLockSkillTarget(_persistentSkill, _persistentSkillTarget);
         }
 
@@ -575,7 +575,7 @@ namespace Client.Main.Scenes
             WalkableWorldControl world)
         {
             if (!(_persistentSkillFromTouch
-                ? CanRepeatTouchSkill(skill, target as MonsterObject)
+                ? CanRepeatTouchSkill(skill, target)
                 : CanLockSkillTarget(skill, target)))
             {
                 ClearPersistentSkill();
@@ -604,6 +604,8 @@ namespace Client.Main.Scenes
 
         private WalkerObject GetHoveredSkillTarget()
         {
+            if (_scene.MouseHoverObject is PlayerObject hoveredPlayer && _isPlayerAttackTarget(hoveredPlayer))
+                return hoveredPlayer;
             if (_scene.World != null)
             {
                 MonsterObject targetedMonster = WorldHoverSystem.FindBestLiveMonster(
@@ -626,7 +628,7 @@ namespace Client.Main.Scenes
                 if (player != _scene.Hero &&
                     !player.IsDead &&
                     player.World == _scene.World &&
-                    _isDuelAttackTarget(player))
+                    _isPlayerAttackTarget(player))
                 {
                     return player;
                 }
@@ -772,7 +774,7 @@ namespace Client.Main.Scenes
             if (_pendingSkillTargetIsPlayer)
             {
                 if (walker is not PlayerObject targetPlayer || targetPlayer.IsDead ||
-                    (!SkillCastRules.IsFriendlyTargetSkill(_pendingSkill.SkillId) && !_isDuelAttackTarget(targetPlayer)))
+                    (!SkillCastRules.IsFriendlyTargetSkill(_pendingSkill.SkillId) && !_isPlayerAttackTarget(targetPlayer)))
                 {
                     ClearPendingSkill();
                     return;
@@ -825,6 +827,7 @@ namespace Client.Main.Scenes
 
         private bool UseSkillOnTarget(Core.Client.SkillEntryState skill, MonsterObject target)
         {
+            _scene.SetMobileTarget(target);
             var hero = _scene.Hero;
             if (skill == null || target == null || hero == null)
                 return false;
@@ -852,10 +855,10 @@ namespace Client.Main.Scenes
 
         /// <summary>
         /// Casts a skill activated by the Classic touch hotbar using its declared usage type.
-        /// Target skills use the nearest monster, area skills use that monster's position,
+        /// Target skills use the selected combat target, area skills use its position,
         /// and self skills target the player's own character.
         /// </summary>
-        internal bool StartSkillFromTouchHotbar(Core.Client.SkillEntryState skill, MonsterObject target)
+        internal bool StartSkillFromTouchHotbar(Core.Client.SkillEntryState skill, WalkerObject target)
         {
             ClearPersistentSkill();
             if (CanRepeatTouchSkill(skill, target))
@@ -888,7 +891,7 @@ namespace Client.Main.Scenes
             void Consider(WalkerObject candidate)
             {
                 if (candidate == null || candidate == hero || candidate is MonsterObject { IsDead: true } || candidate is PlayerObject { IsDead: true } || !candidate.Visible || candidate.World != _scene.World) return;
-                if (candidate is PlayerObject player && !friendly && !_isDuelAttackTarget(player)) return;
+                if (candidate is PlayerObject player && !friendly && !_isPlayerAttackTarget(player)) return;
                 if (candidate is MonsterObject && friendly) return;
                 float distance = Vector2.DistanceSquared(location, candidate.Location);
                 // Power Wave is targeted in MuMain, but its travelling visual follows
@@ -921,13 +924,13 @@ namespace Client.Main.Scenes
                 : UseSkillWithoutTarget(skill, location);
         }
 
-        private bool CanRepeatTouchSkill(Core.Client.SkillEntryState skill, MonsterObject target) =>
-            skill != null && target != null && !target.IsDead && target.World == _scene.World &&
+        private bool CanRepeatTouchSkill(Core.Client.SkillEntryState skill, WalkerObject target) =>
+            skill != null && _scene.IsCombatTargetValid(target) &&
             skill.SkillId != TeleportSkillId && skill.SkillId != NovaSkillId &&
             !SkillDatabase.IsSelfSkill(skill.SkillId) && !SkillCastRules.IsFriendlyTargetSkill(skill.SkillId) &&
             !IsDarkRavenCommandSkill(skill.SkillId);
 
-        internal bool CastSkillFromHotbar(Core.Client.SkillEntryState skill, MonsterObject target)
+        internal bool CastSkillFromHotbar(Core.Client.SkillEntryState skill, WalkerObject target)
         {
             var hero = _scene.Hero;
             if (skill == null || hero == null || hero.IsDead)
@@ -956,7 +959,8 @@ namespace Client.Main.Scenes
                 return UseAreaSkill(skill, targetId, targetLocation);
             }
 
-            return target != null ? UseSkillOnTarget(skill, target) : UseSkillWithoutTarget(skill);
+            return target is PlayerObject player ? UseSkillOnPlayerTarget(skill, player) :
+                target is MonsterObject monster ? UseSkillOnTarget(skill, monster) : UseSkillWithoutTarget(skill);
         }
 
         private bool UseSkillWithoutTarget(Core.Client.SkillEntryState skill, Vector2? aimedLocation = null)
@@ -1030,6 +1034,7 @@ namespace Client.Main.Scenes
 
         private bool UseSkillOnPlayerTarget(Core.Client.SkillEntryState skill, PlayerObject target)
         {
+            _scene.SetMobileTarget(target);
             var hero = _scene.Hero;
             if (skill == null || target == null || hero == null)
                 return false;
@@ -1037,7 +1042,7 @@ namespace Client.Main.Scenes
             if (hero.IsDead || target.IsDead)
                 return false;
 
-            if (!SkillCastRules.IsFriendlyTargetSkill(skill.SkillId) && !_isDuelAttackTarget(target))
+            if (!SkillCastRules.IsFriendlyTargetSkill(skill.SkillId) && !_isPlayerAttackTarget(target))
                 return false;
 
             if (!IsInSkillRange(target.Location, skill.SkillId))
@@ -1128,6 +1133,8 @@ namespace Client.Main.Scenes
                 return true;
             }
 
+            if(extraTargetId!=0 && _scene.World.TryGetWalkerById(extraTargetId,out var selectedTarget))
+                _scene.SetMobileTarget(selectedTarget);
             byte animationCounter = NextAreaSkillAnimationCounter();
             if (characterState != null)
             {

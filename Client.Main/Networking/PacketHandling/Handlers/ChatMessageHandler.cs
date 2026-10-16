@@ -292,6 +292,11 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 uiType = Models.MessageType.Party;
                 display = rawText[1..].TrimStart();
             }
+            else if (rawText.StartsWith("@@"))
+            {
+                uiType=Models.MessageType.Union;
+                display=rawText[2..].TrimStart();
+            }
             else if (rawText.StartsWith("@"))
             {
                 uiType = Models.MessageType.Guild;

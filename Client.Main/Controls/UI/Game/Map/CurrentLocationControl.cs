@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 
 using System;
 using System.Threading.Tasks;
@@ -142,20 +142,20 @@ namespace Client.Main.Controls.UI.Game.Map
         private const int OriginalBaseHeight = 28;
         private const int OriginalPadX = 10;
         private const int OriginalButtonGap = 4;
-        private const int OriginalButtonWidth = 52;
-        private const int OriginalButtonHeight = 22;
+        private const int OriginalButtonWidth = 62;
+        private const int OriginalButtonHeight = 32;
 
         private bool UseOriginalLocationBar =>
             UiThemeManager.CurrentId == UiThemeId.Classic ||
             (MuGame.AppSettings?.HudTheme ?? HudTheme.Hybrid) != HudTheme.ClassicPc;
 
-        private bool UseMicroHelperButtons => UiThemeManager.IsMobilePlatform || UseOriginalLocationBar;
+        private bool UseMicroHelperButtons => UiThemeManager.IsMobileInterfaceActive || UseOriginalLocationBar;
 
         public Point GetBuffAnchor(int gap)
 
         {
-            if (UiThemeManager.IsMobilePlatform)
-                return new Point(12, 12);
+            if (UiThemeManager.IsMobileInterfaceActive)
+                return Hud.MobilePlayerPanel.BuffAnchor;
             var rect = DisplayRectangle;
 
             return new Point(
@@ -251,10 +251,12 @@ namespace Client.Main.Controls.UI.Game.Map
                 if (_font == null)
                     return;
 
-                if (UiThemeManager.IsMobilePlatform || UseOriginalLocationBar)
+                if (UiThemeManager.IsMobileInterfaceActive || UseOriginalLocationBar)
                     DrawOriginalBar(spriteBatch);
                 else
                     DrawMuMainStyleBar(spriteBatch);
+                if(UiThemeManager.IsMobileInterfaceActive)
+                    Hud.MobileHudLayout.Text(spriteBatch,"v",new Rectangle(X+ViewSize.X-24,Y+4,20,20),14,Color.Goldenrod);
             }
             finally
             {
@@ -276,7 +278,7 @@ namespace Client.Main.Controls.UI.Game.Map
             _lastVirtualSize = virtualSize;
             _lastWindowBounds = UiScaler.WindowBounds;
 
-            if (UiThemeManager.IsMobilePlatform || UseOriginalLocationBar)
+            if (UiThemeManager.IsMobileInterfaceActive || UseOriginalLocationBar)
             {
                 ApplyOriginalLayout(virtualSize);
                 return;
@@ -352,17 +354,17 @@ namespace Client.Main.Controls.UI.Game.Map
             float scaleY = virtualSize.Y / 768f;
             float scale = Math.Clamp(MathF.Min(scaleX, scaleY), 0.82f, 1.35f);
 
-            if (UiThemeManager.IsMobilePlatform) scale = 1f;
-            X = UiThemeManager.IsMobilePlatform ? Hud.TouchMenuControl.MobileMapRectangle.X : (MuGame.AppSettings?.HudTheme == HudTheme.ClassicPc ? UiScaler.WindowBounds.Left : ScaleOriginal(OriginalBaseX, scale));
-            Y = UiThemeManager.IsMobilePlatform ? Hud.TouchMenuControl.MobileMapRectangle.Y - 34 : (MuGame.AppSettings?.HudTheme == HudTheme.ClassicPc ? UiScaler.WindowBounds.Top : ScaleOriginal(OriginalBaseY, scale));
+            if (UiThemeManager.IsMobileInterfaceActive) scale = 1f;
+            X = UiThemeManager.IsMobileInterfaceActive ? Hud.TouchMenuControl.MobileMapRectangle.X : (MuGame.AppSettings?.HudTheme == HudTheme.ClassicPc ? UiScaler.WindowBounds.Left : ScaleOriginal(OriginalBaseX, scale));
+            Y = UiThemeManager.IsMobileInterfaceActive ? Hud.TouchMenuControl.MobileMapRectangle.Y - 34 : (MuGame.AppSettings?.HudTheme == HudTheme.ClassicPc ? UiScaler.WindowBounds.Top : ScaleOriginal(OriginalBaseY, scale));
 
-            int plateWidth = ScaleOriginal(UiThemeManager.IsMobilePlatform ? 184 : OriginalPlateWidth, scale);
+            int plateWidth = ScaleOriginal(UiThemeManager.IsMobileInterfaceActive ? 240 : OriginalPlateWidth, scale);
             int height = ScaleOriginal(OriginalBaseHeight, scale);
             int gap = ScaleOriginal(OriginalButtonGap, scale);
             int buttonWidth = ScaleOriginal(UseMicroHelperButtons ? OriginalButtonHeight : OriginalButtonWidth, scale);
             int buttonHeight = ScaleOriginal(OriginalButtonHeight, scale);
 
-            ControlSize = new Point(plateWidth + gap + (buttonWidth * 2) + gap, height);
+            ControlSize = new Point(UiThemeManager.IsMobileInterfaceActive ? plateWidth : plateWidth + gap + (buttonWidth * 2) + gap, height);
             ViewSize = ControlSize;
 
             _mapScale = Math.Clamp(0.54f * scale, 0.46f, 0.72f);
@@ -377,7 +379,7 @@ namespace Client.Main.Controls.UI.Game.Map
 
             Rectangle rect = DisplayRectangle;
             float scale = Math.Max(0.82f, rect.Height / (float)OriginalBaseHeight);
-            int plateWidth = ScaleOriginal(UiThemeManager.IsMobilePlatform ? 184 : OriginalPlateWidth, scale);
+            int plateWidth = ScaleOriginal(UiThemeManager.IsMobileInterfaceActive ? 240 : OriginalPlateWidth, scale);
             var plate = new Rectangle(rect.X, rect.Y, Math.Min(plateWidth, rect.Width), rect.Height);
 
             spriteBatch.Draw(pixel, plate, ModernHudTheme.BorderOuter);
@@ -431,8 +433,10 @@ namespace Client.Main.Controls.UI.Game.Map
             int buttonWidth = ScaleOriginal(UseMicroHelperButtons ? OriginalButtonHeight : OriginalButtonWidth, wScale);
             int buttonHeight = ScaleOriginal(OriginalButtonHeight, wScale);
             int buttonY = plate.Y + Math.Max(0, (plate.Height - buttonHeight) / 2);
-            _hitSetup = new Rectangle(plate.Right + gap, buttonY, buttonWidth, buttonHeight);
-            _hitStartStop = new Rectangle(_hitSetup.Right + gap, buttonY, buttonWidth, buttonHeight);
+            _hitSetup = UiThemeManager.IsMobileInterfaceActive ? Hud.MobilePlayerPanel.HelperSettingsBounds :
+                new Rectangle(plate.Right + gap, buttonY, buttonWidth, buttonHeight);
+            _hitStartStop = UiThemeManager.IsMobileInterfaceActive ? Hud.MobilePlayerPanel.HelperStartBounds :
+                new Rectangle(_hitSetup.Right + gap, buttonY, buttonWidth, buttonHeight);
 
             if (!UseMicroHelperButtons || !DrawMicroHelperButton(spriteBatch, _microSetup, _hitSetup))
                 DrawThemedHelperButton(spriteBatch, _hitSetup, "Setup", false);
@@ -864,6 +868,14 @@ namespace Client.Main.Controls.UI.Game.Map
 
         private void HandleButtonClicks()
         {
+            // The mobile buttons are part of the portrait panel, outside this
+            // map control's bounds. Let that panel own their gestures.
+            if(UiThemeManager.IsMobileInterfaceActive)return;
+            if (UiThemeManager.IsMobileInterfaceActive)
+            {
+                _hitSetup = Hud.MobilePlayerPanel.HelperSettingsBounds;
+                _hitStartStop = Hud.MobilePlayerPanel.HelperStartBounds;
+            }
             var mouse =
                 MuGame.Instance.UiMouseState;
 
@@ -886,7 +898,8 @@ namespace Client.Main.Controls.UI.Game.Map
 
             if (_hitSetup.Contains(mousePos))
             {
-                _scene.MuHelperWindow?.ToggleVisibility();
+                if (UiThemeManager.IsMobileInterfaceActive) _scene.ToggleMobileHelperSettings();
+                else _scene.MuHelperWindow?.ToggleVisibility();
 
                 _scene.SetMouseInputConsumed();
 

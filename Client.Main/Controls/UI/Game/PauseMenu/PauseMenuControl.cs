@@ -1170,6 +1170,8 @@ namespace Client.Main.Controls.UI.Game.PauseMenu
                     AddOption("Auto Attack", () => MuGame.AppSettings?.AutoAttackEnabled != false,
                         value => _owner.SetAutoAttackEnabled(value), ref currentY, OptionRowHeight);
                     AddHeading("Keep attacking the selected monster after one click.", ref currentY);
+                    AddOption("Mobile potion position", () => MuGame.AppSettings.MobilePotionsRight,
+                        value => MuGame.PersistMobilePotionsRight(value), ref currentY, OptionRowHeight, trueText: "RIGHT", falseText: "LEFT");
                 });
             }
 
@@ -1602,13 +1604,13 @@ namespace Client.Main.Controls.UI.Game.PauseMenu
                 }
             }
 
-            private void AddOption(string label, Func<bool> getter, Action<bool> setter, ref int currentY, int rowHeight, Action onChanged = null)
+            private void AddOption(string label, Func<bool> getter, Action<bool> setter, ref int currentY, int rowHeight, Action onChanged = null, string trueText = "ENABLED", string falseText = "DISABLED")
             {
                 var option = new OptionToggle(label, getter, value =>
                 {
                     setter(value);
                     onChanged?.Invoke();
-                }, currentY, _panelWidth);
+                }, currentY, _panelWidth, trueText, falseText);
                 option.AddTo(Controls);
                 option.CollectControls(_dynamicControls);
                 _options.Add(option);
@@ -1663,10 +1665,12 @@ namespace Client.Main.Controls.UI.Game.PauseMenu
                 private readonly Func<bool> _getter;
                 private readonly Action<bool> _setter;
 
-                public OptionToggle(string label, Func<bool> getter, Action<bool> setter, int y, int panelWidth)
+                private readonly string _trueText, _falseText;
+                public OptionToggle(string label, Func<bool> getter, Action<bool> setter, int y, int panelWidth, string trueText, string falseText)
                 {
                     _getter = getter;
                     _setter = setter;
+                    _trueText = trueText; _falseText = falseText;
 
                     _label = new LabelControl
                     {
@@ -1711,7 +1715,7 @@ namespace Client.Main.Controls.UI.Game.PauseMenu
                 public void Refresh()
                 {
                     bool value = _getter();
-                    _button.Text = value ? "ENABLED" : "DISABLED";
+                    _button.Text = value ? _trueText : _falseText;
                     _button.BackgroundColor = value ? new Color(34, 74, 55, 225) : new Color(55, 37, 43, 220);
                     _button.HoverBackgroundColor = value ? new Color(45, 96, 70, 240) : new Color(78, 47, 55, 238);
                     _button.TextColor = value ? new Color(150, 235, 180) : new Color(210, 145, 150);

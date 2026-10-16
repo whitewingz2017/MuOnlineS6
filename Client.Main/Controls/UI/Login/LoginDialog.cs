@@ -26,12 +26,24 @@ namespace Client.Main.Controls.UI.Login
         private readonly ButtonControl _classicOkButton;
         private readonly ButtonControl _classicCancelButton;
         private readonly RememberLoginCheckBox _rememberLogin;
+        private readonly ButtonControl _loginTab;
+        private readonly ButtonControl _registerTab;
+        private readonly LabelControl _emailLabel;
+        private readonly LabelControl _confirmLabel;
+        private readonly TextFieldControl _emailInput;
+        private readonly TextFieldControl _confirmInput;
+        private bool _submitting;
+        public bool IsRegistration { get; private set; }
+        public string Email => _emailInput.Value.Trim();
+        public string Confirmation => _confirmInput.Value;
+        public event EventHandler RegistrationAttempt;
+        public event EventHandler RegistrationModeChanged;
         private bool _rememberDetails;
         public bool RememberDetails => _rememberDetails;
         public bool CanGoBack
         {
-            get => _classicCancelButton.Interactive;
-            set => _classicCancelButton.Interactive = value;
+            get => IsRegistration || _classicCancelButton.Interactive;
+            set => _classicCancelButton.Interactive = !_submitting && (IsRegistration || value);
         }
 
         // Properties
@@ -101,7 +113,7 @@ namespace Client.Main.Controls.UI.Login
 
             Controls.Add(_userLabel = new LabelControl
             {
-                Text = "User",
+                Text = "Username",
                 Y = 90,
                 X = 20,
                 AutoViewSize = false,
@@ -185,6 +197,52 @@ namespace Client.Main.Controls.UI.Login
                 _rememberLogin.Checked = true;
             }
 
+            _loginTab=CreateClassicButton("Login",ModernHudTheme.BgMid);
+            _registerTab=CreateClassicButton("Register",ModernHudTheme.BgMid);
+            _loginTab.Click+=(_,_)=>SetRegistrationMode(false);
+            _registerTab.Click+=(_,_)=>SetRegistrationMode(true);
+            Controls.Add(_loginTab);Controls.Add(_registerTab);
+            _emailLabel=new LabelControl{Text="Email",FontSize=12,AutoViewSize=false,TextAlign=HorizontalAlign.Right};
+            _confirmLabel=new LabelControl{Text="Confirm",FontSize=12,AutoViewSize=false,TextAlign=HorizontalAlign.Right};
+            _emailInput=TextFieldControl.Create();
+            _confirmInput=TextFieldControl.Create();_confirmInput.MaskValue=true;
+            Controls.Add(_emailLabel);Controls.Add(_confirmLabel);Controls.Add(_emailInput);Controls.Add(_confirmInput);
+            _confirmInput.ValueChanged+=PasswordInput_EnterPressed;
+            foreach(var field in AllFields)
+                field.Click+=(_,_)=>FocusField(field);
+            ApplyThemeLayout();
+        }
+
+        private TextFieldControl[] AllFields => new[]{_userInput,_emailInput,_passwordInput,_confirmInput};
+        private void FocusField(TextFieldControl field)
+        {
+            foreach(var other in AllFields)if(other!=field)other.OnBlur();
+            Scene?.FocusControlIfInteractive(field);field.OnFocus();
+        }
+        public void SetRegistrationMode(bool registration)
+        {
+            if(_submitting || IsRegistration==registration)return;
+            foreach(var field in AllFields)field.OnBlur();
+            if(Scene!=null)Scene.FocusControl=null;
+            IsRegistration=registration;
+            _passwordInput.Value=string.Empty;_confirmInput.Value=string.Empty;
+            ApplyThemeLayout();
+            RegistrationModeChanged?.Invoke(this,EventArgs.Empty);
+        }
+        public void SetSubmitting(bool submitting)
+        {
+            _submitting=submitting;
+            ApplyThemeLayout();
+        }
+        public void RegistrationSucceeded()
+        {
+            SetSubmitting(false);SetRegistrationMode(false);
+        }
+
+        public override async System.Threading.Tasks.Task Load()
+        {
+            await base.Load();
+            // Button loading enables interaction; restore the active-tab and submit guards afterwards.
             ApplyThemeLayout();
         }
 
@@ -211,96 +269,41 @@ namespace Client.Main.Controls.UI.Login
 
         private void ApplyThemeLayout()
         {
-            bool classic = !LoginUiTheme.UseModernLayout;
-            ControlSize = classic
-                ? new Point(LoginLayout.PanelWidth, LoginLayout.PanelHeight)
-                : new Point(360, 300);
-
-            _serverNameLabel.TextColor = classic ? ModernHudTheme.TextGold : new Color(241, 188, 37);
-            _titleLabel.TextColor = classic ? ModernHudTheme.TextWhite : Color.WhiteSmoke;
-            _userLabel.TextColor = classic ? ModernHudTheme.TextWhite : Color.WhiteSmoke;
-            _passwordLabel.TextColor = classic ? ModernHudTheme.TextWhite : Color.WhiteSmoke;
-            _userInput.TextColor = classic ? ModernHudTheme.TextWhite : Color.White;
-            _passwordInput.TextColor = classic ? ModernHudTheme.TextWhite : Color.White;
-            _userInput.Interactive = true;
-            _passwordInput.Interactive = true;
-
-            if (classic)
+            if(_loginTab==null)return;
+            bool classic=!LoginUiTheme.UseModernLayout;
+            int width=classic?340:380;
+            AutoViewSize=false;
+            ControlSize=ViewSize=new Point(width,IsRegistration?370:310);
+            _titleLabel.Y=15;_titleLabel.TextColor=ModernHudTheme.TextWhite;
+            _serverNameLabel.Y=49;_serverNameLabel.TextColor=ModernHudTheme.TextGold;
+            _line1.Visible=false;_line2.Visible=false;_okButton.Visible=false;_okButton.Interactive=false;
+            _loginTab.X=28;_loginTab.Y=78;_loginTab.ViewSize=new Point((width-66)/2,30);
+            _registerTab.X=width/2+5;_registerTab.Y=78;_registerTab.ViewSize=_loginTab.ViewSize;
+            _loginTab.Enabled=_loginTab.Interactive=IsRegistration && !_submitting;
+            _registerTab.Enabled=_registerTab.Interactive=!IsRegistration && !_submitting;
+            _loginTab.BackgroundColor=IsRegistration?ModernHudTheme.BgMid:ModernHudTheme.AccentDim;
+            _registerTab.BackgroundColor=IsRegistration?ModernHudTheme.AccentDim:ModernHudTheme.BgMid;
+            void Row(LabelControl label,TextFieldControl input,int y,bool visible=true)
             {
-                _line1.X = 10;
-                _line1.Y = LoginLayout.LineTopY;
-                _line2.X = 10;
-                _line2.Y = LoginLayout.LineBottomY;
-                _userLabel.X = LoginLayout.UserLabelX;
-                _userLabel.Y = LoginLayout.UserLabelY;
-                _passwordLabel.X = LoginLayout.PasswordLabelX;
-                _passwordLabel.Y = LoginLayout.PasswordLabelY;
-                _userInput.X = LoginLayout.UserInputX;
-                _userInput.Y = LoginLayout.UserInputY;
-                _passwordInput.X = LoginLayout.PasswordInputX;
-                _passwordInput.Y = LoginLayout.PasswordInputY;
-                _userInput.ViewSize = new Point(LoginLayout.InputWidth, LoginLayout.InputHeight);
-                _passwordInput.ViewSize = new Point(LoginLayout.InputWidth, LoginLayout.InputHeight);
-                _userInput.Skin = TextFieldSkin.Flat;
-                _passwordInput.Skin = TextFieldSkin.Flat;
-                _userInput.BackgroundColor = new Color(12, 12, 16, 235);
-                _passwordInput.BackgroundColor = new Color(12, 12, 16, 235);
-                _userInput.BorderColor = ModernHudTheme.BorderInner;
-                _passwordInput.BorderColor = ModernHudTheme.BorderInner;
-                _userInput.BorderThickness = 1;
-                _passwordInput.BorderThickness = 1;
-                _classicOkButton.X = LoginLayout.OkX;
-                _classicOkButton.Y = LoginLayout.OkY;
-                _classicOkButton.ViewSize = new Point(LoginLayout.OkWidth, LoginLayout.OkHeight);
-                _classicCancelButton.X = LoginLayout.CancelX;
-                _classicCancelButton.Y = LoginLayout.CancelY;
-                _classicCancelButton.ViewSize = new Point(LoginLayout.CancelWidth, LoginLayout.CancelHeight);
+                label.X=10;label.Y=y+7;label.ViewSize=new Point(85,26);label.TextColor=ModernHudTheme.TextWhite;
+                input.X=104;input.Y=y;input.ViewSize=new Point(width-124,32);
+                input.Skin=TextFieldSkin.Flat;input.BackgroundColor=new Color(12,12,16,235);
+                input.BorderColor=ModernHudTheme.BorderInner;input.BorderThickness=1;input.TextColor=ModernHudTheme.TextWhite;
+                label.Visible=input.Visible=visible;input.Interactive=visible && !_submitting;
             }
-            else
-            {
-                _line1.X = 10;
-                _line1.Y = 40;
-                _line2.X = 10;
-                _line2.Y = 218;
-                _userLabel.X = 20;
-                _userLabel.Y = 93;
-                _passwordLabel.X = 20;
-                _passwordLabel.Y = 141;
-                _userInput.X = 105;
-                _userInput.Y = 84;
-                _passwordInput.X = 105;
-                _passwordInput.Y = 132;
-                _userInput.ViewSize = new Point(230, 38);
-                _passwordInput.ViewSize = new Point(230, 38);
-                _userInput.FontSize = 16;
-                _passwordInput.FontSize = 16;
-                _userInput.Skin = TextFieldSkin.Flat;
-                _passwordInput.Skin = TextFieldSkin.Flat;
-                _userInput.BackgroundColor = _passwordInput.BackgroundColor = new Color(12, 12, 16, 235);
-                _userInput.BorderColor = _passwordInput.BorderColor = ModernHudTheme.BorderInner;
-                _userInput.BorderThickness = _passwordInput.BorderThickness = 1;
-                _classicOkButton.X = 64;
-                _classicOkButton.Y = 234;
-                _classicOkButton.ViewSize = new Point(108, 42);
-                _classicCancelButton.X = 188;
-                _classicCancelButton.Y = 234;
-                _classicCancelButton.ViewSize = new Point(108, 42);
-            }
-
-            _rememberLogin.X = 30;
-            _rememberLogin.Y = classic ? 210 : 180;
-            _rememberLogin.ViewSize = new Point(ControlSize.X - 60, 32);
-            _rememberLogin.Visible = LoginDetailsStore.Supported;
-            _rememberLogin.Interactive = LoginDetailsStore.Supported;
-            _okButton.Visible = false;
-            _okButton.Interactive = false;
-            _classicOkButton.Visible = true;
-            _classicOkButton.Interactive = true;
-            _classicCancelButton.Visible = true;
-            _line1.Visible = !classic;
-            _line2.Visible = !classic;
-            _line1.ViewSize = new Point(Math.Max(1, ControlSize.X - 20), 8);
-            _line2.ViewSize = new Point(Math.Max(1, ControlSize.X - 20), 5);
+            Row(_userLabel,_userInput,120);
+            Row(_emailLabel,_emailInput,162,IsRegistration);
+            Row(_passwordLabel,_passwordInput,IsRegistration?204:162);
+            Row(_confirmLabel,_confirmInput,246,IsRegistration);
+            _rememberLogin.X=28;_rememberLogin.Y=202;_rememberLogin.ViewSize=new Point(width-56,32);
+            _rememberLogin.Visible=!IsRegistration && LoginDetailsStore.Supported;
+            _rememberLogin.Interactive=_rememberLogin.Visible && !_submitting;
+            _classicOkButton.Text=_submitting?"Submitting…":IsRegistration?"Submit":"Login";
+            _classicOkButton.X=width/2-115;_classicOkButton.Y=IsRegistration?302:246;
+            _classicOkButton.ViewSize=new Point(108,40);_classicOkButton.Visible=true;_classicOkButton.Enabled=_classicOkButton.Interactive=!_submitting;
+            _classicCancelButton.X=width/2+7;_classicCancelButton.Y=_classicOkButton.Y;
+            _classicCancelButton.ViewSize=new Point(108,40);_classicCancelButton.Visible=true;
+            _classicCancelButton.Enabled=_classicCancelButton.Interactive=!_submitting;
         }
 
         public override void Draw(GameTime gameTime)
@@ -323,18 +326,20 @@ namespace Client.Main.Controls.UI.Login
 
             Rectangle header = new(rect.X + 10, rect.Y + 39, rect.Width - 20, 1);
             sprite.Draw(GraphicsManager.Instance.Pixel, header, ModernHudTheme.Accent * 0.7f);
-            Rectangle separator = new(rect.X + 10, rect.Y + LoginLayout.LineBottomY, rect.Width - 20, 1);
+            Rectangle separator = new(rect.X + 10, rect.Y + _classicOkButton.Y-10, rect.Width - 20, 1);
             sprite.Draw(GraphicsManager.Instance.Pixel, separator, ModernHudTheme.BorderInner * 0.8f);
 
             _titleLabel.Draw(gameTime);
             _serverNameLabel.Draw(gameTime);
+            _loginTab.Draw(gameTime);_registerTab.Draw(gameTime);
+            if(IsRegistration){_emailLabel.Draw(gameTime);_emailInput.Draw(gameTime);_confirmLabel.Draw(gameTime);_confirmInput.Draw(gameTime);}
             _userLabel.Draw(gameTime);
             _passwordLabel.Draw(gameTime);
             _userInput.Draw(gameTime);
             _passwordInput.Draw(gameTime);
             _classicOkButton.Draw(gameTime);
             _classicCancelButton.Draw(gameTime);
-            _rememberLogin.Draw(gameTime);
+            if(_rememberLogin.Visible)_rememberLogin.Draw(gameTime);
         }
 
         // Public Methods
@@ -353,19 +358,11 @@ namespace Client.Main.Controls.UI.Login
 
         public override void Update(GameTime gameTime)
         {
-            // Handle Tab key to switch focus between input fields
-            if (MuGame.Instance.Keyboard.IsKeyDown(Keys.Tab) && MuGame.Instance.PrevKeyboard.IsKeyUp(Keys.Tab))
+            if(Visible && !_submitting && MuGame.Instance.Keyboard.IsKeyDown(Keys.Tab) && MuGame.Instance.PrevKeyboard.IsKeyUp(Keys.Tab))
             {
-                if (_userInput.IsFocused)
-                {
-                    _userInput.OnBlur();
-                    _passwordInput.OnFocus();
-                }
-                else if (_passwordInput.IsFocused)
-                {
-                    _passwordInput.OnBlur();
-                    _userInput.OnFocus();
-                }
+                var fields=AllFields.Where(f=>f.Visible).ToArray();
+                int index=Array.FindIndex(fields,f=>f.IsFocused);
+                FocusField(fields[(index+1)%fields.Length]);
             }
             base.Update(gameTime);
         }
@@ -386,6 +383,8 @@ namespace Client.Main.Controls.UI.Login
 
         private void CancelButton_Click(object sender, EventArgs e)
         {
+            if(_submitting)return;
+            if(IsRegistration){SetRegistrationMode(false);return;}
             if (!CanGoBack) return;
             _userInput.OnBlur();
             _passwordInput.OnBlur();
@@ -411,6 +410,13 @@ namespace Client.Main.Controls.UI.Login
         // Invokes the LoginAttempt event
         private void AttemptLogin()
         {
+            if(_submitting)return;
+            if(IsRegistration)
+            {
+                foreach(var field in AllFields)field.OnBlur();
+                if(Scene!=null)Scene.FocusControl=null;
+                RegistrationAttempt?.Invoke(this,EventArgs.Empty);return;
+            }
             // Blur fields to hide soft keyboard (especially on mobile) after submitting.
             _userInput.OnBlur();
             _passwordInput.OnBlur();

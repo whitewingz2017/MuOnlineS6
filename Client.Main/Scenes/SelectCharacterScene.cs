@@ -1377,10 +1377,10 @@ namespace Client.Main.Scenes
             if (UiThemeManager.CurrentId == UiThemeId.Classic)
                 return;
 
-            if (_characterCardRects.Count == 0 || !_initialLoadComplete || Cursor == null)
+            if (_characterCardRects.Count == 0 || !_initialLoadComplete)
                 return;
 
-            Point mousePos = new Point((int)Cursor.X, (int)Cursor.Y);
+            Point mousePos = MuGame.Instance.UiMouseState.Position;
             int previousHovered = _hoveredCardIndex;
             _hoveredCardIndex = -1;
 

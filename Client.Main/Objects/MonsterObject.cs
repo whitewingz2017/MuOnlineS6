@@ -28,6 +28,7 @@ namespace Client.Main.Objects
 
         private float _healthFraction = 1f;
         private bool _hasHealthFraction;
+        public float? HealthFraction => _hasHealthFraction ? _healthFraction : null;
         private string _cachedDisplayName;
 
         /// <summary>
@@ -378,13 +379,6 @@ namespace Client.Main.Objects
             if (IsDead || !Visible)
                 return;
 
-            // Show monster labels only when hovered or when HP bar is available.
-            // This matches expected clutter reduction while still keeping combat readability.
-            bool showByHover = Constants.SHOW_NAMES_ON_HOVER && IsMouseHover;
-            bool showByHealth = _hasHealthFraction;
-            if (!showByHover && !showByHealth)
-                return;
-
             var font = GraphicsManager.Instance.Font;
             if (font == null)
                 return;
@@ -397,7 +391,7 @@ namespace Client.Main.Objects
                 return;
 
             float? hp = _hasHealthFraction ? _healthFraction : null;
-            OverheadNameplateRenderer.EnqueueNameplate(font, screen, name, hp, Constants.RENDER_SCALE);
+            OverheadNameplateRenderer.EnqueueNameplate(font, screen, name, hp, Constants.RENDER_SCALE, showHealthBar: true,nameColor: Color.Cyan);
         }
 
         /// <summary>

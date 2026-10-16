@@ -173,6 +173,11 @@ namespace Client.Main.Controls.UI
             _whisperIdInput.FontSize = 10f;
             _whisperIdInput.BackgroundColor = Color.Black * 0.1f;
             _whisperIdInput.TextColor = new Color(200, 200, 200, 255);
+            _whisperIdInput.SubmitOnMobileKeyboardDone=true;
+            _whisperIdInput.EnterKeyPressed+=(_,_)=>
+            {
+                if(UiThemeManager.IsMobileInterfaceActive){_whisperIdInput.Blur();_chatInput.Focus();Scene.FocusControl=_chatInput;}
+            };
             _whisperIdInput.Visible = false;
 
             Controls.Add(_chatInput);
@@ -288,7 +293,7 @@ namespace Client.Main.Controls.UI
 
         private void ApplyThemeLayout()
         {
-            Point size = IsSeason6
+            Point size = UiThemeManager.IsMobileInterfaceActive ? new Point(Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatWidth,60) : IsSeason6
                 ? UiThemeManager.Current.Metrics.ChatInputSize
                 : new Point(CHATBOX_WIDTH, CHATBOX_HEIGHT);
             ViewSize = size;
@@ -297,6 +302,19 @@ namespace Client.Main.Controls.UI
             if (_background == null || _chatInput == null)
                 return;
 
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                _background.Visible=false;
+                _whisperIdInput.X=4;_whisperIdInput.Y=3;
+                _whisperIdInput.ViewSize=new Point(90,25);_whisperIdInput.FontSize=13;
+                _whisperIdInput.Placeholder="Whisper";
+                _whisperIdInput.ControlSize=_whisperIdInput.ViewSize;_whisperIdInput.AutoViewSize=false;
+                _chatInput.X=98;_chatInput.Y=3;_chatInput.ViewSize=new Point(size.X-103,25);_chatInput.FontSize=13;
+                _chatInput.Placeholder="Type...";
+                _chatInput.ControlSize=_chatInput.ViewSize;_chatInput.AutoViewSize=false;
+                foreach(var button in GetAllButtons())button.Visible=false;
+                return;
+            }
             _background.ViewSize = size;
             _background.Visible = !IsSeason6;
 
@@ -381,7 +399,7 @@ namespace Client.Main.Controls.UI
             };
         }
 
-        public void Show()
+        public void Show(bool focusInput=true)
         {
             Visible = true;
             _chatInput.Visible = true;
@@ -391,9 +409,13 @@ namespace Client.Main.Controls.UI
             foreach (var btn in GetAllButtons()) btn.Visible = true;
 
             _chatInput.Value = string.Empty; // Clear text on show.
-            _chatInput.Focus();
-            Scene.FocusControl = _chatInput;
-            _chatInput.MoveCursorToEnd();
+            if(focusInput)
+            {
+                _chatInput.Focus();
+                Scene.FocusControl = _chatInput;
+                _chatInput.MoveCursorToEnd();
+            }
+            ApplyThemeLayout();
 
             // Reset history navigation.
             _currentChatHistoryIndex = _chatHistory.Count;
@@ -433,6 +455,7 @@ namespace Client.Main.Controls.UI
 
         public void Hide()
         {
+            _chatInput.Blur();_whisperIdInput.Blur();
             Visible = false;
             _chatInput.Visible = false;
             _whisperIdInput.Visible = false;
@@ -452,6 +475,22 @@ namespace Client.Main.Controls.UI
             if (!Visible) return;
 
             base.Update(gameTime); // Update children (buttons, text fields).
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                ApplyThemeLayout();
+                var mouse=MuGame.Instance.UiMouseState;
+                if(mouse.LeftButton==ButtonState.Pressed && MuGame.Instance.PrevUiMouseState.LeftButton==ButtonState.Released)
+                    for(int i=0;i<MobileTabs.Length;i++)
+                        if(MobileTabBounds(i).Contains(mouse.Position))
+                        {
+                            _chatLogWindowRef.ChangeViewType(MobileTabs[i].Type);
+                            _mobileTabIndex=i;
+                            _currentInputType=MobileTabs[i].Input==InputMessageType.Nothing?InputMessageType.Chat:MobileTabs[i].Input;
+                            _mobileSendPrefix=MobileTabs[i].Text=="Alliance"?"@@":"";
+                            _whisperIdInput.Value="";
+                            Scene?.SetMouseInputConsumed();
+                        }
+            }
             HandleKeyboardInput();
             UpdateVisualStates(); // Keep visual state consistent.
         }
@@ -565,6 +604,11 @@ namespace Client.Main.Controls.UI
 
             string messageText = _chatInput.Value.Trim();
             string whisperTarget = _whisperIdInput.Value.Trim();
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                _isWhisperSendMode=whisperTarget.Length>0;
+                if(!_isWhisperSendMode && _mobileSendPrefix.Length>0 && !messageText.StartsWith(_mobileSendPrefix))messageText=_mobileSendPrefix+messageText;
+            }
 
             // If both inputs are empty, just hide/show the box.
             if (string.IsNullOrEmpty(messageText) && (string.IsNullOrEmpty(whisperTarget) || !_isWhisperSendMode))
@@ -607,21 +651,25 @@ namespace Client.Main.Controls.UI
                 if (messageText.StartsWith("~"))
                 {
                     finalType = MessageType.Chat;
-                    messageToSend = messageText.Substring(1);
+                    messageToSend = messageText;
                 }
                 else if (messageText.StartsWith("@"))
                 {
                     finalType = MessageType.Guild;
-                    messageToSend = messageText.Substring(1);
+                    messageToSend = messageText;
                 }
                 else if (messageText.StartsWith("$"))
                 {
                     finalType = MessageType.Gens;
-                    messageToSend = messageText.Substring(1);
+                    messageToSend = messageText;
                 }
                 else
                 {
-                    finalType = (MessageType)_currentInputType;
+                    finalType = _currentInputType switch
+                    {
+                        InputMessageType.Party=>MessageType.Party,InputMessageType.Guild=>MessageType.Guild,
+                        InputMessageType.Gens=>MessageType.Gens,_=>MessageType.Chat
+                    };
                     if (finalType == MessageType.Party) messageToSend = "~" + messageText;
                     else if (finalType == MessageType.Guild) messageToSend = "@" + messageText;
                     else if (finalType == MessageType.Gens) messageToSend = "$" + messageText;
@@ -742,6 +790,12 @@ namespace Client.Main.Controls.UI
         {
             if (!Visible) return;
 
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                foreach(var button in GetAllButtons())button.Visible=false;
+                _whisperIdInput.Visible=true;
+                return;
+            }
             for (int i = 0; i < _typeButtons.Length; i++)
                 _typeButtons[i].Visible = true;
 
@@ -769,6 +823,18 @@ namespace Client.Main.Controls.UI
             yield return _transparencyButton;
         }
 
+        private int _mobileTabIndex;
+        private string _mobileSendPrefix="";
+        private static readonly (string Text,MessageType Type,InputMessageType Input)[] MobileTabs=
+        {
+            ("All",MessageType.All,InputMessageType.Nothing),("Chat",MessageType.Chat,InputMessageType.Chat),("Whisper",MessageType.Whisper,InputMessageType.Chat),
+            ("Party",MessageType.Party,InputMessageType.Party),("Guild",MessageType.Guild,InputMessageType.Guild),
+            ("Alliance",MessageType.Union,InputMessageType.Nothing),("Gens",MessageType.Gens,InputMessageType.Gens),
+            ("System",MessageType.System,InputMessageType.Nothing)
+        };
+        private Rectangle MobileTabBounds(int index)=>new(DisplayRectangle.X+index*ViewSize.X/MobileTabs.Length,
+            DisplayRectangle.Y+31,ViewSize.X/MobileTabs.Length-1,27);
+
         private static void DrawDisabledOverlay(SpriteControl btn)
         {
             var sb = GraphicsManager.Instance.Sprite;
@@ -780,6 +846,25 @@ namespace Client.Main.Controls.UI
             if (!Visible)
                 return;
 
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                var sprite=GraphicsManager.Instance.Sprite;
+                sprite.Draw(GraphicsManager.Instance.Pixel,DisplayRectangle,new Color(0,0,0,205));
+                var whisperBounds=new Rectangle(DisplayRectangle.X+4,DisplayRectangle.Y+3,90,25);
+                var inputBounds=new Rectangle(DisplayRectangle.X+98,DisplayRectangle.Y+3,ViewSize.X-103,25);
+                sprite.Draw(GraphicsManager.Instance.Pixel,whisperBounds,new Color(36,35,31));
+                sprite.Draw(GraphicsManager.Instance.Pixel,inputBounds,new Color(14,15,17));
+                if(string.IsNullOrEmpty(_whisperIdInput.Value))Client.Main.Controls.UI.Game.Hud.MobileHudLayout.Text(sprite,"Whisper",whisperBounds,13,Color.Gray,false);
+                if(string.IsNullOrEmpty(_chatInput.Value))Client.Main.Controls.UI.Game.Hud.MobileHudLayout.Text(sprite,"Type...",inputBounds,13,Color.Gray,false);
+                for(int i=0;i<MobileTabs.Length;i++)
+                {
+                    var bounds=MobileTabBounds(i);
+                    sprite.Draw(GraphicsManager.Instance.Pixel,bounds,_mobileTabIndex==i?new Color(25,115,145):new Color(36,35,31));
+                    Client.Main.Controls.UI.Game.Hud.MobileHudLayout.Text(sprite,MobileTabs[i].Text,bounds,12,Color.White);
+                }
+                _whisperIdInput.Draw(gameTime);_chatInput.Draw(gameTime);
+                return;
+            }
             if (IsSeason6)
             {
                 DrawSeason6();

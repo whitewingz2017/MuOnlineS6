@@ -121,6 +121,7 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         public override void Draw(GameTime gameTime)
         {
+            if(UiThemeManager.IsMobileInterfaceActive && (Scene as Client.Main.Scenes.GameScene)?.InventoryControl.Visible!=true)return;
             if (Status != GameControlStatus.Ready || !Visible || _entries.Count == 0 || IsTradeVisible())
             {
                 return;
@@ -264,6 +265,13 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         private void LayoutWarningRects()
         {
+            if(UiThemeManager.IsMobileInterfaceActive && (Scene as Client.Main.Scenes.GameScene)?.InventoryControl is {Visible:true} inventory)
+            {
+                var bounds=inventory.DisplayRectangle;
+                for(int i=0;i<_entries.Count;i++)
+                    _entries[i].Rect=new Rectangle(Math.Max(UiScaler.WindowBounds.Left,bounds.Left-_iconSize-8),bounds.Top+8+i*(_iconSize+_iconGap),_iconSize,_iconSize);
+                return;
+            }
             int totalWidth = (_entries.Count * _iconSize) + Math.Max(0, _entries.Count - 1) * _iconGap;
             int left = Math.Max(ScaleValue(8, _uiScale), (UiScaler.VirtualSize.X - totalWidth) / 2);
 

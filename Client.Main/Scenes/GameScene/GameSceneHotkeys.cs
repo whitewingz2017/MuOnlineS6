@@ -420,6 +420,9 @@ namespace Client.Main.Scenes
         }
 
         private void PickupNearestItem(HotkeyContext context)
+            => PickupNearestItem();
+
+        internal void PickupNearestItem()
         {
             var network = MuGame.Network;
             var scopeManager = network?.GetScopeManager();

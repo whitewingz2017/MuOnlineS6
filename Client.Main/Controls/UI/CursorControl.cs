@@ -8,6 +8,7 @@ using Client.Main.Objects.Player;
 using Client.Main;
 using Client.Main.Controllers;
 using Client.Main.Models;
+using Client.Main.Scenes;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -109,14 +110,7 @@ public class CursorControl : SpriteControl
             return false;
         }
 
-        var state = MuGame.Network?.GetCharacterState();
-        if (state == null || !state.IsDuelActive)
-        {
-            return false;
-        }
-
-        ushort enemyId = state.GetDuelPlayerId(Client.Main.Core.Client.CharacterState.DuelPlayerType.Enemy);
-        return enemyId != 0 && player.NetworkId == enemyId;
+        return MuGame.Instance?.ActiveScene is GameScene scene && scene.IsPlayerAttackTarget(player);
     }
 
     public override void Update(GameTime gameTime)

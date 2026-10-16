@@ -45,10 +45,45 @@ namespace Client.Main.Scenes
         private readonly HeroObject _hero;
         private ModernBottomHud _modernHud;
         private BottomBarControl _classicBottomBar;
+        private MobilePlayerPanel _mobilePlayerPanel;
+        private MobileHelperSettingsControl _mobileHelperSettings;
+        internal void ToggleMobileHelperSettings()=>_mobileHelperSettings?.Toggle();
+        private WalkerObject _mobileTarget;
+        internal void SetMobileTarget(WalkerObject target)
+        {
+            if(!UiThemeManager.IsMobileInterfaceActive || target==null || target==Hero || target.World!=World)return;
+            if(target is PlayerObject)
+            {
+                if(World is not WalkableWorldControl world || Hero==null ||
+                    world.Terrain.RequestTerrainFlag((int)Hero.Location.X,(int)Hero.Location.Y).HasFlag(Client.Data.ATT.TWFlags.SafeZone) ||
+                    world.Terrain.RequestTerrainFlag((int)target.Location.X,(int)target.Location.Y).HasFlag(Client.Data.ATT.TWFlags.SafeZone))return;
+            }
+            if(target is MonsterObject || target is PlayerObject)_mobileTarget=target;
+        }
+        public bool MobilePkMode { get; private set; }
+        private PlayerObject _focusedMobilePlayer;
+        internal void ToggleMobileAttackMode()
+        {
+            MobilePkMode = !MobilePkMode;
+            _focusedMobilePlayer = null;
+            CancelAutoAttack();
+        }
+        internal bool IsPlayerAttackTarget(PlayerObject target)
+        {
+            if (_duelController?.IsDuelAttackTarget(target) == true) return true;
+            bool attackPlayers = UiThemeManager.IsMobileInterfaceActive
+                ? MobilePkMode
+                : MuGame.Instance.Keyboard.IsKeyDown(Keys.LeftControl) || MuGame.Instance.Keyboard.IsKeyDown(Keys.RightControl);
+            if (!attackPlayers || target == null || target == Hero ||
+                Hero == null || Hero.IsDead || target.IsDead || target.World != World || World is not WalkableWorldControl world)
+                return false;
+            return !world.Terrain.RequestTerrainFlag((int)Hero.Location.X,(int)Hero.Location.Y).HasFlag(Client.Data.ATT.TWFlags.SafeZone) &&
+                !world.Terrain.RequestTerrainFlag((int)target.Location.X,(int)target.Location.Y).HasFlag(Client.Data.ATT.TWFlags.SafeZone);
+        }
         private TouchActionButtonsControl _classicTouchActions;
         private TouchMenuControl _classicTouchMenu;
         private VirtualJoystickControl _classicJoystick;
-        internal bool UsesMobileJoystickMovement => UiThemeManager.IsMobilePlatform &&
+        internal bool UsesMobileJoystickMovement => UiThemeManager.IsMobileInterfaceActive &&
             _classicJoystick is { Visible: true, Interactive: true };
         private SkillImprintControl _classicSkillImprint;
         private PotionImprintControl _classicPotionImprint;
@@ -96,6 +131,9 @@ namespace Client.Main.Scenes
         private GameSceneNotificationController _notificationController;
         private GameScenePlayerMenuController _playerMenuController;
         private GameSceneHotkeys _hotkeys;
+        internal bool MobileCombatControlsVisible => Hero != null && World is WalkableWorldControl world &&
+            !world.Terrain.RequestTerrainFlag((int)Hero.Location.X,(int)Hero.Location.Y).HasFlag(Client.Data.ATT.TWFlags.SafeZone);
+        internal void PickupNearestItem()=>_hotkeys?.PickupNearestItem();
         private GameSceneScopeImportController _scopeImportController;
         private GameSceneUiEditorController _uiEditorController;
         private GameSceneObjectEditorController _objectEditorController;
@@ -104,7 +142,7 @@ namespace Client.Main.Scenes
         // Classic MU-style persistent normal attack target.
         // A single LMB click selects the target and keeps attacking until
         // the player clicks another target, clicks the ground, or the target becomes invalid.
-        private MonsterObject _autoAttackTarget;
+        private WalkerObject _autoAttackTarget;
         private double _autoAttackTimer;
         private double _heldNormalAttackTimer;
         private GameSceneUiPreloadController _uiPreloadController;
@@ -347,9 +385,7 @@ namespace Client.Main.Scenes
                 TextColor = Color.White
             };
             Controls.Add(_pingLabel);
-#if ANDROID
             Controls.Add(new Client.Main.Controls.UI.Game.Hud.BatteryStatusControl());
-#endif
 
             await MuGame.YieldToNextFrameAsync(
                 "GameScene.BuildShell.Hud",
@@ -385,6 +421,10 @@ namespace Client.Main.Scenes
             Controls.Add(_classicSkillImprint);
             Controls.Add(_classicPotionImprint);
             Controls.Add(_classicTouchMenu);
+            _mobilePlayerPanel = new MobilePlayerPanel(characterState, () => Hero, () => MobilePkMode, ToggleMobileAttackMode);
+            Controls.Add(_mobilePlayerPanel);
+            Controls.Add(new MobilePickupControl(PickupNearestItem));
+            Controls.Add(new MobileTargetControl(()=>_mobileTarget));
 
             _masteryTree = new Controls.UI.Game.Skills.MasterSkillTreeControl();
             _classicMasteryTree = new MasteryTreeControl(characterState);
@@ -396,7 +436,7 @@ namespace Client.Main.Scenes
                 this,
                 _modernHud,
                 _logger,
-                _duelController.IsDuelAttackTarget);
+                IsPlayerAttackTarget);
             _hybridHudShell = new HybridHudShell(
                 new GameControl[]
                 {
@@ -421,6 +461,8 @@ namespace Client.Main.Scenes
             _muHelperController = new MuHelperController(this, _skillController, _logger);
             _muHelperWindow = new MuHelperWindow(this, _muHelperController, _logger);
             Controls.Add(_muHelperWindow);
+            _mobileHelperSettings=new MobileHelperSettingsControl(_muHelperController);
+            Controls.Add(_mobileHelperSettings);
 
             MuHelperPotionWindow = new MuHelperPotionWindow(this, _muHelperController);
             Controls.Add(MuHelperPotionWindow);
@@ -875,11 +917,23 @@ namespace Client.Main.Scenes
             var previousKeyboardState = MuGame.Instance.PrevKeyboard;
 
             EnsureHeroRenderPublication();
+            if(UiThemeManager.IsMobileInterfaceActive && _classicTouchActions!=null)
+            {
+                _classicTouchActions.Visible=MobileCombatControlsVisible;
+                _classicTouchActions.Interactive=MobileCombatControlsVisible;
+            }
             base.Update(gameTime);
             if (Status != GameControlStatus.Ready)
                 return;
 
             ApplyHudTheme();
+            if(UiThemeManager.IsMobileInterfaceActive)ApplyChatThemeLayout();
+            if(_mobileHelperSettings?.Visible==true)_mobileHelperSettings.BringToFront();
+            if(UiThemeManager.IsMobileInterfaceActive &&
+                MuGame.Instance.Mouse.LeftButton==ButtonState.Pressed &&
+                MuGame.Instance.PrevMouseState.LeftButton==ButtonState.Released &&
+                (MouseHoverControl==null || MouseHoverControl==World) && MouseHoverObject is WalkerObject tappedTarget)
+                SetMobileTarget(tappedTarget);
             _hudShell?.Update(gameTime);
             if (UiThemeManager.CurrentId != UiThemeId.Classic)
                 ApplyChatThemeLayout();
@@ -930,6 +984,7 @@ namespace Client.Main.Scenes
             if (!IsMuHelperActive &&
                 !IsMouseInputConsumedThisFrame &&
                 !WorldHoverSystem.IsAltPressed() &&
+                !(MouseHoverObject is PlayerObject hoveredPlayer && IsPlayerAttackTarget(hoveredPlayer)) &&
                 MuGame.Instance.Mouse.LeftButton == ButtonState.Pressed)
             {
                 MonsterObject hoveredAttackMonster = WorldHoverSystem.FindBestLiveMonster(
@@ -943,6 +998,7 @@ namespace Client.Main.Scenes
                     Hero != null &&
                     !Hero.IsDead)
                 {
+                    _focusedMobilePlayer = null;
                     _skillController?.CancelPersistentTarget();
 
                     // Retain the target after release only when Auto Attack is enabled.
@@ -971,27 +1027,33 @@ namespace Client.Main.Scenes
                     // Clicking the ground/empty area cancels both combat modes.
                     _skillController?.CancelPersistentTarget();
                     ClearAutoAttackTarget();
+                    _focusedMobilePlayer = null;
                 }
             }
 
             // Auto Attack continues independently of the held-button input.
             UpdateAutoAttack(gameTime);
 
-            // Handle attack clicks on duel opponent players (treat as monster during duel)
+            // Ctrl on desktop and PK mode on mobile enable player attack input.
             if (!IsMuHelperActive &&
                 !IsMouseInputConsumedThisFrame &&
                 MouseHoverObject is PlayerObject targetPlayer &&
                 targetPlayer != _hero &&
-                (_duelController?.IsDuelAttackTarget(targetPlayer) == true) &&
-                MuGame.Instance.Mouse.LeftButton == ButtonState.Pressed &&
-                MuGame.Instance.PrevMouseState.LeftButton == ButtonState.Released) // Fresh press
+                IsPlayerAttackTarget(targetPlayer) &&
+                !WorldHoverSystem.IsAltPressed() &&
+                MuGame.Instance.Mouse.LeftButton == ButtonState.Pressed)
             {
                 if (Hero != null &&
                     !Hero.IsDead &&
                     !targetPlayer.IsDead &&
                     targetPlayer.World == World)
                 {
-                    Hero.Attack(targetPlayer);
+                    if (UiThemeManager.IsMobileInterfaceActive) _focusedMobilePlayer = targetPlayer;
+                    if (MuGame.Instance.PrevMouseState.LeftButton == ButtonState.Released || _heldNormalAttackTimer <= 0)
+                    {
+                        _heldNormalAttackTimer = 75;
+                        TryStartAutoAttack(targetPlayer);
+                    }
                     SetMouseInputConsumed();
                 }
             }
@@ -1357,7 +1419,8 @@ namespace Client.Main.Scenes
         {
             if (_chatInput == null) return;
             if (_chatInput.Visible) _chatInput.Hide();
-            else _chatInput.Show();
+            else _chatInput.Show(focusInput:false);
+            ApplyChatThemeLayout();
         }
 
         internal void ShowClassicOptions()
@@ -1401,9 +1464,10 @@ namespace Client.Main.Scenes
 
         private void ApplyHudTheme(bool force = false)
         {
-            HudTheme requested = MuGame.AppSettings?.HudTheme ?? HudTheme.Hybrid;
+            HudTheme requested = UiThemeManager.IsMobileInterfaceActive ? HudTheme.Hybrid :
+                MuGame.AppSettings?.HudTheme ?? HudTheme.ClassicPc;
             if (!System.Enum.IsDefined(requested))
-                requested = HudTheme.Hybrid;
+                requested = HudTheme.ClassicPc;
 
             if (!force && requested == _lastHudTheme && _hudShell != null)
                 return;
@@ -1445,6 +1509,16 @@ namespace Client.Main.Scenes
             if (_chatLog == null || _chatInput == null)
                 return;
 
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                _chatInput.Alpha=1f;
+                _chatLog.ShowFrame(true);
+                _chatLog.SetBackgroundAlpha(.55f);
+                _chatLog.AnchorAbove(MobileHudLayout.ChatX,MobileHudLayout.ChatBottom);
+                _chatInput.X=MobileHudLayout.ChatX;
+                _chatInput.Y=_chatLog.Y-60;
+                return;
+            }
             _chatInput.Alpha = 1f;
 
             // Anchor using the actual log height; fonts, resizing and theme changes
@@ -1640,12 +1714,36 @@ namespace Client.Main.Scenes
             }
             base.Dispose();
         }
-        internal bool TryStartAutoAttack(MonsterObject target)
+        internal bool IsCombatTargetValid(WalkerObject target) => target != null && target.Visible && target.World == World &&
+            (target is MonsterObject monster && !monster.IsDead || target is PlayerObject player && IsPlayerAttackTarget(player));
+
+        internal WalkerObject FindTouchAttackTarget(float range)
+        {
+            if (Hero == null || World == null) return null;
+            float best = range * range;
+            if (_focusedMobilePlayer != null && IsCombatTargetValid(_focusedMobilePlayer))
+                return Vector2.DistanceSquared(Hero.Location, _focusedMobilePlayer.Location) <= best ? _focusedMobilePlayer : null;
+            _focusedMobilePlayer = null;
+            WalkerObject nearest = null;
+            void Consider(WalkerObject candidate)
+            {
+                if (!IsCombatTargetValid(candidate)) return;
+                float distance = Vector2.DistanceSquared(Hero.Location, candidate.Location);
+                if (distance <= best) { best = distance; nearest = candidate; }
+            }
+            foreach (var monster in World.Monsters) Consider(monster);
+            if (UiThemeManager.IsMobileInterfaceActive && MobilePkMode)
+                foreach (var player in World.Players) Consider(player);
+            SetMobileTarget(nearest);
+            return nearest;
+        }
+
+        internal bool TryStartAutoAttack(WalkerObject target)
         {
             _skillController?.CancelPersistentTarget();
 
             if (target == null ||
-                target.IsDead ||
+                !IsCombatTargetValid(target) ||
                 target.World != World ||
                 Hero == null ||
                 Hero.IsDead)
@@ -1666,7 +1764,7 @@ namespace Client.Main.Scenes
 
             // A monster click always performs one attack. The setting controls whether
             // that attack is repeated after the click is released.
-            Hero.Attack(target);
+            AttackCombatTarget(target);
             return true;
         }
 
@@ -1681,12 +1779,12 @@ namespace Client.Main.Scenes
             ClearAutoAttackTarget();
         }
 
-        private void SetAutoAttackTarget(MonsterObject target)
+        private void SetAutoAttackTarget(WalkerObject target)
         {
             if (target == null || Hero == null || Hero.IsDead)
                 return;
 
-            if (target.IsDead || target.World != World)
+            if (!IsCombatTargetValid(target) || target.World != World)
                 return;
 
             _autoAttackTarget = target;
@@ -1702,7 +1800,7 @@ namespace Client.Main.Scenes
         private bool IsAutoAttackTargetValid()
         {
             return _autoAttackTarget != null &&
-                !_autoAttackTarget.IsDead &&
+                IsCombatTargetValid(_autoAttackTarget) &&
                 _autoAttackTarget.World == World &&
                 Hero != null &&
                 !Hero.IsDead;
@@ -1732,7 +1830,13 @@ namespace Client.Main.Scenes
             // if (Hero.IsMoving)
             //     return;
 
-            Hero.Attack(_autoAttackTarget);
+            AttackCombatTarget(_autoAttackTarget);
+        }
+
+        private void AttackCombatTarget(WalkerObject target)
+        {
+            if (target is PlayerObject player) Hero.Attack(player);
+            else if (target is MonsterObject monster) Hero.Attack(monster);
         }
     }
 }

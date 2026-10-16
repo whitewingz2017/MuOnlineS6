@@ -10,8 +10,17 @@ namespace MuAndroid
 {
     public class AndroidTextFieldControl : TextFieldControl
     {
+        private Android.Widget.EditText _inlineEditor;
+        private Android.Views.View _keyboardRoot;
+        private EventHandler _keyboardLayoutChanged;
+        private Android.Views.SoftInput? _previousSoftInputMode;
+        private bool _inlineDisposed;
         public override void OnFocus()
         {
+            if(SubmitOnMobileKeyboardDone && Client.Main.Controls.UI.UiThemeManager.IsMobileInterfaceActive)
+            {
+                base.OnFocus();ShowInlineChatKeyboard();return;
+            }
             base.OnFocus();
 
             Task.Run(async () =>
@@ -41,6 +50,68 @@ namespace MuAndroid
             //AndroidKeyboard.TextInput += OnTextInput;
             //AndroidKeyboard.Show();
         }
+
+        private void ShowInlineChatKeyboard()
+        {
+            var activity=AndroidKeyboard.Activity;if(activity==null)return;
+            activity.RunOnUiThread(()=>
+            {
+                if(_inlineDisposed || !IsFocused || !Visible)return;
+                var imm=activity.GetSystemService(Android.Content.Context.InputMethodService) as Android.Views.InputMethods.InputMethodManager;
+                if(_inlineEditor!=null){_inlineEditor.RequestFocus();imm?.ShowSoftInput(_inlineEditor,Android.Views.InputMethods.ShowFlags.Implicit);return;}
+                _previousSoftInputMode=activity.Window?.Attributes?.SoftInputMode;
+                activity.Window?.SetSoftInputMode(Android.Views.SoftInput.AdjustNothing);
+                var editor=new Android.Widget.EditText(activity);
+                _inlineEditor=editor;
+                editor.SetSingleLine(true);editor.Text=Value;editor.Alpha=0;
+                editor.ImeOptions=Android.Views.InputMethods.ImeAction.Send | (Android.Views.InputMethods.ImeAction)Android.Views.InputMethods.ImeFlags.NoExtractUi;
+                editor.InputType=Android.Text.InputTypes.ClassText | Android.Text.InputTypes.TextFlagCapSentences;
+                activity.AddContentView(editor,new Android.Views.ViewGroup.LayoutParams(1,1));
+                editor.TextChanged+=(_,args)=>
+                {
+                    string value=editor.Text ?? string.Empty;
+                    Client.Main.MuGame.ScheduleOnMainThread(()=>{if(Visible && ReferenceEquals(_inlineEditor,editor))Value=value;});
+                };
+                editor.EditorAction+=(_,args)=>
+                {
+                    if(args.ActionId is Android.Views.InputMethods.ImeAction.Send or Android.Views.InputMethods.ImeAction.Done)
+                    {
+                        args.Handled=true;string value=editor.Text ?? string.Empty;
+                        Client.Main.MuGame.ScheduleOnMainThread(()=>{if(Visible){Value=value;OnEnterKeyPressed();}});
+                    }
+                };
+                _keyboardRoot=activity.Window?.DecorView;
+                _keyboardLayoutChanged=(_,_)=>
+                {
+                    if(_keyboardRoot==null)return;
+                    using var visible=new Android.Graphics.Rect();_keyboardRoot.GetWindowVisibleDisplayFrame(visible);
+                    int inset=Math.Max(0,_keyboardRoot.Height-visible.Bottom);
+                    if(Android.OS.Build.VERSION.SdkInt>=Android.OS.BuildVersionCodes.R && _keyboardRoot.RootWindowInsets is { } insets)
+                        inset=insets.GetInsets(Android.Views.WindowInsets.Type.Ime()).Bottom;
+                    Client.Main.Controls.UI.Game.Hud.MobileHudLayout.KeyboardInsetPixels=inset>_keyboardRoot.Height/5?inset:0;
+                };
+                if(_keyboardRoot?.ViewTreeObserver!=null)_keyboardRoot.ViewTreeObserver.GlobalLayout+=_keyboardLayoutChanged;
+                editor.RequestFocus();imm?.ShowSoftInput(editor,Android.Views.InputMethods.ShowFlags.Implicit);
+            });
+        }
+        private void HideInlineChatKeyboard()
+        {
+            var editor=_inlineEditor;if(editor==null)return;
+            _inlineEditor=null;
+            AndroidKeyboard.Activity?.RunOnUiThread(()=>
+            {
+                if(_keyboardRoot?.ViewTreeObserver!=null && _keyboardLayoutChanged!=null)
+                    _keyboardRoot.ViewTreeObserver.GlobalLayout-=_keyboardLayoutChanged;
+                _keyboardRoot=null;_keyboardLayoutChanged=null;
+                if(_previousSoftInputMode.HasValue)AndroidKeyboard.Activity.Window?.SetSoftInputMode(_previousSoftInputMode.Value);
+                _previousSoftInputMode=null;
+                var imm=AndroidKeyboard.Activity.GetSystemService(Android.Content.Context.InputMethodService) as Android.Views.InputMethods.InputMethodManager;
+                imm?.HideSoftInputFromWindow(editor.WindowToken,Android.Views.InputMethods.HideSoftInputFlags.None);
+                (editor.Parent as Android.Views.ViewGroup)?.RemoveView(editor);editor.Dispose();
+                Client.Main.Controls.UI.Game.Hud.MobileHudLayout.KeyboardInsetPixels=0;
+            });
+        }
+        public override void Dispose(){_inlineDisposed=true;HideInlineChatKeyboard();base.Dispose();}
 
         private Task<string> ShowChatKeyboardAsync()
         {
@@ -81,6 +152,7 @@ namespace MuAndroid
 
         public override void OnBlur()
         {
+            HideInlineChatKeyboard();
             base.OnBlur();
 
             //AndroidKeyboard.TextInput -= OnTextInput;

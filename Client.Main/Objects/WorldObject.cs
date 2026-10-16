@@ -376,14 +376,14 @@ namespace Client.Main.Objects
         }
 
         /// <summary>
-        /// Draws the object's <see cref="DisplayName"/> above it when hovered.
+        /// Draws the object's <see cref="DisplayName"/> persistently above visible players and NPCs.
         /// </summary>
         public virtual void DrawHoverName()
         {
             if (_font == null)
                 _font = GraphicsManager.Instance.Font;
 
-            if (!Constants.SHOW_NAMES_ON_HOVER || !IsMouseHover || _font == null)
+            if (_font == null)
                 return;
 
             // Limit name display to player, monster and NPC entities
@@ -409,40 +409,9 @@ namespace Client.Main.Objects
             if (screen.Z < 0f || screen.Z > 1f)
                 return;
 
-            // Apply render scale to font scale to maintain consistent size
-            const float baseScale = 0.4f; // 2x smaller than default
-            float scale = baseScale * Constants.RENDER_SCALE;
-            Vector2 size = _font.MeasureString(name) * scale;
-            var sb = GraphicsManager.Instance.Sprite;
-
-            Vector2 textPos = new Vector2(screen.X - size.X * 0.5f, screen.Y - size.Y);
-            Color bgColor = new Color(30, 50, 70, 150); // Semi-transparent dark blue background
-            Color textColor = new Color(176, 224, 230, 255); // Pale sky blue text
-
-            void draw()
-            {
-                // Draw background rectangle directly (no border for hover names)
-                Texture2D whiteTexture = GraphicsManager.Instance.Pixel;
-                if (whiteTexture == null || whiteTexture.IsDisposed)
-                    return;
-
-                var bgRect = new Rectangle(
-                    (int)(textPos.X - 4),
-                    (int)(textPos.Y - 2),
-                    (int)(size.X + 8),
-                    (int)(size.Y + 4));
-                sb.Draw(whiteTexture, bgRect, bgColor);
-
-                // Draw text on top
-                sb.DrawString(_font, name, textPos, textColor, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-            }
-
-            // Use SpriteBatchScope for proper nested batch handling, NonPremultiplied to avoid color darkening
-            // LinearClamp provides smooth text when scaled down (PointClamp causes jagged edges)
-            using (new SpriteBatchScope(sb, SpriteSortMode.Deferred, BlendState.NonPremultiplied, SamplerState.LinearClamp, DepthStencilState.None, RasterizerState.CullNone))
-            {
-                draw();
-            }
+            Client.Main.Helpers.OverheadNameplateRenderer.EnqueueNameplate(
+                _font,screen,name,null,Constants.RENDER_SCALE,nameColor:
+                    this is Client.Main.Objects.Player.PlayerObject player ? (player.IsMainWalker ? new Color(210,240,130) : Color.White) : Color.Cyan);
         }
 
         public void BringToFront()

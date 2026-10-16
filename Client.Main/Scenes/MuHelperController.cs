@@ -270,6 +270,18 @@ namespace Client.Main.Scenes
 
         public void Update(GameTime gameTime)
         {
+            // Emergency mana recovery is independent of Helper activation and level.
+            // Reuse its in-flight guard and cooldown so both paths cannot send twice.
+            var emergencyState=MuGame.Network?.GetCharacterState();
+            if(MuGame.Network?.IsConnected==true && _scene.Hero is {IsDead:false} &&
+                emergencyState is {MaximumMana:>0,CurrentHealth:>0} &&
+                (ulong)emergencyState.CurrentMana*100 <= (ulong)emergencyState.MaximumMana*5 &&
+                !_potionUseInFlight && DateTime.UtcNow.Ticks>=System.Threading.Interlocked.Read(ref _nextPotionAtTicks))
+            {
+                _potionUseInFlight=true;
+                _ = ConsumePotionForHelperAsync(false,0,0,true,
+                    emergencyState.CurrentMana*100f/emergencyState.MaximumMana,5);
+            }
             if (!_active)
                 return;
 
@@ -289,6 +301,9 @@ namespace Client.Main.Scenes
             var characterState = MuGame.Network?.GetCharacterState();
             if (hero == null || characterState == null)
                 return;
+
+            // Repairs must not be starved by successful skill/loot early returns.
+            TryRepairEquipment(characterState, now);
 
             if (ChebyshevDistance(hero.Location, _originalPosition) > 1)
             {
@@ -465,6 +480,7 @@ namespace Client.Main.Scenes
             }
             finally
             {
+                SetPotionCooldown();
                 _potionUseInFlight = false;
             }
         }
@@ -864,7 +880,7 @@ namespace Client.Main.Scenes
         }
 
         /// <summary>
-        /// Equipment repair. Wire to CharacterService repair API when available.
+        /// Requests equipped-item repair through the standard server-validated API.
         /// </summary>
         private bool TryRepairEquipment(CharacterState state, DateTime now)
         {
@@ -875,12 +891,10 @@ namespace Client.Main.Scenes
             if (service == null)
                 return false;
 
-            // TODO: call your real repair method when it exists, e.g.:
-            // bool repaired = service.SendRepairEquippedItemsAsync(...).GetAwaiter().GetResult();
-            // if (!repaired) return false;
-
             _nextRepairAt = now + RepairCooldown;
-            return false;
+            if(!state.GetInventoryItems().Any(item=>item.Key<12 && item.Value.Length>2))return false;
+            _ = service.SendRepairItemRequestAsync(byte.MaxValue,isSelfRepair:true);
+            return true;
         }
 
         private bool IsValidMonster(MonsterObject monster)

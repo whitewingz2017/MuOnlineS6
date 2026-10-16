@@ -44,7 +44,7 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         // Keep all seven skill slots available and use a separate circular target for reset.
         private const int ResetSize = 56;
-        private static readonly Vector2 ResetCenter = new(-320f, 58f);
+        private static readonly Vector2 ResetCenter = new(-320f, 138f);
 
         // ════════════════════════════════════════════════════════════════════════
         // Exact positions from the main_mainskillui.u3d prefab. They are derived from each
@@ -159,6 +159,15 @@ namespace Client.Main.Controls.UI.Game.Hud
         // 4..6 são a fileira externa que só aparece no Set 2.
         private int VisibleCount =>
             System.Math.Min(SkillArc.Length, (Scene as GameScene)?.ModernHud?.VisibleSkillCount ?? SkillCount);
+
+        public override bool ContainsPointerPoint(Point point)
+        {
+            if(MasterAlpha<.95f)return false;
+            LayoutButtons();
+            if(_attackRect.Contains(point) || _resetRect.Contains(point))return true;
+            for(int i=0;i<VisibleCount;i++)if(_skillRects[i].Contains(point))return true;
+            return false;
+        }
 
         public override void Update(GameTime gameTime)
         {
@@ -290,7 +299,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             if (gs.Hero == null)
                 return;
             gs.CancelAutoAttack();
-            var target = FindNearestMonster(gs, gs.Hero.GetAttackRangeTiles());
+            var target = gs.FindTouchAttackTarget(gs.Hero.GetAttackRangeTiles());
             if (target != null)
                 gs.TryStartAutoAttack(target);
         }
@@ -298,34 +307,14 @@ namespace Client.Main.Controls.UI.Game.Hud
         private void CastSkill(GameScene gs, SkillEntryState skill)
         {
             gs.CancelAutoAttack();
-            var target = FindNearestMonster(gs, gs.SkillController?.GetCastRange(skill.SkillId, hasTarget: true) ?? 0f);
+            var target = gs.FindTouchAttackTarget(gs.SkillController?.GetCastRange(skill.SkillId, hasTarget: true) ?? 0f);
             gs.SkillController?.StartSkillFromTouchHotbar(skill, target);
         }
 
         private bool CastHeldSkill(GameScene gs, SkillEntryState skill)
         {
-            var target = FindNearestMonster(gs, gs.SkillController?.GetCastRange(skill.SkillId, hasTarget: true) ?? 0f);
+            var target = gs.FindTouchAttackTarget(gs.SkillController?.GetCastRange(skill.SkillId, hasTarget: true) ?? 0f);
             return gs.SkillController?.CastSkillFromHotbar(skill, target) == true;
-        }
-
-        private static MonsterObject FindNearestMonster(GameScene gs, float range)
-        {
-            var world = gs.World;
-            var hero = gs.Hero;
-            if (world?.Monsters == null || hero == null)
-                return null;
-            MonsterObject nearest = null;
-            float best = range * range;
-            var hloc = hero.Location;
-            var monsters = world.Monsters;
-            for (int i = 0; i < monsters.Count; i++)
-            {
-                var m = monsters[i];
-                if (m == null || m.IsDead || !m.Visible || m.World != world) continue;
-                float d = Vector2.DistanceSquared(hloc, m.Location);
-                if (d <= best) { best = d; nearest = m; }
-            }
-            return nearest;
         }
 
         public override void Draw(GameTime gameTime)
@@ -379,6 +368,11 @@ namespace Client.Main.Controls.UI.Game.Hud
                 }
                 else
                 {
+                    if(UiThemeManager.IsMobileInterfaceActive)
+                    {
+                        sb.Draw(MobileSlotArt.Plus,rect,Color.White*a);
+                        continue;
+                    }
                     if (Tex(_texSocketRing))
                         sb.Draw(_texSocketRing, ScaledRect(rect, 88f / 75f), Color.White * a);
                     if (Tex(_texHoleBase))

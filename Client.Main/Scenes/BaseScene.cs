@@ -604,6 +604,10 @@ namespace Client.Main.Scenes
                 }
             }
 
+            // Player and NPC names are queued by DrawHoverName after the world's
+            // monster/store nameplate flush. Flush this second set before screen UI.
+            OverheadNameplateRenderer.FlushQueuedNameplates(GraphicsManager.Instance.Sprite);
+
             // --- Pass 2b: Render batched dropped-item labels (always visible) ---
             using (new SpriteBatchScope(
                        GraphicsManager.Instance.Sprite,

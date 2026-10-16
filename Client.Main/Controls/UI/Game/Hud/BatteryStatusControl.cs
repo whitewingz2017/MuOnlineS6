@@ -22,6 +22,19 @@ public sealed class BatteryStatusControl : UIControl
     }
     public override void Update(GameTime gameTime)
     {
+        Visible=UiThemeManager.IsMobilePlatform || UiThemeManager.IsMobileInterfaceActive;
+        if(UiThemeManager.IsMobileInterfaceActive)
+        {
+            Align=0;Margin=new Margin();
+            var bounds=TouchMenuControl.MobileBatteryRectangle;
+            X=bounds.X;Y=bounds.Y;ControlSize=ViewSize=bounds.Size;
+        }
+        else
+        {
+            Align=ControlAlign.Bottom|ControlAlign.Left;
+            Margin=new Margin {Bottom=6,Left=350};X=0;Y=0;
+            ControlSize=ViewSize=new Point(100,20);
+        }
         base.Update(gameTime);
         if (gameTime.TotalGameTime.TotalSeconds < _nextRefresh) return;
         _nextRefresh = gameTime.TotalGameTime.TotalSeconds + 15;

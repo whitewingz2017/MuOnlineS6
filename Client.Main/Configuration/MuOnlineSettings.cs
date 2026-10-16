@@ -140,6 +140,7 @@ namespace Client.Main.Configuration
         // Connect Server Settings
         public string ConnectServerHost { get; set; } = "127.0.0.1";
         public int ConnectServerPort { get; set; } = 44405;
+        public string RegistrationUrl { get; set; } = string.Empty;
 
         // Client/Protocol Settings
         public string ProtocolVersion { get; set; } = nameof(TargetProtocolVersion.Season6); // Use nameof for safety
@@ -150,7 +151,8 @@ namespace Client.Main.Configuration
         public GraphicsSettings Graphics { get; set; } = new();
         public EnvironmentSettings Environment { get; set; } = new();
         public UiSettings Ui { get; set; } = new();
-        public HudTheme HudTheme { get; set; } = HudTheme.Hybrid;
+        public HudTheme HudTheme { get; set; } = System.OperatingSystem.IsAndroid() || System.OperatingSystem.IsIOS() ? HudTheme.Hybrid : HudTheme.ClassicPc;
+        public bool MobilePotionsRight { get; set; }
         public bool AutoAttackEnabled { get; set; } = true;
         public MuHelperConfig MuHelper { get; set; } = new();
     }

@@ -328,6 +328,7 @@ namespace Client.Main.Controls.UI.Game.Helper
 
         public void Open()
         {
+            if(UiThemeManager.IsMobileInterfaceActive){_scene.ToggleMobileHelperSettings();return;}
             SyncPresentation();
             RefreshClassicDockScaleIfNeeded();
             Visible = true;

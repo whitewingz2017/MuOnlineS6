@@ -20,6 +20,40 @@ namespace Client.Main.Controls.UI.Game.Inventory
     /// </summary>
     public static class BmdPreviewRenderer
     {
+        public static void RenderCharacterPortrait(Client.Main.Objects.Player.PlayerObject player,
+            RenderTarget2D target, BasicEffect effect)
+        {
+            if(player?.Model==null)return;
+            var gd=GraphicsManager.Instance.GraphicsDevice;
+            var targets=gd.GetRenderTargets();var viewport=gd.Viewport;var scissor=gd.ScissorRectangle;
+            var blend=gd.BlendState;var depth=gd.DepthStencilState;var raster=gd.RasterizerState;var sampler=gd.SamplerStates[0];
+            try
+            {
+                gd.SetRenderTarget(target);gd.Clear(new Color(15,18,25));
+                gd.BlendState=BlendState.AlphaBlend;gd.DepthStencilState=DepthStencilState.Default;
+                gd.RasterizerState=RasterizerState.CullNone;gd.SamplerStates[0]=SamplerState.LinearClamp;
+                effect.View=Matrix.CreateTranslation(0,0,-500);
+                effect.Projection=Matrix.CreateOrthographic(60,60,1,1000);
+                effect.TextureEnabled=true;effect.VertexColorEnabled=true;effect.LightingEnabled=false;effect.FogEnabled=false;
+                effect.DiffuseColor=Vector3.One;effect.Alpha=1;
+                foreach(var part in new Client.Main.Objects.ModelObject[]{player.Armor,player.HelmMask,player.Helm})
+                {
+                    if(part.Model==null || part.Hidden)continue;
+                    var definition=new ItemDefinition(0,"Portrait",1,1,"portrait.bmd"){Group=7};
+                    var pose=GetOrCreatePoseGeometry(part.Model,definition);
+                    if(pose==null || !pose.IsValid)continue;
+                    var center=pose.Bones.Length>20?pose.Bones[20].Translation:new Vector3(0,0,180);
+                    center.Z+=5;
+                    effect.World=Matrix.CreateTranslation(-center)*Matrix.CreateRotationX(-MathHelper.PiOver2);
+                    foreach(int mesh in pose.MeshOrder)RenderMeshWithBlendState(gd,effect,part.Model,mesh,pose.Meshes[mesh]);
+                }
+            }
+            finally
+            {
+                gd.SetRenderTargets(targets);gd.Viewport=viewport;gd.ScissorRectangle=scissor;
+                gd.BlendState=blend;gd.DepthStencilState=depth;gd.RasterizerState=raster;gd.SamplerStates[0]=sampler;
+            }
+        }
         private readonly struct ItemRenderProperties
         {
             public static ItemRenderProperties Default => new(0, false, false, -1, -1);

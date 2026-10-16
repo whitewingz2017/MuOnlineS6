@@ -12,6 +12,10 @@ using Client.Main.Core.Client;
 using Client.Main.Networking;
 using MUnique.OpenMU.Network.Packets;
 using Client.Main.Scenes;
+using Client.Main.Controllers;
+using Client.Main.Controls.UI.Game.Hud;
+using Client.Main.Helpers;
+using Microsoft.Xna.Framework.Graphics;
 
 namespace Client.Main.Controls.UI.Game
 {
@@ -356,6 +360,7 @@ namespace Client.Main.Controls.UI.Game
         public override void Update(GameTime gameTime)
         {
             if (!Visible) return;
+            if(UiThemeManager.IsMobileInterfaceActive){UpdateMobileDropdown();return;}
             base.Update(gameTime);
 
             var mouse = MuGame.Instance.UiMouseState;
@@ -463,7 +468,81 @@ namespace Client.Main.Controls.UI.Game
         public override void Draw(GameTime gameTime)
         {
             if (!Visible) return;
+            if(UiThemeManager.IsMobileInterfaceActive){DrawMobileDropdown();return;}
             base.Draw(gameTime);
+        }
+
+        private bool _mobilePressed,_mobileDragged;
+        private int _mobilePressY,_mobileStartOffset;
+        private const int MobileRowHeight=52;
+        private void MobileDropdownLayout()
+        {
+            var map=TouchMenuControl.MobileMapRectangle;
+            X=map.X;Y=map.Y;
+            ControlSize=ViewSize=new Point(map.Width,Math.Max(100,Math.Min(520,UiScaler.WindowBounds.Bottom-Y-28)));
+            _maxVisibleItems=Math.Max(1,(ViewSize.Y-25)/MobileRowHeight);
+            foreach(var child in Controls)child.Visible=false;
+        }
+        private void UpdateMobileDropdown()
+        {
+            MobileDropdownLayout();
+            var mouse=MuGame.Instance.UiMouseState;var previous=MuGame.Instance.PrevUiMouseState;
+            if(mouse.LeftButton==ButtonState.Pressed && previous.LeftButton==ButtonState.Released)
+            {
+                if(!DisplayRectangle.Contains(mouse.Position))
+                {
+                    var map=TouchMenuControl.MobileMapRectangle;
+                    if(new Rectangle(map.X,map.Y-34,map.Width,34).Contains(mouse.Position))return;
+                    Visible=false;Scene?.SetMouseInputConsumed();return;
+                }
+                _mobilePressed=true;_mobileDragged=false;_mobilePressY=mouse.Y;_mobileStartOffset=_currentScrollOffset;
+            }
+            if(_mobilePressed)
+            {
+                Scene?.SetMouseInputConsumed();
+                if(Math.Abs(mouse.Y-_mobilePressY)>8)_mobileDragged=true;
+                if(_mobileDragged)_currentScrollOffset=Math.Clamp(_mobileStartOffset+(_mobilePressY-mouse.Y)/MobileRowHeight,0,Math.Max(0,_currentlyDisplayableMaps.Count-_maxVisibleItems));
+                if(mouse.LeftButton==ButtonState.Released)
+                {
+                    _mobilePressed=false;
+                    int row=(mouse.Y-Y-25)/MobileRowHeight;
+                    if(!_mobileDragged && mouse.Y>=Y+25 && DisplayRectangle.Contains(mouse.Position) && row<_maxVisibleItems)
+                    {FilterAndSortMaps();OnMapClicked(row);}
+                }
+            }
+            if(DisplayRectangle.Contains(mouse.Position) && mouse.ScrollWheelValue!=previous.ScrollWheelValue)
+            {
+                _currentScrollOffset=Math.Clamp(_currentScrollOffset-Math.Sign(mouse.ScrollWheelValue-previous.ScrollWheelValue),0,Math.Max(0,_currentlyDisplayableMaps.Count-_maxVisibleItems));
+                Scene?.SetMouseInputConsumed();
+            }
+        }
+        private void DrawMobileDropdown()
+        {
+            MobileDropdownLayout();
+            var batch=GraphicsManager.Instance.Sprite;var pixel=GraphicsManager.Instance.Pixel;
+            using var scope=new SpriteBatchScope(batch,SpriteSortMode.Deferred,BlendState.AlphaBlend,SamplerState.LinearClamp,transform:UiScaler.SpriteTransform);
+            batch.Draw(pixel,DisplayRectangle,new Color(0,0,0,235));
+            MobileHudLayout.Text(batch,"Move to",new Rectangle(X,Y,ViewSize.X,24),13,new Color(235,200,125));
+            for(int row=0;row<_maxVisibleItems && row+_currentScrollOffset<_currentlyDisplayableMaps.Count;row++)
+            {
+                var map=_currentlyDisplayableMaps[row+_currentScrollOffset];
+                bool canMove=CanPlayerMoveTo(map,playerState);
+                var bounds=new Rectangle(X+2,Y+25+row*MobileRowHeight,ViewSize.X-4,MobileRowHeight-3);
+                batch.Draw(pixel,bounds,new Color(80,71,48));
+                batch.Draw(pixel,new Rectangle(bounds.X+1,bounds.Y+1,bounds.Width-2,bounds.Height-2),new Color(7,9,10,245));
+                int level=map.RequiredLevel;
+                if(playerState.Class is CharacterClassNumber.MagicGladiator or CharacterClassNumber.DuelMaster or CharacterClassNumber.DarkLord or CharacterClassNumber.LordEmperor or CharacterClassNumber.RageFighter or CharacterClassNumber.FistMaster && level!=400)level=level*2/3;
+                var color=canMove?new Color(235,200,125):Color.Gray;
+                MobileHudLayout.Text(batch,map.DisplayName,new Rectangle(bounds.X,bounds.Y+3,bounds.Width,23),17,color);
+                MobileHudLayout.Text(batch,$"Min. Lv {level:N0} | {map.RequiredZen:N0} Zen",new Rectangle(bounds.X,bounds.Y+27,bounds.Width,18),13,color);
+            }
+            if(_currentlyDisplayableMaps.Count>_maxVisibleItems)
+            {
+                int height=ViewSize.Y-26;
+                int thumb=Math.Max(22,height*_maxVisibleItems/_currentlyDisplayableMaps.Count);
+                int top=Y+25+(height-thumb)*_currentScrollOffset/Math.Max(1,_currentlyDisplayableMaps.Count-_maxVisibleItems);
+                batch.Draw(pixel,new Rectangle(X+ViewSize.X-3,top,2,thumb),Color.Goldenrod);
+            }
         }
 
         public void ProcessKeyInput(Keys key, bool isRepeated)

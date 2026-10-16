@@ -1,6 +1,45 @@
 using Client.Main;
 using Client.Main.Scenes;
 
+if(args.Length==1 && args[0]=="--verify-registration")
+{
+    var validate=Client.Main.Networking.Services.RegistrationService.Validate;
+    if(validate("newuser","a@example.com","secret1","secret1")!=null)throw new Exception("Valid registration rejected.");
+    foreach(var item in new[]{("ab","a@example.com","secret1","secret1"),("longusername","a@example.com","secret1","secret1"),("has space","a@example.com","secret1","secret1"),("newuser","bad email","secret1","secret1"),("newuser","a@example.com","secret1","different"),("newuser","a@example.com",new string('p',21),new string('p',21))})
+        if(validate(item.Item1,item.Item2,item.Item3,item.Item4)==null)throw new Exception("Invalid registration accepted.");
+    var handler=new RegistrationResponseHandler();using var http=new System.Net.Http.HttpClient(handler);
+    var service=new Client.Main.Networking.Services.RegistrationService(http);
+    foreach(int status in new[]{201,409,400,429,404,500})
+    {
+        handler.Status=status;
+        var result=await service.RegisterAsync("https://registration.invalid/api/accounts/test-registration","newuser","a@example.com","secret1",default);
+        if(result.Success!=(status==201))throw new Exception($"Incorrect registration result for HTTP {status}.");
+    }
+    int sent=handler.Requests;
+    if((await service.RegisterAsync("","newuser","a@example.com","secret1",default)).Success || (await service.RegisterAsync("http://registration.invalid","newuser","a@example.com","secret1",default)).Success || handler.Requests!=sent)
+        throw new Exception("Unconfigured/insecure registration sent credentials.");
+    Console.WriteLine("PASS: registration input validation, HTTP result handling and unconfigured/insecure URL rejection.");
+    return;
+}
+
+if (args.Length == 1 && args[0] == "--verify-interface-defaults")
+{
+    var settings = new Client.Main.Configuration.MuOnlineSettings();
+    if (settings.HudTheme != Client.Main.Configuration.HudTheme.ClassicPc)
+        throw new InvalidOperationException("Fresh Windows settings must select Classic PC.");
+    var theme = typeof(Client.Main.Controls.UI.UiThemeManager);
+    bool debug = (theme.Assembly.GetCustomAttributes(typeof(System.Diagnostics.DebuggableAttribute), false)
+        .OfType<System.Diagnostics.DebuggableAttribute>().FirstOrDefault()?.IsJITTrackingEnabled).GetValueOrDefault();
+    Client.Main.Controls.UI.UiThemeManager.Initialize("Classic");
+    if (Client.Main.Controls.UI.UiThemeManager.IsMobileInterfaceActive != debug)
+        throw new InvalidOperationException("Windows mobile preview must be available only in Debug.");
+    Client.Main.Controls.UI.UiThemeManager.Initialize("Modern");
+    if (Client.Main.Controls.UI.UiThemeManager.IsMobileInterfaceActive)
+        throw new InvalidOperationException("Mobile player panel must be hidden outside Mobile theme.");
+    Console.WriteLine($"PASS: fresh Windows defaults to Classic PC; mobile preview Debug={debug}; Modern hides mobile panel.");
+    return;
+}
+
 if (args.Length is 1 or 2 && args[0] == "--verify-aura-tail-ring")
 {
     const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
@@ -91,3 +130,16 @@ Constants.ENTRY_SCENE = typeof(SkillCaptureScene);
 game.IsFixedTimeStep = true;
 game.TargetElapsedTime = TimeSpan.FromSeconds(1d / 25d);
 game.Run();
+
+sealed class RegistrationResponseHandler : System.Net.Http.HttpMessageHandler
+{
+    public int Status=201, Requests;
+    protected override async Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request,CancellationToken cancellationToken)
+    {
+        Requests++;
+        var json=System.Text.Json.Nodes.JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))!;
+        if(request.Method!=System.Net.Http.HttpMethod.Post || json["loginName"]?.GetValue<string>()!="newuser" || json["eMail"]?.GetValue<string>()!="a@example.com" || json["password"]?.GetValue<string>()!="secret1")
+            throw new Exception("Incorrect registration request.");
+        return new System.Net.Http.HttpResponseMessage((System.Net.HttpStatusCode)Status);
+    }
+}

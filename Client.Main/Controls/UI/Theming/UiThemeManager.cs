@@ -203,6 +203,7 @@ public static class UiThemeManager
 #endif
         }
     }
+    public static bool IsMobileInterfaceActive => CanUseMobileInterface && CurrentId == UiThemeId.Classic;
     public static UiThemeDefinition Current => _current;
     public static UiThemeId CurrentId => _current.Id;
     public static IReadOnlyList<UiThemeDefinition> AvailableThemes => CanUseMobileInterface ? _mobileThemes : _desktopThemes;

@@ -1,3 +1,4 @@
+using Client.Main.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -47,7 +48,7 @@ namespace Client.Main.Controls.UI.Game.Hud
         private static int CrystalH => (int)BottomBarLayout.CrystalH;
         private static int SlotSize => (int)BottomBarLayout.SlotSize;
         private static int SlotGap => (int)BottomBarLayout.SlotGap;
-        private static int SlotCount => BottomBarLayout.SlotCount;
+        private static int SlotCount => UiThemeManager.IsMobileInterfaceActive?3:BottomBarLayout.SlotCount;
         private static int ExpH => (int)BottomBarLayout.ExpH;
 
         private Texture2D _texFooter, _texExpBg, _texExpFill;
@@ -99,12 +100,25 @@ namespace Client.Main.Controls.UI.Game.Hud
             LayoutPotionHitArea();
         }
 
+        private bool ShowPotions => !UiThemeManager.IsMobileInterfaceActive || Scene is not Client.Main.Scenes.GameScene scene || scene.MobileCombatControlsVisible;
+
+        public override bool ContainsPointerPoint(Point point)
+        {
+            if(!ShowPotions)return false;
+            if(_potionPickerSlot>=0 && _potionPickerRect.Contains(point))return true;
+            for(int i=0;i<SlotCount;i++)if(GetPotionSlotRectangle(i).Contains(point))return true;
+            return false;
+        }
+
         public override void Update(GameTime gameTime)
         {
+            Interactive=ShowPotions;
+            if(!ShowPotions)_potionPickerSlot=-1;
             LayoutPotionHitArea();
             if (Visible && Interactive && MuGame.Instance?.UiMouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed &&
                 MuGame.Instance.PrevUiMouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released &&
-                DisplayRectangle.Contains(MuGame.Instance.UiMouseState.Position))
+                ContainsPointerPoint(MuGame.Instance.UiMouseState.Position) &&
+                (Scene?.MouseHoverControl==null || Scene.MouseHoverControl==this))
             {
                 _potionPressHandled = true;
                 HandlePotionTap(MuGame.Instance.UiMouseState.Position);
@@ -148,8 +162,8 @@ namespace Client.Main.Controls.UI.Game.Hud
             {
                 if (!GetPotionSlotRectangle(i).Contains(point)) continue;
                 var assignment = _hud.GetItemAssignmentAt(i);
-                if (assignment.HasValue &&
-                    _hud.CountItemInInventory(assignment.Value.Group, assignment.Value.Id) > 0)
+                if(!UiThemeManager.IsMobileInterfaceActive && assignment.HasValue &&
+                    _hud.CountItemInInventory(assignment.Value.Group,assignment.Value.Id)>0)
                     _hud.TryConsumePotionForHud(i);
                 else
                 {
@@ -167,6 +181,8 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         private static Rectangle GetPotionSlotRectangle(int index)
         {
+            if(UiThemeManager.IsMobileInterfaceActive)
+                return new Rectangle((MuGame.AppSettings.MobilePotionsRight ? UiScaler.WindowBounds.Right-190 : UiScaler.WindowBounds.Left+40)+index*48,UiScaler.WindowBounds.Bottom-(MuGame.AppSettings.MobilePotionsRight ? 375 : 290),42,46);
             int slotsWidth = SlotCount * SlotSize + (SlotCount - 1) * SlotGap;
             int left = (UiScaler.VirtualSize.X - slotsWidth) / 2;
             int top = UiScaler.VirtualSize.Y - (int)BottomBarLayout.SlotsBottom - SlotSize;
@@ -186,13 +202,10 @@ namespace Client.Main.Controls.UI.Game.Hud
             {
                 _availablePotions = _hud?.GetConsumableCandidates() ??
                     Array.Empty<(byte, int, string, string?, int)>();
-                if (_availablePotions.Count == 0)
-                    _potionPickerSlot = -1;
-                else
                 {
                     const int rowHeight = 28;
                     const int width = 190;
-                    int height = _availablePotions.Count * rowHeight + 8;
+                    int height = Math.Max(1,_availablePotions.Count) * rowHeight + 8;
                     int x = Math.Clamp(GetPotionSlotRectangle(_potionPickerSlot).Center.X - width / 2,
                         2, UiScaler.VirtualSize.X - width - 2);
                     int y = Math.Max(2, first.Top - height - 5);
@@ -278,9 +291,40 @@ namespace Client.Main.Controls.UI.Game.Hud
             return tex;
         }
 
+        private void DrawMobileExperience()
+        {
+            var batch=GraphicsManager.Instance.Sprite;var pixel=GraphicsManager.Instance.Pixel;
+            if(batch==null || pixel==null)return;
+            using var scope=new SpriteBatchScope(batch,SpriteSortMode.Deferred,BlendState.AlphaBlend,SamplerState.LinearClamp,transform:UiScaler.SpriteTransform);
+            var window=UiScaler.WindowBounds;
+            var bar=new Rectangle(window.Left,window.Bottom-6,window.Width,6);
+            double progress=Client.Main.Core.Utilities.ExperienceProgress.For(_state);
+            batch.Draw(pixel,bar,new Color(12,27,25));
+            int width=(int)(bar.Width*Math.Clamp(progress,0,1));
+            if(width>0)batch.Draw(pixel,new Rectangle(bar.X,bar.Y,width,bar.Height),new Color(35,189,147));
+            for(int i=1;i<10;i++)batch.Draw(pixel,new Rectangle(bar.X+i*bar.Width/10,bar.Y,1,bar.Height),Color.Black);
+            for(int i=0;ShowPotions && i<SlotCount;i++)
+            {
+                var slot=GetPotionSlotRectangle(i);
+                var assignment=_hud?.GetItemAssignmentAt(i);
+                if(!assignment.HasValue)batch.Draw(MobileSlotArt.Plus,slot,Color.White);
+                if(assignment.HasValue)
+                {
+                    var icon=_hud.GetItemIconByKey(assignment.Value.Group,assignment.Value.Id);
+                    if(icon!=null)batch.Draw(icon,new Rectangle(slot.X+4,slot.Y+3,slot.Width-8,slot.Height-6),Color.White);
+                    int count=_hud.CountItemInInventory(assignment.Value.Group,assignment.Value.Id);
+                    MobileHudLayout.Text(batch,count.ToString("N0"),new Rectangle(slot.X,slot.Bottom-17,slot.Width,15),11,Color.White);
+                }
+            }
+            if(_potionPickerSlot>=0)DrawPotionPicker(batch,pixel,GraphicsManager.Instance.Font);
+            MobileHudLayout.Text(batch,$"Lv. {_state.Level:N0}"+(_state.Level>=400?$" ML. {_state.MasterLevel:N0}":"")+$" | {progress:P1}",new Rectangle(window.Right-190,bar.Y-19,180,18),12,new Color(255,220,140));
+            MobileHudLayout.Text(batch,$"{(_state.Level>=400?_state.MasterExperience:_state.Experience):N0} / {(_state.Level>=400?_state.MasterExperienceForNextLevel:_state.ExperienceForNextLevel):N0}",new Rectangle(window.Left+8,bar.Y-19,220,18),12,new Color(255,220,140),false);
+        }
+
         public override void Draw(GameTime gameTime)
         {
             if (!Visible || _state == null) return;
+            if(UiThemeManager.IsMobileInterfaceActive){DrawMobileExperience();return;}
             var sb = GraphicsManager.Instance?.Sprite;
             var pixel = GraphicsManager.Instance?.Pixel;
             var font = GraphicsManager.Instance?.Font;
@@ -462,6 +506,8 @@ namespace Client.Main.Controls.UI.Game.Hud
             sprite.Draw(pixel, _potionPickerRect, new Color(100, 86, 58));
             sprite.Draw(pixel, new Rectangle(_potionPickerRect.X + 1, _potionPickerRect.Y + 1,
                 _potionPickerRect.Width - 2, _potionPickerRect.Height - 2), new Color(18, 21, 28, 245));
+            if(_availablePotions.Count==0 && font!=null)
+                DrawOutlined(sprite,font,"No potions in inventory",new Vector2(_potionPickerRect.X+8,_potionPickerRect.Y+9),.34f,Color.White,1);
             for (int i = 0; i < _potionPickerItems.Length; i++)
             {
                 var potion = _availablePotions[i];

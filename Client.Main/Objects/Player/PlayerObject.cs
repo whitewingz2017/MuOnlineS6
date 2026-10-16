@@ -147,6 +147,23 @@ namespace Client.Main.Objects.Player
 
         public string Name { get; set; } = "Character";
         public override string DisplayName => Name;
+        private float? _remoteHealthFraction;
+        public float? HealthFraction
+        {
+            get
+            {
+                var state=MuGame.Network?.GetCharacterState();
+                if(state!=null && state.Id==NetworkId && state.MaximumHealth>0)
+                    return Math.Clamp(state.CurrentHealth/(float)state.MaximumHealth,0,1);
+                if(_remoteHealthFraction.HasValue)return _remoteHealthFraction;
+                var party=MuGame.Network?.GetPartyManager();
+                return party?.IsMember(NetworkId)==true?party.GetHealthPercentage(NetworkId):null;
+            }
+        }
+        public void UpdateHealthFraction(float? fraction)
+        {
+            if(fraction.HasValue)_remoteHealthFraction=Math.Clamp(fraction.Value,0,1);
+        }
 
         private readonly CharacterService _characterService;
         private readonly NetworkManager _networkManager;
@@ -3122,6 +3139,8 @@ namespace Client.Main.Objects.Player
 
         public void Attack(MonsterObject target)
         {
+            if(MuGame.Instance.ActiveScene is Client.Main.Scenes.GameScene scene && scene.Hero==this)
+                scene.SetMobileTarget(target);
             if (target == null || World == null) return;
 
             // Don't attack if player is dead
@@ -3840,6 +3859,11 @@ namespace Client.Main.Objects.Player
                        DepthStencilState.None))
             {
                 sb.Draw(pixel, bgRect, Color.Black * 0.6f);
+                if(Client.Main.Controls.UI.UiThemeManager.IsMobileInterfaceActive)
+                {
+                    PetHealthBarRenderer.Draw(sb,bgRect,hpFill);
+                    return;
+                }
                 sb.Draw(pixel, fillRect, Color.Red);
                 for (int i = 1; i < 8; i++)
                 {

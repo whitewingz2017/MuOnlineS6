@@ -159,6 +159,10 @@ namespace Client.Main.Content
                 }
 
                 string fullPath = FindTexturePath(dataPath, ext);
+                // Ship the requested target-health artwork with the client; an older
+                // installed Data folder must not silently replace it.
+                if (path.Equals("Interface/newui_Pet_HpBar.OZJ", StringComparison.OrdinalIgnoreCase))
+                    fullPath = null;
                 TextureData data;
                 if (fullPath != null)
                 {

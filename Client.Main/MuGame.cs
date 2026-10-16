@@ -46,7 +46,7 @@ namespace Client.Main
     public class MuGame : Game
 #endif
     {
-        public static string DisplayVersion { get; set; } = "1.3.6";
+        public static string DisplayVersion { get; set; } = "1.3.9";
 #if WINDOWS_DX
         public event EventHandler<TimeSpan> PreviewUpdate;
         public event EventHandler<EventArgs> EndUpdate;
@@ -760,7 +760,7 @@ namespace Client.Main
                 long sceneStarted = UpdatePassProfiler.Start();
                 try // inner try for ActiveScene.Update
                 {
-                    ActiveScene?.Update(gameTime);
+                    if(!Client.Main.Helpers.AppUpdateScreen.Active) ActiveScene?.Update(gameTime);
                 }
                 catch (Exception sceneEx)
                 {
@@ -974,6 +974,7 @@ namespace Client.Main
                 _mguiDesktop?.Draw();
 #endif
 
+                Client.Main.Helpers.AppUpdateScreen.Draw();
                 DrawVersionLabel();
 
                 RenderPassProfiler.AddFrameworkDraw(frameworkDrawStarted);
@@ -1023,7 +1024,8 @@ namespace Client.Main
             string label = "Version " + DisplayVersion;
             Vector2 size = font.MeasureString(label) * scale;
             var viewport = GraphicsDevice.Viewport;
-            var position = new Vector2(viewport.Width - size.X - 10f, viewport.Height - size.Y - 6f);
+            float bottomInset=UiThemeManager.IsMobileInterfaceActive?12f+22f*UiScaler.ScaleY:6f;
+            var position = new Vector2(viewport.Width - size.X - 10f, viewport.Height - size.Y - bottomInset);
             var sprite = graphics.Sprite;
             sprite.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp,
                 DepthStencilState.None, RasterizerState.CullNone, null, Matrix.Identity);
@@ -2203,6 +2205,34 @@ namespace Client.Main
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "Failed to persist Auto Attack setting {Enabled}.", enabled);
+            }
+        }
+
+        public static void PersistMobilePotionsRight(bool enabled)
+        {
+            if (AppSettings != null)
+                AppSettings.MobilePotionsRight = enabled;
+
+            var logger = AppLoggerFactory?.CreateLogger<MuGame>();
+            try
+            {
+                Directory.CreateDirectory(ConfigDirectory ?? AppContext.BaseDirectory);
+
+                JsonObject root = LoadLocalSettings(logger);
+                if (root["MuOnlineSettings"] is not JsonObject muSettings)
+                {
+                    muSettings = new JsonObject();
+                    root["MuOnlineSettings"] = muSettings;
+                }
+
+                muSettings["MobilePotionsRight"] = enabled;
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                File.WriteAllText(LocalSettingsPath, root.ToJsonString(options));
+                logger?.LogInformation("Saved mobile potion side setting {Enabled} to {Path}", enabled, LocalSettingsPath);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to persist mobile potion side setting {Enabled}.", enabled);
             }
         }
 

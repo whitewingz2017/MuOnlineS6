@@ -87,11 +87,12 @@ namespace Client.Main.Scenes
         {
             bool contextMenuOpened = false;
 
-            if (UiThemeManager.IsMobilePlatform)
+            if (UiThemeManager.IsMobileInterfaceActive)
             {
                 var target = !_scene.IsMouseInputConsumedThisFrame && !IsMenuVisible &&
                     (_scene.MouseHoverControl == null || _scene.MouseHoverControl == _scene.World) &&
-                    _scene.MouseHoverObject is PlayerObject player && player != _scene.Hero && player.World == _scene.World
+                    _scene.MouseHoverObject is PlayerObject player && player != _scene.Hero && player.World == _scene.World &&
+                    !_scene.IsPlayerAttackTarget(player)
                     ? player : null;
                 bool opened = _holdGesture.Update(target?.NetworkId,
                     uiMouse.LeftButton == ButtonState.Pressed,
@@ -108,7 +109,7 @@ namespace Client.Main.Scenes
                 }
             }
 
-            if (!UiThemeManager.IsMobilePlatform && !_scene.IsMouseInputConsumedThisFrame &&
+            if (!UiThemeManager.IsMobileInterfaceActive && !_scene.IsMouseInputConsumedThisFrame &&
                 _scene.MouseHoverObject is PlayerObject hoveredPlayer &&
                 hoveredPlayer != _scene.Hero)
             {

@@ -11,9 +11,11 @@ namespace Client.Main.Helpers
     {
         private readonly struct QueuedNameplate
         {
-            public QueuedNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore)
+            public QueuedNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore, bool showHealthBar, Color nameColor)
             {
                 IsStore = isStore;
+                NameColor = nameColor;
+                ShowHealthBar = showHealthBar;
                 Font = font;
                 Screen = screen;
                 Name = name;
@@ -22,6 +24,8 @@ namespace Client.Main.Helpers
             }
 
             public bool IsStore { get; }
+            public Color NameColor { get; }
+            public bool ShowHealthBar { get; }
             public SpriteFont Font { get; }
             public Vector3 Screen { get; }
             public string Name { get; }
@@ -33,11 +37,11 @@ namespace Client.Main.Helpers
         private const float BaseBarWidth = 70f;
         private const float BaseBarHeight = 6f;
         private const float BaseBarOffsetY = 2f;
-        private const float BaseBarPadding = 1f;
+
         private const float BaseNamePaddingX = 4f;
         private const float BaseNamePaddingY = 2f;
         private const float BaseNameBarGap = 2f;
-        private const int BarSegments = 8;
+
         private const int MaxRetainedQueueCapacity = 512;
         private static readonly List<QueuedNameplate> s_queue = new(256);
         public static int LastFrameQueuedNameplates { get; private set; }
@@ -99,12 +103,12 @@ namespace Client.Main.Helpers
             s_queue.Clear();
         }
 
-        public static void EnqueueNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore = false)
+        public static void EnqueueNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore = false, bool showHealthBar = false, Color? nameColor = null)
         {
             if (font == null || string.IsNullOrWhiteSpace(name))
                 return;
 
-            s_queue.Add(new QueuedNameplate(font, screen, name, healthFraction, renderScale, isStore));
+            s_queue.Add(new QueuedNameplate(font, screen, name, healthFraction, renderScale, isStore, showHealthBar, nameColor ?? Color.White));
         }
 
         public static void FlushQueuedNameplates(SpriteBatch spriteBatch)
@@ -112,18 +116,10 @@ namespace Client.Main.Helpers
             if (spriteBatch == null || s_queue.Count == 0)
                 return;
 
-            SpriteBatchScope scope = default;
-            bool hasScope = false;
-            if (!SpriteBatchScope.BatchIsBegun)
-            {
-                scope = new SpriteBatchScope(
-                    spriteBatch,
-                    SpriteSortMode.Deferred,
-                    BlendState.NonPremultiplied,
-                    SamplerState.LinearClamp,
-                    DepthStencilState.None);
-                hasScope = true;
-            }
+            // Use an overlay batch even when the caller has world depth writes enabled.
+            // Deferred ordering keeps the trough behind its textured health fill.
+            using var scope = new SpriteBatchScope(spriteBatch, SpriteSortMode.Deferred,
+                BlendState.NonPremultiplied, SamplerState.LinearClamp, DepthStencilState.None);
 
             try
             {
@@ -136,13 +132,11 @@ namespace Client.Main.Helpers
                         entry.Screen,
                         entry.Name,
                         entry.HealthFraction,
-                        entry.RenderScale, entry.IsStore);
+                        entry.RenderScale, entry.IsStore, entry.ShowHealthBar, entry.NameColor);
                 }
             }
             finally
             {
-                if (hasScope)
-                    scope.Dispose();
                 LastFrameQueuedNameplates = s_queue.Count;
                 s_queue.Clear();
                 if (s_queue.Capacity > MaxRetainedQueueCapacity)
@@ -150,7 +144,7 @@ namespace Client.Main.Helpers
             }
         }
 
-        public static void DrawNameplate(SpriteBatch spriteBatch, SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore = false)
+        public static void DrawNameplate(SpriteBatch spriteBatch, SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore = false, bool showHealthBar = false, Color? nameColor = null)
         {
             if (spriteBatch == null || font == null || string.IsNullOrEmpty(name))
                 return;
@@ -167,11 +161,11 @@ namespace Client.Main.Helpers
 
             float padX = MathF.Max(1f, BaseNamePaddingX * scale);
             float padY = MathF.Max(1f, BaseNamePaddingY * scale);
-            bool hasBar = healthFraction.HasValue;
+            bool hasBar = healthFraction.HasValue || showHealthBar;
             float barWidth = MathF.Max(BaseBarWidth * scale, nameSize.X + padX * 2f);
-            float barHeight = hasBar ? MathF.Max(1f, BaseBarHeight * scale) : 0f;
+            float barHeight = hasBar ? MathF.Max(6f, BaseBarHeight * scale) : 0f;
             float barOffset = MathF.Max(1f, BaseBarOffsetY * scale);
-            float barPadding = MathF.Max(1f, BaseBarPadding * scale);
+
             float nameGap = MathF.Max(1f, BaseNameBarGap * scale);
 
             float barBottomY = screen.Y - barOffset;
@@ -202,23 +196,14 @@ namespace Client.Main.Helpers
             if (maxX < 0 || minX > viewport.Width || maxY < 0 || minY > viewport.Height)
                 return;
 
-            int pad = Math.Max(0, (int)MathF.Round(barPadding));
-            int innerWidth = Math.Max(0, barRect.Width - pad * 2);
-            int innerHeight = Math.Max(1, barRect.Height - pad * 2);
-            float hpFill = Math.Clamp(healthFraction ?? 0f, 0f, 1f);
-            int fillWidth = Math.Max(0, (int)MathF.Round(innerWidth * hpFill));
-
-            Rectangle fillRect = new(
-                barRect.X + pad,
-                barRect.Y + pad,
-                fillWidth,
-                innerHeight);
-
             float depth = MathHelper.Clamp(screen.Z, 0f, 1f);
             Vector2 textPos = new(nameRect.X + padX, nameRect.Y + padY);
 
-            spriteBatch.Draw(pixel, nameRect, null, Theme.BgDarkest * 0.85f, 0f, Vector2.Zero, SpriteEffects.None, depth);
-            DrawBorder(spriteBatch, pixel, nameRect, isStore ? Theme.AccentDim : Theme.BorderOuter * 0.9f, depth);
+            if(isStore)
+            {
+                spriteBatch.Draw(pixel, nameRect, null, Theme.BgDarkest * 0.85f, 0f, Vector2.Zero, SpriteEffects.None, depth);
+                DrawBorder(spriteBatch, pixel, nameRect, Theme.AccentDim, depth);
+            }
 
             if (isStore)
             {
@@ -234,41 +219,12 @@ namespace Client.Main.Helpers
             else
             {
                 spriteBatch.DrawString(font, name, textPos + Vector2.One, Color.Black * 0.7f, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
-                spriteBatch.DrawString(font, name, textPos, Theme.TextWhite, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
+                spriteBatch.DrawString(font, name, textPos, nameColor ?? Color.White, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
             }
 
             if (hasBar)
             {
-                spriteBatch.Draw(pixel, barRect, null, Color.Black * 0.7f, 0f, Vector2.Zero, SpriteEffects.None, depth);
-                if (fillRect.Width > 0)
-                    spriteBatch.Draw(pixel, fillRect, null, Theme.Danger, 0f, Vector2.Zero, SpriteEffects.None, depth);
-
-                if (innerWidth > 0 && BarSegments > 1)
-                {
-                    float segmentWidth = innerWidth / (float)BarSegments;
-                    for (int i = 1; i < BarSegments; i++)
-                    {
-                        int x = barRect.X + pad + (int)MathF.Round(segmentWidth * i);
-                        spriteBatch.Draw(pixel,
-                            new Rectangle(x, barRect.Y + pad, 1, innerHeight),
-                            null,
-                            Color.Black * 0.35f,
-                            0f,
-                            Vector2.Zero,
-                            SpriteEffects.None,
-                            depth);
-                    }
-                }
-
-                DrawBorder(spriteBatch, pixel, barRect, Color.Black * 0.8f, depth);
-                spriteBatch.Draw(pixel,
-                    new Rectangle(barRect.X + 1, barRect.Y + 1, Math.Max(0, barRect.Width - 2), 1),
-                    null,
-                    Theme.BorderHighlight * 0.6f,
-                    0f,
-                    Vector2.Zero,
-                    SpriteEffects.None,
-                    depth);
+                PetHealthBarRenderer.Draw(spriteBatch,barRect,healthFraction,depth);
             }
         }
 

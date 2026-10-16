@@ -17,6 +17,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
+using Client.Main.Networking.Services;
 
 namespace Client.Main.Scenes
 {
@@ -37,6 +39,11 @@ namespace Client.Main.Scenes
         private NetworkManager _networkManager;
         private ILogger<LoginScene> _logger;
         private bool _uiInitialized = false; // Flag for one-time UI initialization
+        private ushort? _registrationServerId;
+        private bool _registrationConnectionPaused;
+        private bool _resumeRegistrationServer;
+        private Task _registrationConnectionChange=Task.CompletedTask;
+        private readonly CancellationTokenSource _registrationCancellation=new();
         private bool _returningToServerSelection;
 
         // Constructors
@@ -64,6 +71,8 @@ namespace Client.Main.Scenes
             };
             _loginDialog.LoginAttempt += LoginDialog_LoginAttempt;
             _loginDialog.CancelAttempt += LoginDialog_CancelAttempt;
+            _loginDialog.RegistrationModeChanged += RegistrationModeChanged;
+            _loginDialog.RegistrationAttempt += RegisterAccount;
             Controls.Add(_loginDialog);
             UiThemeManager.ThemeChanged += LoginScene_ThemeChanged;
 
@@ -187,6 +196,9 @@ namespace Client.Main.Scenes
             {
                 _loginDialog.LoginAttempt -= LoginDialog_LoginAttempt;
                 _loginDialog.CancelAttempt -= LoginDialog_CancelAttempt;
+                _loginDialog.RegistrationModeChanged -= RegistrationModeChanged;
+                _loginDialog.RegistrationAttempt -= RegisterAccount;
+                _registrationCancellation.Cancel();
             }
             UiThemeManager.ThemeChanged -= LoginScene_ThemeChanged;
             UnsubscribeFromNetworkEvents();
@@ -293,10 +305,20 @@ namespace Client.Main.Scenes
         {
             // Capture at reception: the queued UI update may run after reconnect finishes.
             bool intentionalReturn = _returningToServerSelection;
+            bool registrationProtected = _registrationConnectionPaused || _loginDialog?.IsRegistration==true;
+            bool updatingApplication = Client.Main.Helpers.AppUpdateScreen.Active;
             MuGame.ScheduleOnMainThread(() =>
             {
                 _logger.LogDebug(">>> HandleConnectionStateChange (UI Thread): Received state {NewState} (Previous handled: {PrevState})", newState, _previousStateHandled);
                 UpdateStatusLabel(newState);
+                if(newState==ClientConnectionState.ConnectedToGameServer && _loginDialog?.IsRegistration!=true)
+                    _registrationConnectionPaused=false;
+                if(_loginDialog?.IsRegistration==true || _registrationConnectionPaused || registrationProtected)
+                {
+                    UpdateUIVisibility(false,true,false);
+                    _previousStateHandled=newState;
+                    return;
+                }
 
                 bool showServerSelectionUi = false;
                 bool showLoginDialog = false;
@@ -345,7 +367,7 @@ namespace Client.Main.Scenes
 
                 UpdateUIVisibility(showServerSelectionUi, showLoginDialog, hideAll);
 
-                if (showErrorAndExit)
+                if (showErrorAndExit && !updatingApplication && !Client.Main.Helpers.AppUpdateScreen.Active)
                 {
                     if (!Controls.OfType<MessageWindow>().Any(mw => mw.Text.Contains("Connection lost")))
                     {
@@ -356,7 +378,7 @@ namespace Client.Main.Scenes
                             {
                                 _logger.LogInformation("Closing game after connection lost message.");
 #if !IOS
-                                MuGame.ScheduleOnMainThread(() => MuGame.Instance.Exit());
+                                MuGame.ScheduleOnMainThread(() => { if(!Client.Main.Helpers.AppUpdateScreen.Active && _loginDialog?.IsRegistration!=true && !_registrationConnectionPaused) MuGame.Instance.Exit(); });
 #endif
                             };
                         }
@@ -364,7 +386,7 @@ namespace Client.Main.Scenes
                         {
                             _logger.LogError("Failed to show MessageWindow for connection lost. Exiting game directly.");
 #if !IOS
-                            MuGame.ScheduleOnMainThread(() => MuGame.Instance.Exit());
+                            MuGame.ScheduleOnMainThread(() => { if(!Client.Main.Helpers.AppUpdateScreen.Active && _loginDialog?.IsRegistration!=true && !_registrationConnectionPaused) MuGame.Instance.Exit(); });
 #endif
                         }
                     }
@@ -386,7 +408,7 @@ namespace Client.Main.Scenes
             {
                 _loginDialog.Visible = showLogin;
                 _loginDialog.CanGoBack = !_returningToServerSelection &&
-                    _networkManager.CurrentState == ClientConnectionState.ConnectedToGameServer;
+                    (_registrationConnectionPaused || _networkManager.CurrentState == ClientConnectionState.ConnectedToGameServer);
                 if (showLogin)
                     _loginDialog.BringToFrontBelowMessages();
             }
@@ -412,6 +434,56 @@ namespace Client.Main.Scenes
                 _uiInitialized = false;
                 _logger.LogDebug("HandleConnectionStateChange: Resetting Server Selection UI.");
             }
+        }
+
+        private void RegistrationModeChanged(object sender,EventArgs e)
+        {
+            bool registration=_loginDialog.IsRegistration;
+            _registrationConnectionPaused=true;
+            var previous=_registrationConnectionChange;
+            _registrationConnectionChange=ChangeRegistrationConnectionAsync(previous,registration);
+        }
+
+        private async Task ChangeRegistrationConnectionAsync(Task previous,bool registration)
+        {
+            try
+            {
+                await previous;
+                if(_registrationCancellation.IsCancellationRequested)return;
+                if(registration)await _networkManager.SuspendForRegistrationAsync();
+                else
+                {
+                    _resumeRegistrationServer=true;
+                    await _networkManager.ForceReconnectToConnectServerAsync();
+                }
+            }
+            catch(Exception ex)
+            {
+                _logger.LogWarning(ex,"Unable to change registration connection state.");
+                MuGame.ScheduleOnMainThread(()=>MessageWindow.Show("Unable to reconnect. Return to server selection and try again."));
+            }
+        }
+
+        private async void RegisterAccount(object sender,EventArgs e)
+        {
+            string username=_loginDialog.Username;
+            string email=_loginDialog.Email;
+            string password=_loginDialog.Password;
+            string error=RegistrationService.Validate(username,email,password,_loginDialog.Confirmation);
+            if(error!=null){MessageWindow.Show(error);return;}
+            _loginDialog.SetSubmitting(true);
+            try
+            {
+                var result=await new RegistrationService().RegisterAsync(MuGame.AppSettings.RegistrationUrl,username,email,password,_registrationCancellation.Token);
+                MuGame.ScheduleOnMainThread(()=>
+                {
+                    if(_registrationCancellation.IsCancellationRequested)return;
+                    _loginDialog.SetSubmitting(false);
+                    if(result.Success)_loginDialog.RegistrationSucceeded();
+                    MessageWindow.Show(result.Message);
+                });
+            }
+            catch(OperationCanceledException) when(_registrationCancellation.IsCancellationRequested) { }
         }
 
         private void LoginDialog_LoginAttempt(object sender, EventArgs e)
@@ -448,13 +520,16 @@ namespace Client.Main.Scenes
         private async void LoginDialog_CancelAttempt(object sender, EventArgs e)
         {
             if (_returningToServerSelection ||
-                _networkManager.CurrentState != ClientConnectionState.ConnectedToGameServer)
+                (!_registrationConnectionPaused && _networkManager.CurrentState != ClientConnectionState.ConnectedToGameServer))
                 return;
 
             _returningToServerSelection = true;
+            _registrationConnectionPaused=false;
+            _resumeRegistrationServer=false;
             UpdateUIVisibility(false, false, true);
             try
             {
+                await _registrationConnectionChange;
                 await _networkManager.ForceReconnectToConnectServerAsync();
             }
             catch (Exception ex)
@@ -479,6 +554,11 @@ namespace Client.Main.Scenes
                 }
                 // Visibility is now handled by HandleConnectionStateChange after state update
                 PopulateServerList(servers);
+                if(_resumeRegistrationServer && !_loginDialog.IsRegistration && _registrationServerId is {} selected)
+                {
+                    _resumeRegistrationServer=false;
+                    _ = _networkManager.RequestGameServerConnectionAsync(selected);
+                }
                 HandleConnectionStateChange(this, _networkManager.CurrentState);
             });
         }
@@ -587,8 +667,10 @@ namespace Client.Main.Scenes
 
         private void HandleNetworkError(object sender, string errorMessage)
         {
+            if(Client.Main.Helpers.AppUpdateScreen.Active || _loginDialog?.IsRegistration==true || _registrationConnectionPaused)return;
             MuGame.ScheduleOnMainThread(() =>
             {
+                if(Client.Main.Helpers.AppUpdateScreen.Active || _loginDialog?.IsRegistration==true || _registrationConnectionPaused)return;
                 _logger.LogError("UI received NetworkError: {Error}", errorMessage);
                 MessageWindow.Show($"Network Error: {errorMessage}");
                 UpdateStatusLabel(ClientConnectionState.Disconnected); // This will trigger UI updates via HandleConnectionStateChange
@@ -666,6 +748,7 @@ namespace Client.Main.Scenes
         {
             _logger.LogInformation("Server selected: ID={ServerId}, Name={ServerName}. Requesting connection info...",
                 e.Index, e.Name);
+            _registrationServerId=e.Index;
             if (_loginDialog != null) _loginDialog.ServerName = e.Name;
 
             // UI visibility will be handled by HandleConnectionStateChange when state changes to RequestingConnectionInfo

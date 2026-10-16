@@ -153,10 +153,12 @@ namespace Client.Main.Objects.Effects
                 Light = light;
                 BlendMesh = -2;
                 BlendMeshLight = blendMeshLight;
-                BlendState = BlendState.NonPremultiplied;
-                BlendMeshState = BlendState.NonPremultiplied;
+                BlendState = Client.Main.Graphics.Blendings.OneOneAdditive;
+                BlendMeshState = Client.Main.Graphics.Blendings.OneOneAdditive;
                 DepthState = DepthStencilState.DepthRead;
                 IsTransparent = true;
+                LightEnabled = false;
+                RenderShadow = false;
                 ContinuousAnimation = true;
                 AnimationSpeed = 4f;
                 Hidden = true;

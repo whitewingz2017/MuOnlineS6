@@ -18,15 +18,19 @@ namespace Client.Main.Controls.UI.Game.Hud
         private const int RightMargin = 16;
         private const int TopMargin = 12;
         private sealed record MenuEntry(string Icon, int Column, int Row, Action OnTap, bool AlwaysVisible = false);
-        public static Rectangle MobileMapRectangle => new(UiScaler.VirtualSize.X - RightMargin - 240, TopMargin + 34, 240, 160);
+        public static Rectangle MobileMapRectangle => new(UiScaler.WindowBounds.Right - RightMargin - 240, UiScaler.WindowBounds.Top + TopMargin + 34, 240, 160);
+        public static Rectangle MobileBatteryRectangle => new(MobileMapRectangle.X-88,MobileMapRectangle.Y-30,80,24);
         private readonly MenuEntry[] _entries;
         private readonly Texture2D[] _textures;
         private readonly Rectangle[] _rects;
         private Texture2D _menuTexture, _mapTexture, _chatTexture;
         private Rectangle _menuRect, _mapRect, _chatRect;
+        private Rectangle TravelHeader=>new(_mapRect.X,_mapRect.Y-34,_mapRect.Width,34);
         private bool _open;
         private float _menuProgress;
         private float _chatProgress;
+
+
         private static float Ease(float value) => value * value * (3f - 2f * value);
         private static float Advance(float value, bool open, float seconds) =>
             MathHelper.Clamp(value + (open ? 1f : -1f) * seconds / 0.24f, 0f, 1f);
@@ -42,7 +46,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             _entries = new[]
             {
                 new MenuEntry("inventory", 0, 0, () => (Scene as GameScene)?.ToggleClassicInventory(), true),
-                new MenuEntry("character", 1, 0, () => (Scene as GameScene)?.ToggleClassicCharacterInfo(), true),
+
                 new MenuEntry("mail", 2, 0, () => MessageWindow.Show("Inbox is not available yet."), true),
                 new MenuEntry("recharge", 0, 1, null),
                 new MenuEntry("benefits", 1, 1, null),
@@ -114,36 +118,57 @@ namespace Client.Main.Controls.UI.Game.Hud
         }
         private void LayoutRects()
         {
-            int rightX = UiScaler.VirtualSize.X - RightMargin - Size;
             _mapRect = MobileMapRectangle;
-            int shortcutsY = _mapRect.Bottom + 8;
-            _menuRect = new Rectangle(rightX, shortcutsY, Size, Size);
-            int chatX = UiScaler.VirtualSize.X / 2 - 174;
-            int chatY = UiScaler.VirtualSize.Y - 125; // control for chat positioning, not the chat window itself
-            _chatRect = new Rectangle(chatX - (int)MathF.Round((Size + 8) * Ease(_chatProgress)), chatY, Size, Size);
-            for (int i = 0; i < _entries.Length; i++)
+            int chatX = MobileHudLayout.ChatX+MobileHudLayout.ChatWidth+8;
+            int chatY = MobileHudLayout.ChatBottom-Size;
+            _chatRect = new Rectangle(chatX, chatY, Size, Size);
+            LayoutShortcutGrid(UiScaler.WindowBounds,MobilePlayerPanel.LayoutBounds,_mapRect,_rects);
+            _menuRect=new Rectangle(MobileBatteryRectangle.Left-Size-8,_mapRect.Y-34,Size,32);
+            float blend=Ease(_menuProgress);
+            for(int i=0;i<_rects.Length;i++)
             {
-                int targetX = rightX - (3 - _entries[i].Column) * Step;
-                int targetY = shortcutsY + _entries[i].Row * Step;
-                float progress = _entries[i].AlwaysVisible ? 1f : Ease(_menuProgress);
-                _rects[i] = new Rectangle((int)MathF.Round(MathHelper.Lerp(rightX, targetX, progress)),
-                    (int)MathF.Round(MathHelper.Lerp(shortcutsY, targetY, progress)), Size, Size);
-            }
-            if (Scene is GameScene scene && scene.ChatInput != null && UiThemeManager.CurrentId == UiThemeId.Classic)
-            {
-                scene.ChatInput.X = chatX + (int)MathF.Round(20f * (1f - Ease(_chatProgress)));
-                scene.ChatInput.Y = chatY;
-                scene.ChatInput.Alpha = Ease(_chatProgress);
-                scene.ChatLog?.AnchorAbove(chatX, chatY - 8);
+                if(i==0)continue; // Inventory remains available with the list closed.
+                var target=_rects[i];
+                _rects[i]=new Rectangle((int)MathHelper.Lerp(_menuRect.Left,target.X,blend),
+                    (int)MathHelper.Lerp(_menuRect.Top,target.Y,blend),target.Width,target.Height);
             }
             // Bounds cover all shortcuts; hit testing below only captures the icons.
             X = 0; Y = 0; ControlSize = ViewSize = UiScaler.VirtualSize;
         }
+        internal static void LayoutShortcutGrid(Rectangle window,Rectangle profile,Rectangle map,Rectangle[] slots)
+        {
+            if(slots.Length==0)return;
+            const int gap=6;
+            var toggle=new Rectangle(map.Left-88-Size-8,map.Top-34,Size,32);
+            int left=profile.Right+gap,right=toggle.Left-gap;
+            var area=new Rectangle(left,toggle.Top,Math.Max(0,right-left),Math.Max(144,map.Bottom-toggle.Top));
+            int columns=1,icon=0;
+            Fit(area);
+            if(icon<24)
+            {
+                // On narrow screens the two top HUDs leave no side strip.
+                // Keep the toggle fixed and put the list immediately below them.
+                area=new Rectangle(window.Left+12,Math.Max(profile.Bottom,map.Bottom)+12,window.Width-24,164);
+                icon=0;Fit(area);
+            }
+            for(int i=0;i<slots.Length;i++)
+                slots[i]=new Rectangle(area.Right-icon-(i%columns)*(icon+gap),area.Top+(i/columns)*(icon+gap),icon,icon);
+            void Fit(Rectangle available)
+            {
+                for(int count=1;count<=Math.Min(8,slots.Length);count++)
+                {
+                    int rows=(slots.Length+count-1)/count;
+                    if(rows>3)continue;
+                    int size=Math.Min(Size,Math.Min((available.Width-(count-1)*gap)/count,(available.Height-(rows-1)*gap)/rows));
+                    if(size>=icon && size>0){icon=size;columns=count;}
+                }
+            }
+        }
         public override bool ContainsPointerPoint(Point point)
         {
-            if (_menuRect.Contains(point) || _mapRect.Contains(point) || _chatRect.Contains(point)) return true;
+            if (_menuRect.Contains(point) || _mapRect.Contains(point) || TravelHeader.Contains(point) || _chatRect.Contains(point)) return true;
             for (int i = 0; i < _entries.Length; i++)
-                if ((_entries[i].AlwaysVisible || _open || _menuProgress > 0f) && _rects[i].Contains(point)) return true;
+                if ((i==0 || _open || _menuProgress > 0f) && _rects[i].Contains(point)) return true;
             return false;
         }
         public override void Update(GameTime gameTime)
@@ -162,13 +187,14 @@ namespace Client.Main.Controls.UI.Game.Hud
             var mouse = MuGame.Instance.UiMouseState;
             if (mouse.LeftButton != ButtonState.Pressed || MuGame.Instance.PrevUiMouseState.LeftButton != ButtonState.Released) return;
             if (!ContainsPointerPoint(mouse.Position)) return;
+            if(Scene?.MouseHoverControl is { } hovered && hovered!=this && hovered!=Scene.World)return;
             Scene?.SetMouseInputConsumed();
             // Defer window changes so the same tap cannot also operate the newly opened window.
-            if (_menuRect.Contains(mouse.Position)) { _open = !_open; return; }
-            if (_mapRect.Contains(mouse.Position)) { MuGame.ScheduleOnMainThread(() => (Scene as GameScene)?.ToggleMobileMap()); return; }
+            if (_menuRect.Contains(mouse.Position)) { _open = !_open; if(_open)BringToFront(); return; }
+            if (_mapRect.Contains(mouse.Position) || TravelHeader.Contains(mouse.Position)) { MuGame.ScheduleOnMainThread(() => (Scene as GameScene)?.ToggleMobileMap()); return; }
             if (_chatRect.Contains(mouse.Position)) { MuGame.ScheduleOnMainThread(() => (Scene as GameScene)?.OpenMobileChat()); return; }
             for (int i = 0; i < _entries.Length; i++)
-                    if ((_entries[i].AlwaysVisible || _open) && _rects[i].Contains(mouse.Position))
+                    if ((i==0 || _open) && _rects[i].Contains(mouse.Position))
                     {
                         var action = _entries[i].OnTap;
                         if (action != null) MuGame.ScheduleOnMainThread(action);
@@ -184,14 +210,18 @@ namespace Client.Main.Controls.UI.Game.Hud
             using (new SpriteBatchScope(sb, SpriteSortMode.Deferred, BlendState.AlphaBlend,
                 SamplerState.LinearClamp, transform: UiScaler.SpriteTransform))
             {
-                void DrawIcon(Texture2D texture, Rectangle rect, float opacity = 1f)
+                void DrawIcon(Texture2D texture, Rectangle rect, float opacity = 1f,float rotation=0f)
                 {
-                    if (texture != null && !texture.IsDisposed) sb.Draw(texture, rect, Color.White * (Alpha * opacity));
+                    if(texture==null || texture.IsDisposed || rect.Width<=0 || rect.Height<=0)return;
+                    float c=MathF.Abs(MathF.Cos(rotation)),s=MathF.Abs(MathF.Sin(rotation));
+                    float fit=Math.Min(1f,Math.Min(rect.Width/(rect.Width*c+rect.Height*s),rect.Height/(rect.Width*s+rect.Height*c)));
+                    sb.Draw(texture,rect.Center.ToVector2(),null,Color.White*(Alpha*opacity),rotation,
+                        new Vector2(texture.Width/2f,texture.Height/2f),new Vector2(rect.Width/(float)texture.Width,rect.Height/(float)texture.Height)*fit,SpriteEffects.None,0);
                 }
-                DrawIcon(_menuTexture, _menuRect); DrawIcon(_chatTexture, _chatRect);
+                DrawIcon(_menuTexture, _menuRect,rotation:MathHelper.TwoPi*Ease(_menuProgress)); DrawIcon(_chatTexture, _chatRect);
                 for (int i = 0; i < _entries.Length; i++)
-                    if (_entries[i].AlwaysVisible || _menuProgress > 0f)
-                        DrawIcon(_textures[i], _rects[i], _entries[i].AlwaysVisible ? 1f : Ease(_menuProgress));
+                    if (i==0 || _menuProgress > 0f)
+                        DrawIcon(_textures[i], _rects[i], i==0?1f:Ease(_menuProgress));
             }
         }
     }
