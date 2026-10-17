@@ -13,8 +13,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private SpriteFont _font;
 
         // Slot dimensions for scaling the item "icon"
-        private const int SquareWidth = InventoryControl.INVENTORY_SQUARE_WIDTH;
-        private const int SquareHeight = InventoryControl.INVENTORY_SQUARE_HEIGHT;
+        private static int SquareWidth => InventoryControl.INVENTORY_SQUARE_WIDTH;
+        private static int SquareHeight => InventoryControl.INVENTORY_SQUARE_HEIGHT;
 
         public PickedItemRenderer()
         {

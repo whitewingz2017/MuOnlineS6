@@ -71,6 +71,11 @@ namespace Client.Main.Controls.UI
         private readonly ButtonControl _acceptButton;
         private readonly ButtonControl _rejectButton;
         private readonly ButtonControl _extraButton;
+        private ButtonControl _quantityMinus, _quantityPlus;
+        private LabelControl _quantityLabel;
+        private Func<int,string> _quantityText;
+        private int _maximumQuantity;
+        public int Quantity { get; private set; } = 1;
 
         private bool _infoOnly = false; // single OK button mode
 
@@ -203,7 +208,7 @@ namespace Client.Main.Controls.UI
 
             int textHeight = _label.ControlSize.Y;
             int buttonsBlock = _acceptButton.ViewSize.Y + 20;
-            int wantedH = TOP_PAD + textHeight + 20 + buttonsBlock;
+            int wantedH = TOP_PAD + textHeight + 20 + buttonsBlock + (_quantityLabel!=null?48:0);
             int height = Math.Max(BASE_BG_HEIGHT, wantedH);
 
             ControlSize = new Point(width, height);
@@ -211,6 +216,15 @@ namespace Client.Main.Controls.UI
 
             _label.X = (width - _label.ControlSize.X) / 2;
             _label.Y = TOP_PAD;
+
+            if(_quantityLabel!=null)
+            {
+                int quantityY=TOP_PAD+textHeight+12;
+                _quantityMinus.X=96;_quantityMinus.Y=quantityY;
+                _quantityPlus.X=214;_quantityPlus.Y=quantityY;
+                _quantityLabel.X=(width-_quantityLabel.ControlSize.X)/2;
+                _quantityLabel.Y=quantityY+5;
+            }
 
             int btnY = height - _acceptButton.ViewSize.Y - 20;
             if (_infoOnly)
@@ -351,6 +365,39 @@ namespace Client.Main.Controls.UI
             dlg.ShowDialog();
             dlg.BringToFront();
             return dlg;
+        }
+
+        public static RequestDialog ShowQuantity(Func<int,string> describe,Action<int> onBuy,Action onCancel=null,int maximum=99)
+        {
+            var scene=MuGame.Instance?.ActiveScene;
+            if(scene==null)return null;
+            foreach(var existing in scene.Controls.OfType<RequestDialog>().ToList())existing.Close();
+            var dlg=new RequestDialog();
+            dlg._maximumQuantity=Math.Clamp(maximum,1,99);
+            dlg._quantityText=describe;
+            dlg._quantityMinus=MakeButton("-",Theme.BgDarkest,Theme.BgLight,Theme.BgMid,Theme.BorderInner,Theme.TextWhite,Theme.TextGold,Theme.TextDark);
+            dlg._quantityPlus=MakeButton("+",Theme.BgDarkest,Theme.BgLight,Theme.BgMid,Theme.BorderInner,Theme.TextWhite,Theme.TextGold,Theme.TextDark);
+            foreach(var button in new[]{dlg._quantityMinus,dlg._quantityPlus})
+            {button.FontSize=18;button.ControlSize=button.ViewSize=new Point(42,36);dlg.Controls.Add(button);}
+            dlg._quantityLabel=new LabelControl{FontSize=16,TextColor=Theme.TextGold};
+            dlg.Controls.Add(dlg._quantityLabel);
+            dlg._quantityMinus.Click+=(_,_)=>dlg.ChangeQuantity(-1);
+            dlg._quantityPlus.Click+=(_,_)=>dlg.ChangeQuantity(1);
+            dlg.SetButtonLabels("Buy","Cancel");
+            dlg.ChangeQuantity(0);
+            dlg.Accepted+=(_,_)=>onBuy(dlg.Quantity);
+            dlg.Rejected+=(_,_)=>onCancel?.Invoke();
+            dlg.ShowDialog();dlg.BringToFront();
+            return dlg;
+        }
+
+        private void ChangeQuantity(int delta)
+        {
+            Quantity=Math.Clamp(Quantity+delta,1,_maximumQuantity);
+            _quantityLabel.Text=Quantity.ToString();
+            _quantityMinus.Enabled=Quantity>1;
+            _quantityPlus.Enabled=Quantity<_maximumQuantity;
+            Text=_quantityText(Quantity);
         }
 
         public override void Draw(GameTime gameTime)

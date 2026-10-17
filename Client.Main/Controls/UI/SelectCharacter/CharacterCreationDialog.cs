@@ -556,6 +556,7 @@ namespace Client.Main.Controls.UI.SelectCharacter
             CharacterClassNumber.MagicGladiator => "NewFace04",
             CharacterClassNumber.DarkLord => "NewFace05",
             CharacterClassNumber.Summoner => "NewFace06",
+            CharacterClassNumber.RageFighter => "NewFace07",
             _ => null
         };
 
@@ -739,6 +740,8 @@ namespace Client.Main.Controls.UI.SelectCharacter
             Texture2D spider = GetSelectedSpiderTexture();
             if (spider != null && !spider.IsDisposed)
                 DrawPiece(sprite, pixel, spider, _classicSpiderRect, ClassicSpiderSource);
+            else if (SelectedClass == CharacterClassNumber.RageFighter)
+                DrawRageFighterStats(sprite, pixel, font);
 
             Point mouse = MuGame.Instance.UiMouseState.Position;
             for (int i = 0; i < _classicClassRects.Count; i++)
@@ -777,6 +780,30 @@ namespace Client.Main.Controls.UI.SelectCharacter
             DrawCentered(sprite, font, _titleLabel.Text,
                 new Rectangle(0, 18, UiScaler.VirtualSize.X, 34),
                 ModernHudTheme.TextWhite, 0.58f);
+        }
+
+        private void DrawRageFighterStats(SpriteBatch sprite, Texture2D pixel, SpriteFont font)
+        {
+            // Season 6 supplies only six spider textures. Show the actual starting
+            // attributes for Rage Fighter instead of borrowing another class's chart.
+            var stats = new[] { ("STR", 32), ("AGI", 27), ("VIT", 25), ("ENE", 20) };
+            Rectangle area = _classicSpiderRect;
+            int rowHeight = Math.Max(1, area.Height / 5);
+            DrawCenteredFit(sprite, font, "Base stats",
+                new Rectangle(area.X, area.Y, area.Width, rowHeight), ModernHudTheme.TextGold, 0.36f);
+            for (int i = 0; i < stats.Length; i++)
+            {
+                int y = area.Y + rowHeight * (i + 1);
+                var label = new Rectangle(area.X, y, area.Width / 3, rowHeight);
+                DrawCenteredFit(sprite, font, stats[i].Item1, label, ModernHudTheme.TextWhite, 0.32f);
+                var value = new Rectangle(area.Right - area.Width / 4, y, area.Width / 4, rowHeight);
+                DrawCenteredFit(sprite, font, stats[i].Item2.ToString(), value, ModernHudTheme.TextWhite, 0.32f);
+                var bar = new Rectangle(label.Right + 2, y + rowHeight / 3,
+                    Math.Max(1, value.Left - label.Right - 4), Math.Max(2, rowHeight / 3));
+                sprite.Draw(pixel, bar, new Color(45, 35, 55));
+                bar.Width = Math.Max(1, bar.Width * stats[i].Item2 / 40);
+                sprite.Draw(pixel, bar, new Color(157, 91, 200));
+            }
         }
 
         private static Rectangle OffsetRect(Rectangle rect, float dx, float dy)

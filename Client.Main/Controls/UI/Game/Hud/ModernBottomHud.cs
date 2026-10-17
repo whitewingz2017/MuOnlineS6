@@ -192,6 +192,12 @@ namespace Client.Main.Controls.UI.Game.Hud
             return ConsumePotionInSlot(potionSlot);
         }
 
+        internal void ResetPotionAssignments()
+        {
+            Array.Clear(_potionAssignments);
+            PersistQuickSlots();
+        }
+
         public ModernBottomHud(CharacterState state, SkillSelectionPanel skillPanel)
         {
             _state = state;
@@ -764,7 +770,40 @@ namespace Client.Main.Controls.UI.Game.Hud
         }
 
         public (byte Group, int Id)? GetItemAssignmentAt(int index)
-            => index >= 0 && index < _potionAssignments.Length ? _potionAssignments[index] : null;
+        {
+            if (index < 0 || index >= _potionAssignments.Length || _potionAssignments[index] is not { } assignment)
+                return null;
+
+            return ResolveAvailablePotion(assignment, _state.GetInventoryItems());
+        }
+
+        // Keep the saved preference, but use another size of the same ordinary
+        // HP/MP potion when it runs out. Never substitute jewels or special potions.
+        private static (byte Group, int Id) ResolveAvailablePotion(
+            (byte Group, int Id) assignment, IReadOnlyDictionary<byte, byte[]> items)
+        {
+            if (assignment.Group != 14 || assignment.Id is < 0 or > 6)
+                return assignment;
+
+            int firstId = assignment.Id <= 3 ? 0 : 4;
+            int lastId = assignment.Id <= 3 ? 3 : 6;
+            int fallbackId = -1;
+            foreach (var item in items)
+            {
+                if (item.Key < 12 || ItemDatabase.GetItemDurability(item.Value) == 0)
+                    continue;
+
+                var definition = ItemDatabase.GetItemDefinition(item.Value);
+                if (definition?.Group != assignment.Group)
+                    continue;
+                if (definition.Id == assignment.Id)
+                    return assignment;
+                if (definition.Id >= firstId && definition.Id <= lastId)
+                    fallbackId = Math.Max(fallbackId, definition.Id);
+            }
+
+            return fallbackId >= 0 ? (assignment.Group, fallbackId) : assignment;
+        }
 
         public void SetItemAssignmentAt(int index, (byte Group, int Id)? assignment)
         {
@@ -1889,7 +1928,7 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         private void DrawPotionSlotContent(SpriteBatch sb, Texture2D pixel, Rectangle inner, int slotIndex)
         {
-            var assignment = _potionAssignments[slotIndex];
+            var assignment = GetItemAssignmentAt(slotIndex);
             if (assignment == null)
             {
                 // Empty potion slot indicator
@@ -2059,15 +2098,16 @@ namespace Client.Main.Controls.UI.Game.Hud
             if (slotIndex < 0 || slotIndex >= _potionAssignments.Length || _potionAssignments[slotIndex] is not { } assignment)
                 return false;
 
-            (group, id) = assignment;
+            var items = _state.GetInventoryItems();
+            (group, id) = ResolveAvailablePotion(assignment, items);
             if (requireHealingPotion && (group != 14 || !(id is 0 or 1 or 2 or 3 or 70 or 94)))
                 return false;
             if (requireManaPotion && (group != 14 || !(id is 4 or 5 or 6 or 71)))
                 return false;
 
-            foreach (var item in _state.GetInventoryItems())
+            foreach (var item in items)
             {
-                if (item.Key < 12)
+                if (item.Key < 12 || ItemDatabase.GetItemDurability(item.Value) == 0)
                     continue;
 
                 var definition = ItemDatabase.GetItemDefinition(item.Value);
@@ -2107,6 +2147,7 @@ namespace Client.Main.Controls.UI.Game.Hud
         {
             int total = 0;
             var items = _state.GetInventoryItems();
+            (group, id) = ResolveAvailablePotion((group, id), items);
 
             foreach (var kvp in items)
             {
@@ -2116,7 +2157,8 @@ namespace Client.Main.Controls.UI.Game.Hud
                 if (def != null && def.Group == group && def.Id == id)
                 {
                     byte durability = ItemDatabase.GetItemDurability(kvp.Value);
-                    total += Math.Max(1, (int)durability);
+                    total += group == 14 && id is >= 0 and <= 6
+                        ? durability : Math.Max(1, (int)durability);
                 }
             }
 

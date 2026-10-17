@@ -101,8 +101,16 @@ namespace Client.Main.Controls.UI.Game.Inventory
         }
 
         /// <summary>
-        /// Checks if this item is consumable (potions, scrolls, etc.).
+        /// Creates an appearance variant without changing the shared item definition.
         /// </summary>
+        internal ItemDefinition WithModel(string modelPath)
+        {
+            var copy=(ItemDefinition)MemberwiseClone();
+            copy.TexturePath=modelPath;
+            return copy;
+        }
+
+        /// <summary>Checks if this item is consumable (potions, scrolls, etc.).</summary>
         public bool IsConsumable()
         {
             return IsQuickSlotConsumable() || IsSkillLearningConsumable();

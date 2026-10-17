@@ -23,7 +23,7 @@ public sealed class MobilePlayerPanel : UIControl
     public const int AttackModeButtonWidth = 112;
     public const int AttackModeButtonHeight = 36;
     public const int AttackModeButtonX = 2;
-    public const int AttackModeButtonY = 122;
+    public const int AttackModeButtonY = 132;
     private readonly CharacterState _state;
     private readonly Func<PlayerObject?> _player;
     private readonly Func<bool> _pk;
@@ -68,7 +68,7 @@ public sealed class MobilePlayerPanel : UIControl
         if(_portrait==null || _portrait.IsDisposed || _portrait.GraphicsDevice!=GraphicsDevice)
         {
             _portrait?.Dispose();_portraitEffect?.Dispose();
-            _portrait=new RenderTarget2D(GraphicsDevice,160,160,false,SurfaceFormat.Color,DepthFormat.Depth24);
+            _portrait=new RenderTarget2D(GraphicsDevice,320,320,false,SurfaceFormat.Color,DepthFormat.Depth24);
             _portraitEffect=new BasicEffect(GraphicsDevice);_nextPortrait=0;
         }
         if(time.TotalGameTime.TotalSeconds>=_nextPortrait && _player() is {Model:not null} player)
@@ -153,12 +153,15 @@ public sealed class MobilePlayerPanel : UIControl
     {
         var font=GraphicsManager.Instance.Font;if(font==null)return;
         float scale=size*PanelScale/font.LineSpacing;
+        font=GraphicsManager.GetSmallTextFont(font,ref scale,pixelCoordinates:false);
         var measured=font.MeasureString(text)*scale;
         if(measured.X>bounds.Width-4)scale*=Math.Max(0,(bounds.Width-4)/measured.X);
         measured=font.MeasureString(text)*scale;
         var position=new Vector2(centered?bounds.Center.X-measured.X/2:bounds.X+5*PanelScale,bounds.Center.Y-measured.Y/2);
-        batch.DrawString(font,text,position+Vector2.One,Color.Black*.9f,0,Vector2.Zero,scale,SpriteEffects.None,0);
-        batch.DrawString(font,text,position,color,0,Vector2.Zero,scale,SpriteEffects.None,0);
+        // Font atlases use premultiplied alpha, unlike the surrounding PNG artwork.
+        using var textScope=new SpriteBatchScope(batch,SpriteSortMode.Deferred,BlendState.AlphaBlend,
+            SamplerState.LinearClamp,DepthStencilState.None,transform:UiScaler.SpriteTransform);
+        OutlinedTextRenderer.Draw(batch,font,text,position,color,scale);
     }
     public override void Draw(GameTime time)
     {
@@ -177,12 +180,16 @@ public sealed class MobilePlayerPanel : UIControl
                 int half=(int)(MathF.Sqrt(MathF.Max(0,1-normalized*normalized))*inner.Height*.5f);
                 if(half<1)continue;
                 int top=inner.Center.Y-half;
-                batch.Draw(_portrait,new Rectangle(inner.X+x,top,1,half*2),new Rectangle(x*160/inner.Width,(top-inner.Y)*160/inner.Height,Math.Max(1,160/inner.Width),Math.Max(1,half*2*160/inner.Height)),Color.White);
+                batch.Draw(_portrait,new Rectangle(inner.X+x,top,1,half*2),new Rectangle(x*_portrait.Width/inner.Width,(top-inner.Y)*_portrait.Height/inner.Height,Math.Max(1,_portrait.Width/inner.Width),Math.Max(1,half*2*_portrait.Height/inner.Height)),Color.White);
             }
         }
         batch.Draw(_textures["nameplate_top"],Rect(80,5,245,35),Color.White);
         Text(batch,_state.Name,Rect(125,11,101,23),16,Color.White,false); // name (x,y,width,height)
-        Text(batch,$"Lv. {_state.Level:N0}",Rect(239,11,63,23),14,new Color(255,220,140)); // level (x,y,width,height)
+        // Keep both rows inside the slanted right-hand nameplate inset.
+        Text(batch,$"Lv. {_state.Level:N0}",Rect(239,10,54,15),12,new Color(255,220,140));
+        double progress=Client.Main.Core.Utilities.ExperienceProgress.For(_state);
+        string progressText=(_state.Level>=400?$"ML. {_state.MasterLevel:N0} | ":"")+$"{progress:P1}";
+        Text(batch,progressText,Rect(234,25,62,11),7,new Color(255,220,140));
         Bar(batch,0,"HP",_state.CurrentHealth,_state.MaximumHealth,"hp");
         Bar(batch,1,"MP",_state.CurrentMana,_state.MaximumMana,"mp");
         Bar(batch,2,"AG",_state.CurrentAbility,_state.MaximumAbility,"ag");
@@ -202,15 +209,20 @@ public sealed class MobilePlayerPanel : UIControl
     }
     private void Bar(SpriteBatch batch,int row,string label,uint current,uint maximum,string name)
     {
-        var bounds=Rect(111,43+row*23,238,22);var frame=_textures[$"bar_empty_{row+1}"];
+        var bounds=Rect(111,43+row*20,238,20);var frame=_textures[$"bar_empty_{row+1}"];
         var source=row==0?new Rectangle(0,37,frame.Width,frame.Height-37):frame.Bounds;
         batch.Draw(frame,bounds,source,Color.White);
         float fraction=maximum==0?0:Math.Clamp(current/(float)maximum,0,1);
         var fill=_textures[$"bar_{name}_fill"];
-        var inside=Rect(119,44+row*23,224,20); //bar (x,y,width,height)
+        var inside=Rect(120,47+row*20,220,12);
         int width=(int)(inside.Width*fraction);
-        if(width>0)batch.Draw(fill,new Rectangle(inside.X,inside.Y,width,inside.Height),new Rectangle(0,0,Math.Max(1,(int)(fill.Width*fraction)),fill.Height),Color.White);
-        Text(batch,$"{label}  {current:N0} / {maximum:N0}",inside,13,Color.White);
+        // Crop transparent PNG padding, then fit the fill inside the frame's inset.
+        var fillSource=new Rectangle((int)(fill.Width*13/640f),(int)(fill.Height*14/72f),
+            Math.Max(1,(int)(fill.Width*614/640f)),Math.Max(1,(int)(fill.Height*44/72f)));
+        fillSource.Width=Math.Max(1,(int)(fillSource.Width*fraction));
+        if(width>0)batch.Draw(fill,new Rectangle(inside.X,inside.Y,width,inside.Height),fillSource,
+            name=="sd"?new Color(35,255,140):Color.White);
+        Text(batch,$"{label}  {current:N0} / {maximum:N0}",bounds,13,Color.White);
     }
     public override void Dispose()
     {

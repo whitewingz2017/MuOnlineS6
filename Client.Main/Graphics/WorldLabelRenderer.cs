@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using Client.Main.Controllers;
+using Client.Main.Helpers;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -9,6 +13,28 @@ namespace Client.Main.Graphics
     /// </summary>
     public static class WorldLabelRenderer
     {
+        private readonly record struct PendingLabel(SpriteFont Font,string Text,Vector3 Screen,Viewport Viewport,
+            Color TextColor,Color Background,float Scale,float Layer);
+        private static readonly List<PendingLabel> Pending = new(128);
+        internal static void BeginFrame() => Pending.Clear();
+        internal static void FlushNativeOverlay()
+        {
+            if(Pending.Count==0)return;
+            var sb=GraphicsManager.Instance.Sprite;
+            using var scope=new SpriteBatchScope(sb,SpriteSortMode.Deferred,BlendState.AlphaBlend,
+                SamplerState.LinearClamp,DepthStencilState.None);
+            var destination=sb.GraphicsDevice.Viewport;
+            foreach(var entry in Pending)
+            {
+                float x=destination.Width/(float)Math.Max(1,entry.Viewport.Width);
+                float y=destination.Height/(float)Math.Max(1,entry.Viewport.Height);
+                Vector3 screen=new(destination.X+(entry.Screen.X-entry.Viewport.X)*x,
+                    destination.Y+(entry.Screen.Y-entry.Viewport.Y)*y,entry.Screen.Z);
+                DrawProjected(sb,sb.GraphicsDevice,entry.Font,entry.Text,screen,entry.TextColor,
+                    entry.Background,entry.Scale*y,entry.Layer);
+            }
+            Pending.Clear();
+        }
         private static Texture2D _whitePixel;
 
         private static Texture2D GetWhitePixel(GraphicsDevice gd)
@@ -66,6 +92,18 @@ namespace Client.Main.Graphics
             if (screen.Z < 0f || screen.Z > 1f)
                 return;
 
+            if(OverheadNameplateRenderer.DeferToNativeOverlay)
+            {
+                Pending.Add(new(font,text,screen,gd.Viewport,textColor,bgColor,scale,layer));
+                return;
+            }
+            DrawProjected(sb,gd,font,text,screen,textColor,bgColor,scale,layer);
+        }
+
+        private static void DrawProjected(SpriteBatch sb,GraphicsDevice gd,SpriteFont font,string text,
+            Vector3 screen,Color textColor,Color bgColor,float scale,float layer)
+        {
+            font = Controllers.GraphicsManager.GetSmallTextFont(font, ref scale);
             var size = font.MeasureString(text) * scale;
             int padX = 4, padY = 2;
             var rect = new Rectangle(
@@ -75,7 +113,7 @@ namespace Client.Main.Graphics
                 (int)(size.Y) + padY * 2);
 
             DrawSimpleBackground(sb, gd, rect, bgColor, layer);
-            sb.DrawString(font, text, new Vector2(rect.X + padX, rect.Y + padY), textColor, 0f, Vector2.Zero, scale, SpriteEffects.None, layer);
+            Client.Main.Helpers.OutlinedTextRenderer.Draw(sb, font, text, new Vector2(rect.X + padX, rect.Y + padY), textColor, scale, layer, pixelCoordinates: true);
         }
     }
 }

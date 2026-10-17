@@ -33,7 +33,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 gd.BlendState=BlendState.AlphaBlend;gd.DepthStencilState=DepthStencilState.Default;
                 gd.RasterizerState=RasterizerState.CullNone;gd.SamplerStates[0]=SamplerState.LinearClamp;
                 effect.View=Matrix.CreateTranslation(0,0,-500);
-                effect.Projection=Matrix.CreateOrthographic(60,60,1,1000);
+                effect.Projection=Matrix.CreateOrthographic(42,42,1,1000);
                 effect.TextureEnabled=true;effect.VertexColorEnabled=true;effect.LightingEnabled=false;effect.FogEnabled=false;
                 effect.DiffuseColor=Vector3.One;effect.Alpha=1;
                 foreach(var part in new Client.Main.Objects.ModelObject[]{player.Armor,player.HelmMask,player.Helm})
@@ -43,8 +43,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     var pose=GetOrCreatePoseGeometry(part.Model,definition);
                     if(pose==null || !pose.IsValid)continue;
                     var center=pose.Bones.Length>20?pose.Bones[20].Translation:new Vector3(0,0,180);
-                    center.Z+=5;
-                    effect.World=Matrix.CreateTranslation(-center)*Matrix.CreateRotationX(-MathHelper.PiOver2);
+                    center.Z+=9;
+                    effect.World=Matrix.CreateTranslation(-center)*Matrix.CreateRotationZ(MathHelper.ToRadians(20))*Matrix.CreateRotationX(-MathHelper.PiOver2);
                     foreach(int mesh in pose.MeshOrder)RenderMeshWithBlendState(gd,effect,part.Model,mesh,pose.Meshes[mesh]);
                 }
             }
@@ -1074,7 +1074,10 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     return entry.Texture;
             }
 
-            if (!TryReserveRenderBudget(requiresAnimation))
+            // Initial images must not compete for the three animation refreshes.
+            // Otherwise the first animated bag items can starve equipment forever.
+            bool animationRefresh = entry != null && requiresAnimation;
+            if (!TryReserveRenderBudget(animationRefresh))
             {
                 RenderPassProfiler.RecordPreviewBudgetSkip();
                 return entry?.Texture;
@@ -1105,7 +1108,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
                 if (!didRender)
                 {
-                    ReleaseRenderBudget(requiresAnimation);
+                    ReleaseRenderBudget(animationRefresh);
                     return entry?.Texture;
                 }
 

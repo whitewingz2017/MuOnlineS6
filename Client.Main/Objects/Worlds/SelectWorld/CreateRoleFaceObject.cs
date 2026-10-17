@@ -34,6 +34,8 @@ namespace Client.Main.Objects.Worlds.SelectWrold
         {
             Interactive = false;
             LightEnabled = false;
+            // The CPU renderer uses this light directly when terrain lighting is disabled.
+            Light = Vector3.One;
             RenderShadow = false;
             UseSunLight = false;
             AnimationSpeed = AnimationFps;

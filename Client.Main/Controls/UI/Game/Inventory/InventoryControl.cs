@@ -24,7 +24,7 @@ using Client.Main.Controls.UI;
 
 namespace Client.Main.Controls.UI.Game.Inventory
 {
-    public class InventoryControl : UIControl, IUiTexturePreloadable
+    public partial class InventoryControl : UIControl, IUiTexturePreloadable
     {
         private const string LayoutJsonResource = "Client.Main.Controls.UI.Game.Layouts.InventoryLayout.json";
         private const string TextureRectJsonResource = "Client.Main.Controls.UI.Game.Layouts.InventoryRect.json";
@@ -47,20 +47,21 @@ namespace Client.Main.Controls.UI.Game.Inventory
         // ═══════════════════════════════════════════════════════════════
         // WINDOW DIMENSIONS - REDESIGNED
         // ═══════════════════════════════════════════════════════════════
-        private static bool IsSeason6 => UiThemeManager.CurrentId == UiThemeId.Season6;
-        private static int WINDOW_WIDTH => IsSeason6 ? Hud.InventoryLayout.PanelW : 396;
-        private static int WINDOW_HEIGHT => IsSeason6 ? Hud.InventoryLayout.PanelH : 740;
+        // Share the native inventory appearance across every HUD theme.
+        private static bool UsesNativeInventory => true;
+        private static int WINDOW_WIDTH => UsesNativeInventory ? Hud.InventoryLayout.PanelW : 396;
+        private static int WINDOW_HEIGHT => UsesNativeInventory ? Hud.InventoryLayout.PanelH : 740;
 
-        private static int HEADER_HEIGHT => IsSeason6 ? Hud.InventoryLayout.DragBarH : 52;
+        private static int HEADER_HEIGHT => UsesNativeInventory ? Hud.InventoryLayout.DragBarH : 52;
         private const int SECTION_SPACING = 16;
         private const int PANEL_PADDING = 12;
         private const int EQUIP_SECTION_HEIGHT = 270;
 
-        public const int INVENTORY_SQUARE_WIDTH = 34;
-        public const int INVENTORY_SQUARE_HEIGHT = 34;
+        public static int INVENTORY_SQUARE_WIDTH => Hud.InventoryLayout.GridCellSize;
+        public static int INVENTORY_SQUARE_HEIGHT => Hud.InventoryLayout.GridCellSize;
 
-        public static int Columns => IsSeason6 ? Hud.InventoryLayout.GridCols : 8;
-        public static int Rows => IsSeason6 ? Hud.InventoryLayout.GridRows : 8;
+        public static int Columns => UsesNativeInventory ? Hud.InventoryLayout.GridCols : 8;
+        public static int Rows => UsesNativeInventory ? Hud.InventoryLayout.GridRows : 8;
         internal const int InventorySlotOffsetConstant = 12;
 
         // ═══════════════════════════════════════════════════════════════
@@ -220,9 +221,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
         private Rectangle _gridRect;
         private Rectangle _gridFrameRect;
         private Rectangle _footerRect;
-        private readonly Rectangle _socketOptionRect = new(24, 338, 90, 30);
-        private readonly Rectangle _setOptionRect = new(118, 338, 84, 30);
-        private readonly Rectangle _repairOptionRect = new(206, 338, 92, 30);
+        private Rectangle _socketOptionRect = new(24, 338, 90, 30);
+        private Rectangle _setOptionRect = new(118, 338, 84, 30);
+        private Rectangle _repairOptionRect = new(206, 338, 92, 30);
         private bool _repairOptionHovered;
         private Rectangle _zenFieldRect;
         private Rectangle _zenIconRect;
@@ -320,15 +321,11 @@ namespace Client.Main.Controls.UI.Game.Inventory
         }
 
         public IEnumerable<string> GetPreloadTexturePaths()
-            => IsSeason6
-                ? new[]
-                {
-                    "Interface/Imprint/imprint_panel.OZP",
-                    "Interface/Inventory/inv_rect.OZP",
-                    "Interface/Inventory/inv_circle.OZP",
-                    "Interface/Inventory/inv_grid_row.OZP",
-                    "Interface/Inventory/inv_bottom_bar.OZP"
-                }
+            => UsesNativeInventory
+                ? System.Enum.GetValues<UiThemeAsset>().Where(asset =>
+                    asset == UiThemeAsset.InventoryPanel ||
+                    asset >= UiThemeAsset.InventoryBoxWeapon && asset <= UiThemeAsset.InventoryBoxRing)
+                    .Select(UiThemeManager.GetInventoryAssetPath).Concat(NativeInventoryTexturePaths)
                 : s_inventoryTexturePaths.Append(LayoutTexturePath);
 
         public long ZenAmount
@@ -348,7 +345,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         {
             await base.Load();
 
-            if (IsSeason6)
+            if (UsesNativeInventory)
             {
                 await EnsureSeason6AssetsAsync();
                 _font = GraphicsManager.Instance.Font;
@@ -398,7 +395,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         public Task EnsureSeason6AssetsAsync()
         {
-            if (!IsSeason6)
+            if (!UsesNativeInventory)
                 return Task.CompletedTask;
 
             return _season6AssetsTask ??= LoadSeason6AssetsAsync();
@@ -413,7 +410,14 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     : asset >= UiThemeAsset.InventoryBoxWeapon && asset <= UiThemeAsset.InventoryBoxRing
                         ? "Interface/newui_item_box.tga"
                         : null;
-                try { return await UiThemeManager.LoadNativeTextureAsync(asset, fallback); }
+                try
+                {
+                    var texture = await UiThemeManager.LoadInventoryTextureAsync(asset, fallback);
+                    string path = UiThemeManager.GetInventoryAssetPath(asset);
+                    if (path != null)
+                        RememberInventoryImageArea(texture, path);
+                    return texture;
+                }
                 catch { return null; }
             }
 
@@ -439,6 +443,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             _s6EquipmentTextures[9] = await Load(UiThemeAsset.InventoryBoxPend);
             _s6EquipmentTextures[10] = await Load(UiThemeAsset.InventoryBoxRing);
             _s6EquipmentTextures[11] = _s6EquipmentTextures[10];
+            await LoadNativeInventoryFrameAsync();
             InvalidateStaticSurface();
         }
 
@@ -724,6 +729,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
             {
                 if (_staticSurface != null && !_staticSurface.IsDisposed)
                 {
+                    using var artworkScope = new SpriteBatchScope(spriteBatch, SpriteSortMode.Deferred,
+                        BlendState.AlphaBlend, SamplerState.PointClamp, DepthStencilState.None,
+                        transform: UiScaler.SpriteTransform);
                     spriteBatch.Draw(_staticSurface, DisplayRectangle, Color.White * Alpha);
                 }
 
@@ -756,6 +764,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         protected override void OnScreenSizeChanged()
         {
             base.OnScreenSizeChanged();
+            Scale = 1f;
             InvalidateStaticSurface();
         }
 
@@ -765,10 +774,11 @@ namespace Client.Main.Controls.UI.Game.Inventory
             ControlSize = new Point(WINDOW_WIDTH, WINDOW_HEIGHT);
             ViewSize = ControlSize;
             BuildLayoutMetrics();
+            Scale = 1f;
             _itemGrid = new InventoryItem[Columns, Rows];
             RefreshInventoryContent();
             InitializeTextEntries();
-            if (IsSeason6)
+            if (UsesNativeInventory)
             {
                 _season6AssetsTask = null;
                 _ = EnsureSeason6AssetsAsync();
@@ -798,7 +808,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             // Zen text - positioned inside zen field
             _zenText = CreateText(new Vector2(_zenFieldRect.X + 8, _zenFieldRect.Y + _zenFieldRect.Height * 0.5f - 6f),
-                                  12f, IsSeason6 ? new Color(220, 40, 25) : Theme.TextGold);
+                                  12f, Theme.TextGold);
             _zenText.Visible = false;
         }
 
@@ -826,7 +836,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             if (_zenText != null)
             {
                 string amount = ZenAmount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
-                _zenText.Text = IsSeason6 ? amount : $"Zen: {amount}";
+                _zenText.Text = UsesNativeInventory ? amount : $"Zen: {amount}";
             }
         }
 
@@ -882,7 +892,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         {
             BuildEquipSlots();
 
-            if (IsSeason6)
+            if (UsesNativeInventory)
             {
                 _headerRect = new Rectangle(0, 0, WINDOW_WIDTH, HEADER_HEIGHT);
                 _paperdollPanelRect = new Rectangle(Hud.InventoryLayout.EquipmentX,
@@ -896,15 +906,23 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     Hud.InventoryLayout.GridFrameH);
                 _footerRect = new Rectangle(PANEL_PADDING, Hud.InventoryLayout.FooterY,
                     WINDOW_WIDTH - PANEL_PADDING * 2, WINDOW_HEIGHT - Hud.InventoryLayout.FooterY - 8);
-                _zenIconRect = new Rectangle(32, Hud.InventoryLayout.MoneyY, 26, 26);
-                _zenFieldRect = new Rectangle(57, Hud.InventoryLayout.MoneyY, 136, 30);
+                _zenIconRect = new Rectangle(Hud.InventoryLayout.ZenIconX, Hud.InventoryLayout.MoneyY, Hud.InventoryLayout.ZenIconW, 34);
+                _zenFieldRect = new Rectangle(Hud.InventoryLayout.ZenTextX, Hud.InventoryLayout.MoneyY, Hud.InventoryLayout.ZenTextW, 34);
                 _closeButtonRect = new Rectangle(Hud.InventoryLayout.CloseX, Hud.InventoryLayout.CloseY,
                     Hud.InventoryLayout.CloseW, Hud.InventoryLayout.CloseH);
-                _footerLeftButtonRect = new Rectangle(199, Hud.InventoryLayout.MoneyY, 88, 30);
-                _footerRightButtonRect = new Rectangle(291, Hud.InventoryLayout.MoneyY, 80, 30);
+                _socketOptionRect = new Rectangle(Hud.InventoryLayout.SocketOptionX, Hud.InventoryLayout.OptionY, Hud.InventoryLayout.OptionW, Hud.InventoryLayout.OptionH);
+                _setOptionRect = new Rectangle(Hud.InventoryLayout.SetOptionX, Hud.InventoryLayout.OptionY, Hud.InventoryLayout.OptionW, Hud.InventoryLayout.OptionH);
+                _nativeFooterCloseRect = new Rectangle(Hud.InventoryLayout.FooterCloseX, Hud.InventoryLayout.FooterY, Hud.InventoryLayout.FooterButtonW, Hud.InventoryLayout.FooterButtonH);
+                _repairOptionRect = new Rectangle(Hud.InventoryLayout.RepairX, Hud.InventoryLayout.FooterY, Hud.InventoryLayout.FooterButtonW, Hud.InventoryLayout.FooterButtonH);
+                _footerLeftButtonRect = new Rectangle(Hud.InventoryLayout.StoreX, Hud.InventoryLayout.FooterY, Hud.InventoryLayout.FooterButtonW, Hud.InventoryLayout.FooterButtonH);
+                _footerRightButtonRect = new Rectangle(Hud.InventoryLayout.ExpansionX, Hud.InventoryLayout.FooterY, Hud.InventoryLayout.FooterButtonW, Hud.InventoryLayout.FooterButtonH);
                 _beamRect = Rectangle.Empty;
                 return;
             }
+
+            _socketOptionRect = new Rectangle(24, 338, 90, 30);
+            _setOptionRect = new Rectangle(118, 338, 84, 30);
+            _repairOptionRect = new Rectangle(206, 338, 92, 30);
 
             // Header
             _headerRect = new Rectangle(0, 0, WINDOW_WIDTH, HEADER_HEIGHT);
@@ -958,7 +976,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
         {
             _equipSlots.Clear();
 
-            if (!IsSeason6)
+            if (!UsesNativeInventory)
             {
                 int cell = INVENTORY_SQUARE_WIDTH;
                 int panelCenterX = WINDOW_WIDTH / 2;
@@ -1055,7 +1073,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
             graphicsDevice.Clear(Color.Transparent);
 
             var spriteBatch = GraphicsManager.Instance.Sprite;
-            using (new SpriteBatchScope(spriteBatch, SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp))
+            using (new SpriteBatchScope(spriteBatch, SpriteSortMode.Deferred,
+                UsesNativeInventory ? InventoryImageBlend : BlendState.AlphaBlend, SamplerState.LinearClamp))
             {
                 DrawStaticElements(spriteBatch);
             }
@@ -1144,7 +1163,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             var pixel = GraphicsManager.Instance.Pixel;
             if (pixel == null) return;
 
-            if (IsSeason6)
+            if (UsesNativeInventory)
             {
                 DrawSeason6StaticElements(spriteBatch);
                 return;
@@ -1180,142 +1199,14 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         private void DrawSeason6StaticElements(SpriteBatch spriteBatch)
         {
-            var pixel = GraphicsManager.Instance.Pixel;
-            var fullRect = new Rectangle(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-
-            if (IsUsableTexture(_s6Panel))
-                spriteBatch.Draw(_s6Panel, fullRect, Color.White);
-            else
-                DrawWindowBackground(spriteBatch, fullRect);
-
-            // The panel texture already contains the title bar. Only the text is drawn here.
-            DrawSeason6Title(spriteBatch, "Inventory");
-
-            if (IsUsableTexture(_s6Rect))
-                DrawNineSlice(spriteBatch, _s6Rect, _paperdollPanelRect);
-            else
-                DrawPanel(spriteBatch, _paperdollPanelRect, Theme.BgMid);
-
-            if (IsUsableTexture(_s6Circle))
-            {
-                spriteBatch.Draw(_s6Circle, new Rectangle(
-                    Hud.InventoryLayout.PaperdollX,
-                    Hud.InventoryLayout.PaperdollY,
-                    Hud.InventoryLayout.PaperdollW,
-                    Hud.InventoryLayout.PaperdollH), Color.White);
-            }
-
-            foreach (var layout in _equipSlots.Values)
-            {
-                if (IsUsableTexture(GetSeason6EquipmentTexture(layout.Slot)))
-                    spriteBatch.Draw(GetSeason6EquipmentTexture(layout.Slot), layout.Rect, Color.White);
-                else
-                    DrawModernEquipSlot(spriteBatch, layout);
-            }
-
-            if (IsUsableTexture(_s6Rect))
-                DrawNineSlice(spriteBatch, _s6Rect, _gridFrameRect);
-            else
-                DrawPanel(spriteBatch, _gridFrameRect, Theme.BgMid);
-
-            if (IsUsableTexture(_s6GridRow))
-            {
-                int sourceCellWidth = Math.Max(1, _s6GridRow.Width / Columns);
-                for (int row = 0; row < Rows; row++)
-                {
-                    for (int column = 0; column < Columns; column++)
-                    {
-                        var cellRect = new Rectangle(
-                            _gridRect.X + column * Hud.InventoryLayout.GridCellSize,
-                            _gridRect.Y + row * Hud.InventoryLayout.GridCellSize,
-                            Hud.InventoryLayout.GridCellSize,
-                            Hud.InventoryLayout.GridCellSize);
-                        var sourceRect = new Rectangle(
-                            column * sourceCellWidth,
-                            0,
-                            sourceCellWidth,
-                            _s6GridRow.Height);
-                        spriteBatch.Draw(_s6GridRow, cellRect, sourceRect, Color.White);
-                    }
-                }
-            }
-            else
-            {
-                spriteBatch.Draw(pixel, _gridRect, Theme.SlotBg);
-                for (int x = 1; x < Columns; x++)
-                    spriteBatch.Draw(pixel, new Rectangle(_gridRect.X + x * Hud.InventoryLayout.GridCellSize, _gridRect.Y, 1, _gridRect.Height), Theme.SlotBorder);
-                for (int y = 1; y < Rows; y++)
-                    spriteBatch.Draw(pixel, new Rectangle(_gridRect.X, _gridRect.Y + y * Hud.InventoryLayout.GridCellSize, _gridRect.Width, 1), Theme.SlotBorder);
-            }
-
-            if (IsUsableTexture(_s6BottomBar))
-                spriteBatch.Draw(_s6BottomBar, FitTexture(_s6BottomBar, _footerRect), Color.White);
-            else
-                DrawPanel(spriteBatch, _footerRect, Theme.BgMid);
-
-            DrawZenDisplay(spriteBatch);
-
-        }
-
-        private void DrawSeason6Title(SpriteBatch spriteBatch, string title)
-        {
-            if (_font == null)
-                return;
-
-            float scale = 0.52f;
-            Vector2 size = _font.MeasureString(title) * scale;
-            Vector2 pos = new((WINDOW_WIDTH - size.X) / 2f, (HEADER_HEIGHT - size.Y) / 2f + 2f);
-            spriteBatch.DrawString(_font, title, pos + Vector2.One, Color.Black * 0.55f,
-                0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-            spriteBatch.DrawString(_font, title, pos, Theme.TextWhite,
-                0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+            DrawNativeInventorySurface(spriteBatch);
         }
 
         private static bool IsUsableTexture(Texture2D texture)
             => texture != null && !texture.IsDisposed;
 
-        private static Rectangle FitTexture(Texture2D texture, Rectangle destination)
-        {
-            if (!IsUsableTexture(texture) || destination.Width <= 0 || destination.Height <= 0)
-                return destination;
-
-            float scale = MathF.Min(
-                destination.Width / (float)texture.Width,
-                destination.Height / (float)texture.Height);
-            int width = Math.Max(1, (int)MathF.Round(texture.Width * scale));
-            int height = Math.Max(1, (int)MathF.Round(texture.Height * scale));
-            return new Rectangle(
-                destination.X + (destination.Width - width) / 2,
-                destination.Y + (destination.Height - height) / 2,
-                width,
-                height);
-        }
-
         private Texture2D GetSeason6EquipmentTexture(byte slot)
             => _s6EquipmentTextures.TryGetValue(slot, out var texture) ? texture : null;
-
-        private static void DrawNineSlice(SpriteBatch spriteBatch, Texture2D texture, Rectangle destination, int margin = 8)
-        {
-            if (!IsUsableTexture(texture) || destination.Width <= margin * 2 || destination.Height <= margin * 2)
-            {
-                if (IsUsableTexture(texture)) spriteBatch.Draw(texture, destination, Color.White);
-                return;
-            }
-
-            int sourceCenterWidth = texture.Width - margin * 2;
-            int sourceCenterHeight = texture.Height - margin * 2;
-            int destCenterWidth = destination.Width - margin * 2;
-            int destCenterHeight = destination.Height - margin * 2;
-            spriteBatch.Draw(texture, new Rectangle(destination.X, destination.Y, margin, margin), new Rectangle(0, 0, margin, margin), Color.White);
-            spriteBatch.Draw(texture, new Rectangle(destination.Right - margin, destination.Y, margin, margin), new Rectangle(texture.Width - margin, 0, margin, margin), Color.White);
-            spriteBatch.Draw(texture, new Rectangle(destination.X, destination.Bottom - margin, margin, margin), new Rectangle(0, texture.Height - margin, margin, margin), Color.White);
-            spriteBatch.Draw(texture, new Rectangle(destination.Right - margin, destination.Bottom - margin, margin, margin), new Rectangle(texture.Width - margin, texture.Height - margin, margin, margin), Color.White);
-            spriteBatch.Draw(texture, new Rectangle(destination.X + margin, destination.Y, destCenterWidth, margin), new Rectangle(margin, 0, sourceCenterWidth, margin), Color.White);
-            spriteBatch.Draw(texture, new Rectangle(destination.X + margin, destination.Bottom - margin, destCenterWidth, margin), new Rectangle(margin, texture.Height - margin, sourceCenterWidth, margin), Color.White);
-            spriteBatch.Draw(texture, new Rectangle(destination.X, destination.Y + margin, margin, destCenterHeight), new Rectangle(0, margin, margin, sourceCenterHeight), Color.White);
-            spriteBatch.Draw(texture, new Rectangle(destination.Right - margin, destination.Y + margin, margin, destCenterHeight), new Rectangle(texture.Width - margin, margin, margin, sourceCenterHeight), Color.White);
-            spriteBatch.Draw(texture, new Rectangle(destination.X + margin, destination.Y + margin, destCenterWidth, destCenterHeight), new Rectangle(margin, margin, sourceCenterWidth, sourceCenterHeight), Color.White);
-        }
 
         private void DrawModernHeader(SpriteBatch spriteBatch)
         {
@@ -1516,7 +1407,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             // Coin icon
             Rectangle iconRect = _zenIconRect;
 
-            if (IsSeason6)
+            if (UsesNativeInventory)
             {
                 foreach (var offset in new[] { new Point(8, 6), new Point(17, 13), new Point(6, 20) })
                 {
@@ -1668,6 +1559,12 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         private bool HandleChromeClick()
         {
+            if (UsesNativeInventory && Translate(_nativeFooterCloseRect).Contains(MuGame.Instance.UiMouseState.Position))
+            {
+                Hide();
+                Scene?.SetMouseInputConsumed();
+                return true;
+            }
             if ((_repairOptionHovered || _leftFooterHovered || _rightFooterHovered ||
                 Translate(_socketOptionRect).Contains(MuGame.Instance.UiMouseState.Position) ||
                 Translate(_setOptionRect).Contains(MuGame.Instance.UiMouseState.Position)))
@@ -2658,11 +2555,6 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     item.Definition.Height * INVENTORY_SQUARE_HEIGHT);
 
                 // Item glow effect
-                Color glowColor = ItemUiHelper.GetItemGlowColor(item, GlowPalette);
-                if (glowColor.A > 0)
-                {
-                    ItemUiHelper.DrawItemGlow(spriteBatch, pixel, itemRect, glowColor);
-                }
 
                 // Item texture
                 Texture2D itemTexture = ResolveItemTexture(item, itemRect.Width, itemRect.Height);
@@ -2690,15 +2582,6 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 }
 
                 // Level indicator
-                if (item.Details.Level > 0)
-                {
-                    ItemGridRenderHelper.DrawItemLevelBadge(spriteBatch, pixel, font, itemRect, item.Details.Level,
-                                       lvl => lvl >= 9 ? Theme.Danger :
-                                              lvl >= 7 ? Theme.Accent :
-                                              lvl >= 4 ? Theme.Secondary :
-                                              Theme.TextGray,
-                                       new Color(0, 0, 0, 180));
-                }
 
                 if (_jewelEntries.Count > 0)
                 {
@@ -2911,6 +2794,13 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
             bool isOverGrid = IsMouseOverGrid();
 
+            if (UsesNativeInventory)
+            {
+                DrawNativeGridHighlights(spriteBatch, Translate(_gridRect),
+                    _pickedItem_renderer_item() ?? VaultControl.Instance?.GetDraggedItem(), isOverGrid);
+                return;
+            }
+
             // Early exit if nothing to draw
             if (!isOverGrid)
             {
@@ -2968,18 +2858,10 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             Rectangle rect = Translate(layout.Rect);
-            Color overlay = layout.AccentRed ? Theme.Danger * 0.45f : Theme.Secondary * 0.45f;
-            bool requirementsFail = _pickedItemRenderer.Item is { } picked && _networkManager?.GetCharacterState() is { } state && !MuMainItemRules.MeetsRequirements(picked,state);
-            if(requirementsFail)overlay=Color.Red*.55f;
-            spriteBatch.Draw(pixel, rect, overlay);
-
-            // Border highlight
-            Color light = layout.AccentRed ? Theme.Danger : Theme.Accent;
-            if(requirementsFail)light=Color.Red;
-            spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Y, rect.Width, 1), light * 0.8f);
-            spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Bottom - 1, rect.Width, 1), Theme.BorderOuter);
-            spriteBatch.Draw(pixel, new Rectangle(rect.X, rect.Y, 1, rect.Height), light * 0.6f);
-            spriteBatch.Draw(pixel, new Rectangle(rect.Right - 1, rect.Y, 1, rect.Height), Theme.BorderOuter);
+            var dragged = _pickedItemRenderer.Item ?? VaultControl.Instance?.GetDraggedItem();
+            if (dragged == null) return;
+            DrawNativeEquipmentHighlight(spriteBatch, rect,
+                IsEquipmentPlacementBlocked(dragged, (byte)_hoveredEquipSlot));
         }
 
         private void DrawTexts(SpriteBatch spriteBatch)
@@ -3022,7 +2904,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 return;
             }
 
-            if (IsSeason6)
+            if (UsesNativeInventory)
             {
                 DrawSeason6Chrome(spriteBatch);
                 return;
@@ -3038,44 +2920,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
 
         private void DrawSeason6Chrome(SpriteBatch spriteBatch)
         {
-            var closeRect = Translate(_closeButtonRect);
-            if (IsUsableTexture(_s6Close))
-            {
-                spriteBatch.Draw(_s6Close, closeRect, Color.White);
-            }
-            else
-            {
-                DrawCloseButton(spriteBatch);
-            }
-
-            DrawSeason6Button(spriteBatch, _socketOptionRect, "Socket option", false, _s6ButtonDark, true);
-            DrawSeason6Button(spriteBatch, _setOptionRect, "Set option", false, _s6ButtonDark, true);
-            bool canRepair = _networkManager?.GetCharacterState() != null;
-            DrawSeason6Button(spriteBatch, _repairOptionRect, _isRepairMode ? "Repair: ON" : "Repair",
-                _repairOptionHovered, _s6ButtonDark, canRepair);
-            DrawSeason6Button(spriteBatch, _footerLeftButtonRect, "Personal store", _leftFooterHovered, _s6ButtonDark, true);
-            DrawSeason6Button(spriteBatch, _footerRightButtonRect, "Expanded", _rightFooterHovered, _s6ButtonDark, true);
-        }
-
-        private void DrawSeason6Button(SpriteBatch spriteBatch, Rectangle localRect, string text,
-                                       bool hovered, Texture2D texture, bool enabled = true)
-        {
-            var rect = Translate(localRect);
-            if (IsUsableTexture(texture))
-                spriteBatch.Draw(texture, rect, enabled ? Color.White : Color.Gray);
-            else
-                DrawFooterButton(spriteBatch, localRect, text, hovered);
-
-            if (_font == null)
-                return;
-
-            float scale = Math.Min(0.42f, (rect.Width - 8f) / Math.Max(1f, _font.MeasureString(text).X));
-            Vector2 size = _font.MeasureString(text) * scale;
-            Vector2 pos = new(rect.X + (rect.Width - size.X) / 2f, rect.Y + (rect.Height - size.Y) / 2f);
-            spriteBatch.DrawString(_font, text, pos + Vector2.One, Color.Black * 0.55f,
-                0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-            spriteBatch.DrawString(_font, text, pos, enabled ? Theme.TextWhite : Color.Gray,
-                0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+            DrawNativeInventoryChrome(spriteBatch);
         }
 
         private void DrawCloseButton(SpriteBatch spriteBatch)
@@ -3248,34 +3093,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             // TOOLTIP BACKGROUND
             // ═══════════════════════════════════════════════════════════
 
-            spriteBatch.Draw(pixel, tooltipRect, Color.Black * 0.8f);
-            Color borderColor = Color.White;
-            const int borderThickness = 1;
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Y, tooltipRect.Width, borderThickness), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Bottom - borderThickness, tooltipRect.Width, borderThickness), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Y, borderThickness, tooltipRect.Height), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.Right - borderThickness, tooltipRect.Y, borderThickness, tooltipRect.Height), borderColor);
-
-            int textY = tooltipRect.Y + paddingY;
-
-
-            foreach (var (text, color) in lines)
-            {
-                Vector2 textSize = _font.MeasureString(text) * scale;
-                int textX = tooltipRect.X + (tooltipRect.Width - (int)textSize.X) / 2;
-
-                // Shadow
-                spriteBatch.DrawString(_font, text, new Vector2(textX + 1, textY + 1), Color.Black * 0.7f,
-                                       0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-                // Text
-                Color lineColor = color;
-                spriteBatch.DrawString(_font, text, new Vector2(textX, textY), lineColor,
-                                       0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-
-                textY += ItemUiHelper.TooltipLineHeight(_font, text, scale);
-
-
-            }
+            ItemUiHelper.DrawTooltipPanel(spriteBatch, pixel, _font, lines, tooltipRect, scale);
         }
 
         private Rectangle Translate(Rectangle rect)

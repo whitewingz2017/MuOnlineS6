@@ -18,6 +18,7 @@ namespace Client.Main.Controls.UI
         // Fields
         private const int CHATBOX_WIDTH = 281;
         public const int CHATBOX_HEIGHT = 47;
+        public const int MobileComposerHeight = 60;
         private const int BUTTON_WIDTH = 27;
         private const int BUTTON_HEIGHT = 26;
         private const int GROUP_SEPARATING_WIDTH = 6;
@@ -293,7 +294,7 @@ namespace Client.Main.Controls.UI
 
         private void ApplyThemeLayout()
         {
-            Point size = UiThemeManager.IsMobileInterfaceActive ? new Point(Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatWidth,60) : IsSeason6
+            Point size = UiThemeManager.IsMobileInterfaceActive ? new Point(Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatWidth,MobileComposerHeight) : IsSeason6
                 ? UiThemeManager.Current.Metrics.ChatInputSize
                 : new Point(CHATBOX_WIDTH, CHATBOX_HEIGHT);
             ViewSize = size;
@@ -402,6 +403,8 @@ namespace Client.Main.Controls.UI
         public void Show(bool focusInput=true)
         {
             Visible = true;
+            _chatLogWindowRef.SetMobileComposerVisible(true);
+            _chatLogWindowRef.ShowFrame(true);
             _chatInput.Visible = true;
             _whisperIdInput.Visible = _isWhisperSendMode;
 
@@ -409,7 +412,7 @@ namespace Client.Main.Controls.UI
             foreach (var btn in GetAllButtons()) btn.Visible = true;
 
             _chatInput.Value = string.Empty; // Clear text on show.
-            if(focusInput)
+            if(focusInput && !UiThemeManager.IsMobilePlatform)
             {
                 _chatInput.Focus();
                 Scene.FocusControl = _chatInput;
@@ -445,10 +448,10 @@ namespace Client.Main.Controls.UI
             UpdateVisualStates();
 
             _whisperIdInput.Blur();
-            _chatInput.Focus();
+            if(!UiThemeManager.IsMobilePlatform)_chatInput.Focus();
             if (Scene != null)
             {
-                Scene.FocusControl = _chatInput;
+                Scene.FocusControl = UiThemeManager.IsMobilePlatform?null:_chatInput;
             }
             _chatInput.MoveCursorToEnd();
         }
@@ -457,6 +460,8 @@ namespace Client.Main.Controls.UI
         {
             _chatInput.Blur();_whisperIdInput.Blur();
             Visible = false;
+            _chatLogWindowRef.SetMobileComposerVisible(false);
+            _chatLogWindowRef.ShowFrame(false);
             _chatInput.Visible = false;
             _whisperIdInput.Visible = false;
             foreach (var btn in GetAllButtons()) btn.Visible = false;
@@ -753,6 +758,12 @@ namespace Client.Main.Controls.UI
         {
             _isWhisperSendMode = !_isWhisperSendMode;
             _whisperIdInput.Visible = _isWhisperSendMode;
+            if(UiThemeManager.IsMobilePlatform)
+            {
+                _chatInput.Blur();_whisperIdInput.Blur();
+                if(Scene!=null)Scene.FocusControl=null;
+                return;
+            }
 
             if (_isWhisperSendMode && Visible)
             {
@@ -962,7 +973,8 @@ namespace Client.Main.Controls.UI
         {
             // If the main chat input box area is clicked (not a button within it),
             // and it's visible, set focus to the chat input field.
-            if (Visible && _chatInput != null && _chatInput.Visible)
+            if (Visible && _chatInput != null && _chatInput.Visible &&
+                _chatInput.DisplayRectangle.Contains(MuGame.Instance.UiMouseState.Position))
             {
                 _chatInput.Focus(); // this will also set Scene.FocusControl
             }

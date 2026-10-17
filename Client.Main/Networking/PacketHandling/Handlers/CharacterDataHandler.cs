@@ -826,7 +826,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     {
                         gameScene.ChatLog?.AddMessage(string.Empty,
                             $"Exp gained: {addedExperience.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}",
-                            Client.Main.Models.MessageType.System);
+                            Client.Main.Models.MessageType.Experience);
 
                         if (addedExperience > 0 &&
                             killedObjectId != 0 &&

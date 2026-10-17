@@ -15,16 +15,26 @@ namespace MuAndroid
         private EventHandler _keyboardLayoutChanged;
         private Android.Views.SoftInput? _previousSoftInputMode;
         private bool _inlineDisposed;
+        private int _promptOpen;
         public override void OnFocus()
         {
+            if(!Visible || _inlineDisposed)return;
+            base.OnFocus();
+            var game=Client.Main.MuGame.Instance;
+            bool tapped=DisplayRectangle.Contains(game.UiMouseState.Position) &&
+                (game.UiMouseState.LeftButton==ButtonState.Pressed || game.PrevUiMouseState.LeftButton==ButtonState.Pressed);
+            // Programmatic focus from a button may select a field, but must not open IME.
+            if(!tapped)return;
             if(SubmitOnMobileKeyboardDone && Client.Main.Controls.UI.UiThemeManager.IsMobileInterfaceActive)
             {
-                base.OnFocus();ShowInlineChatKeyboard();return;
+                ShowInlineChatKeyboard();return;
             }
-            base.OnFocus();
+            if(System.Threading.Interlocked.Exchange(ref _promptOpen,1)!=0)return;
 
             Task.Run(async () =>
             {
+                try
+                {
                 var result = SubmitOnMobileKeyboardDone
                     ? await ShowChatKeyboardAsync()
                     : await KeyboardInput.Show(
@@ -43,6 +53,8 @@ namespace MuAndroid
                         if (SubmitOnMobileKeyboardDone)
                             OnEnterKeyPressed();
                     });
+                }
+                finally{System.Threading.Interlocked.Exchange(ref _promptOpen,0);}
             }).ConfigureAwait(false);
 
 

@@ -6,6 +6,36 @@ using Client.Main.Core.Utilities;
 using Microsoft.Xna.Framework;
 using MUnique.OpenMU.Network.Packets;
 
+if (args.Contains("--potion-slots-only"))
+{
+    var hudType = typeof(Client.Main.Controls.UI.Game.Hud.ModernBottomHud);
+    var resolve = hudType.GetMethod("ResolveAvailablePotion", BindingFlags.NonPublic | BindingFlags.Static)!;
+    byte[] Potion(byte id, byte count) => [0xE0, id, 0, count, 0];
+    var inventory = new Dictionary<byte, byte[]>();
+    void Expect(int preferred, int expected)
+    {
+        var actual = ((byte Group, int Id))resolve.Invoke(null, new object[] { ((byte)14, preferred), inventory })!;
+        if (actual != ((byte)14, expected))
+            throw new Exception($"Potion {preferred}: expected {expected}, got {actual}.");
+    }
+    inventory[12] = Potion(3, 255);
+    inventory[13] = Potion(6, 126);
+    Expect(1, 3); // HP falls back without selecting MP.
+    Expect(4, 6); // MP falls back without selecting HP.
+    inventory[14] = Potion(1, 3);
+    Expect(1, 1); // Preserve the chosen size while available.
+    inventory[14] = Potion(1, 0);
+    Expect(1, 3); // Ignore an exhausted stack awaiting removal.
+    inventory.Remove(12);
+    inventory[0] = Potion(3, 255);
+    Expect(1, 1); // Equipment slots cannot supply a potion.
+    Expect(70, 70); // Special consumables keep their exact assignment.
+    inventory.Clear();
+    Expect(4, 4); // Empty inventory retains the saved preference.
+    Console.WriteLine("Verified 7 potion shortcut fallback cases.");
+    return;
+}
+
 if (args.Contains("--server-requirements-only"))
 {
     string casesPath = Path.Combine(AppContext.BaseDirectory, "server-requirement-cases.json");

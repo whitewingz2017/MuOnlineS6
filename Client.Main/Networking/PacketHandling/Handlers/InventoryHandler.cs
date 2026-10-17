@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.Network.Packets.ServerToClient;
 using Client.Main.Core.Utilities;
 using System;
@@ -172,7 +172,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     if (value == NotGetItem)
                     {
                         _logger.LogInformation("Item pick-up failed (0x22 value=0xFF).");
-                        ShowPickupChatMessage("Item pick-up failed.");
+                        ShowPickupChatMessage("Item pick-up failed.", MessageType.Error);
                         _characterState.ClearPendingPickedItem();
                         ResetPendingPickupObject();
                         return Task.CompletedTask;
@@ -222,7 +222,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     if (packet.Length <= itemDataOffset)
                     {
                         _logger.LogWarning("Item pick-up success (slot {Slot}) has no item data.", targetSlot);
-                        ShowPickupChatMessage("Item pick-up error (missing item data).");
+                        ShowPickupChatMessage("Item pick-up error (missing item data).", MessageType.Error);
                         _characterState.ClearPendingPickedItem();
                         ResetPendingPickupObject();
                         return Task.CompletedTask;
@@ -320,7 +320,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
             return Task.CompletedTask;
         }
 
-        private void ShowPickupChatMessage(string message, MessageType messageType = MessageType.System, string sender = "System")
+        private void ShowPickupChatMessage(string message, MessageType messageType = MessageType.Loot, string sender = "System")
         {
             MuGame.ScheduleOnMainThread(() =>
             {

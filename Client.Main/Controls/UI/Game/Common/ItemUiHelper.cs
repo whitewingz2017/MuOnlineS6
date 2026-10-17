@@ -30,6 +30,53 @@ namespace Client.Main.Controls.UI.Game.Common
 
     public static class ItemUiHelper
     {
+        public static void DrawTooltipPanel(SpriteBatch batch, Texture2D pixel, SpriteFont font,
+            List<(string text, Color color)> lines, Rectangle anchor, float scale)
+        {
+            if (lines.Count == 0 || font == null || pixel == null) return;
+            font = Controllers.GraphicsManager.GetSmallTextFont(font, ref scale, pixelCoordinates:false);
+            var screen = new Rectangle(0, 0, Controllers.UiScaler.VirtualSize.X, Controllers.UiScaler.VirtualSize.Y);
+            int width = 0, height = 0, header = 0;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                float measuredWidth = 0;
+                int bodyHeight = 0;
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    measuredWidth = Math.Max(measuredWidth, font.MeasureString(lines[i].text).X * scale);
+                    if (i > 0) bodyHeight += TooltipLineHeight(font, lines[i].text, scale);
+                }
+                header = (int)MathF.Ceiling(font.MeasureString("Q").Y * scale) + 24;
+                width = Math.Min(screen.Width - 16, Math.Max(240, (int)MathF.Ceiling(measuredWidth) + 24));
+                height = header + bodyHeight + 24;
+                float fit = Math.Min((screen.Width - 40f) / Math.Max(1, measuredWidth),
+                    (screen.Height - header - 40f) / Math.Max(1, bodyHeight));
+                if (fit >= 1f) break;
+                scale *= Math.Max(.01f, fit * .98f);
+            }
+            var rect = new Rectangle(
+                Math.Clamp(anchor.Center.X - width / 2, 8, Math.Max(8, screen.Width - width - 8)),
+                Math.Clamp(anchor.Y, 8, Math.Max(8, screen.Height - height - 8)), width, height);
+            batch.Draw(pixel, rect, new Color(22, 25, 25, 252));
+            batch.Draw(pixel, new Rectangle(rect.X + 1, rect.Y + 1, width - 2, height - 2), new Color(105, 104, 92));
+            batch.Draw(pixel, new Rectangle(rect.X + 3, rect.Y + 3, width - 6, height - 6), new Color(6, 12, 14, 250));
+            batch.Draw(pixel, new Rectangle(rect.X + 4, rect.Y + 4, width - 8, header - 4), new Color(24, 29, 32, 250));
+            batch.Draw(pixel, new Rectangle(rect.X + 4, rect.Y + header, width - 8, 1), new Color(44, 49, 50));
+            void Text(string text, Color color, int y)
+            {
+                Vector2 measured = font.MeasureString(text) * scale;
+                var position = new Vector2(MathF.Round(rect.Center.X - measured.X / 2), y);
+                Client.Main.Helpers.OutlinedTextRenderer.Draw(batch,font,text,position,color,scale);
+            }
+            Text(lines[0].text, lines[0].color, rect.Y + 14);
+            int textY = rect.Y + header + 12;
+            for (int i = 1; i < lines.Count; i++)
+            {
+                Text(lines[i].text, lines[i].color, textY);
+                textY += TooltipLineHeight(font, lines[i].text, scale);
+            }
+        }
+
         public static Rectangle GetTooltipBounds(Rectangle itemRect, Point size, Rectangle screen)
         {
             const int margin = 10;
@@ -205,23 +252,7 @@ namespace Client.Main.Controls.UI.Game.Common
             return palette.Normal;
         }
 
-        public static void DrawItemGlow(SpriteBatch spriteBatch, Texture2D pixel, Rectangle rect, Color color, int glowSize = 4)
-        {
-            if (spriteBatch == null || pixel == null) return;
 
-            for (int i = glowSize; i > 0; i--)
-            {
-                float alpha = (float)(glowSize - i + 1) / glowSize * 0.6f;
-                Color layerColor = color * alpha;
-
-                var glowRect = new Rectangle(rect.X - i, rect.Y - i, rect.Width + i * 2, rect.Height + i * 2);
-
-                spriteBatch.Draw(pixel, new Rectangle(glowRect.X, glowRect.Y, glowRect.Width, 1), layerColor);
-                spriteBatch.Draw(pixel, new Rectangle(glowRect.X, glowRect.Bottom - 1, glowRect.Width, 1), layerColor);
-                spriteBatch.Draw(pixel, new Rectangle(glowRect.X, glowRect.Y, 1, glowRect.Height), layerColor);
-                spriteBatch.Draw(pixel, new Rectangle(glowRect.Right - 1, glowRect.Y, 1, glowRect.Height), layerColor);
-            }
-        }
 
         public static List<(string text, Color color)> BuildTooltipLines(InventoryItem item)
         {

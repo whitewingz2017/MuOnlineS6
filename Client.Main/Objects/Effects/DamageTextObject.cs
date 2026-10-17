@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -70,6 +71,23 @@ namespace Client.Main.Objects.Effects
             new Vector2(1f, -9f),
             new Vector2(-1f, -9f)
         };
+
+        private static readonly List<DamageTextObject> NativeQueue = new(128);
+        internal static void BeginOverlayFrame() => NativeQueue.Clear();
+        internal static void FlushNativeOverlay(GameTime time)
+        {
+            if(NativeQueue.Count==0)return;
+            bool previous=UiScaler.DrawingAtNativeResolution;
+            UiScaler.DrawingAtNativeResolution=true;
+            try
+            {
+                using var scope=new SpriteBatchScope(GraphicsManager.Instance.Sprite,SpriteSortMode.Deferred,
+                    BlendState.AlphaBlend,SamplerState.LinearClamp,DepthStencilState.None,
+                    RasterizerState.CullNone,null,UiScaler.SpriteTransform);
+                foreach(var text in NativeQueue)text.DrawAfter(time);
+            }
+            finally { NativeQueue.Clear();UiScaler.DrawingAtNativeResolution=previous; }
+        }
 
         private static int _poolCount;
         private static int _sequence;
@@ -275,6 +293,11 @@ namespace Client.Main.Objects.Effects
             if (!Visible || Hidden || _recycled || _opacity <= 0.001f || string.IsNullOrEmpty(Text))
                 return;
 
+            if(OverheadNameplateRenderer.DeferToNativeOverlay)
+            {
+                NativeQueue.Add(this);
+                return;
+            }
             SpriteBatch spriteBatch = GraphicsManager.Instance.Sprite;
             SpriteFont font = GraphicsManager.Instance.Font;
             if (spriteBatch == null || font == null)
@@ -310,6 +333,8 @@ namespace Client.Main.Objects.Effects
         private void DrawCombatNumber(SpriteBatch spriteBatch, SpriteFont font)
         {
             float fontSize = _isCritical ? CriticalFontSize : NormalFontSize;
+            if(CombatTextAtlas.TryDraw(spriteBatch,Text,_screenPosition,
+                ApplyOpacity(CalculateColor(_progress),_opacity),fontSize*1.5f*CalculateScale(_progress)))return;
             float baseScale = fontSize / Constants.BASE_FONT_SIZE;
             float animationScale = CalculateScale(_progress);
             float scale = Math.Max(0.05f, baseScale * animationScale);

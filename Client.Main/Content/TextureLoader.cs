@@ -27,6 +27,11 @@ namespace Client.Main.Content
             typeof(TextureLoader).Assembly.GetManifestResourceNames()
                 .Where(name => name.StartsWith("BundledUi/", StringComparison.Ordinal))
                 .ToDictionary(name => NormalizePathKey(name["BundledUi/".Length..]), name => name));
+        internal static bool PreferBundledInventoryArtwork { get; set; } = OperatingSystem.IsAndroid() || OperatingSystem.IsIOS();
+        private static readonly Lazy<Dictionary<string,string>> _inventoryUiResources = new(()=>
+            typeof(TextureLoader).Assembly.GetManifestResourceNames()
+                .Where(name=>name.StartsWith("CurrentInventoryUi/",StringComparison.Ordinal))
+                .ToDictionary(name=>NormalizePathKey(name["CurrentInventoryUi/".Length..]),name=>name));
 
         // Cache: Key -> Resolved Full Path (or empty if not found)
         private readonly ConcurrentDictionary<string, string> _pathResolutionCache = new();
@@ -159,6 +164,8 @@ namespace Client.Main.Content
                 }
 
                 string fullPath = FindTexturePath(dataPath, ext);
+                bool currentInventory=PreferBundledInventoryArtwork && _inventoryUiResources.Value.ContainsKey(NormalizePathKey(path));
+                if(currentInventory)fullPath=null;
                 // Ship the requested target-health artwork with the client; an older
                 // installed Data folder must not silently replace it.
                 if (path.Equals("Interface/newui_Pet_HpBar.OZJ", StringComparison.OrdinalIgnoreCase))
@@ -171,7 +178,8 @@ namespace Client.Main.Content
                 else
                 {
                     string resourcePath = ext == ".png" ? path : Path.ChangeExtension(path, reader.GetType().Name.Replace("Reader", ""));
-                    if (!_bundledUiResources.Value.TryGetValue(NormalizePathKey(resourcePath), out string resourceName))
+                    var resources=currentInventory?_inventoryUiResources.Value:_bundledUiResources.Value;
+                    if (!resources.TryGetValue(NormalizePathKey(resourcePath), out string resourceName))
                         return null;
 
                     using var stream = typeof(TextureLoader).Assembly.GetManifestResourceStream(resourceName);

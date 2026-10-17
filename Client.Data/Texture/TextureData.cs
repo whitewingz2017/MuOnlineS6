@@ -4,6 +4,9 @@
     {
         public int Width { get; set; }
         public int Height { get; set; }
+        // Original image area before GPU power-of-two padding (zero means the full texture).
+        public int ContentWidth { get; set; }
+        public int ContentHeight { get; set; }
         public TextureSurfaceFormat Format { get; set; }
         public byte Components { get; set; }
         public bool IsCompressed { get; set; }

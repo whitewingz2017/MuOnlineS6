@@ -133,7 +133,7 @@ namespace Client.Main.Scenes
                 _logger?.LogDebug($"[SelectCharacterScene] Background load failed: {ex.Message}");
             }
 
-            _progressBar = new ProgressBarControl();
+            _progressBar = new ProgressBarControl { Visible = false };
             Controls.Add(_progressBar);
 
             SubscribeToNetworkEvents();
@@ -1058,6 +1058,7 @@ namespace Client.Main.Scenes
         private void EnableInteractionAfterSelection()
         {
             _isSelectionInProgress = false;
+            _progressBar.Visible=false;
             if (_selectWorld != null)
             {
                 _selectWorld.Interactive = true;
@@ -1443,7 +1444,10 @@ namespace Client.Main.Scenes
                 _progressBar.Progress = _loadingScreen.Progress;
                 _progressBar.StatusText = _loadingScreen.Message;
                 _progressBar.Visible = true;
-                _progressBar.Draw(gameTime);
+                // This control is also in Controls for initialization/disposal.
+                // Never let the regular world/UI pass draw a stale loading bar.
+                try { _progressBar.Draw(gameTime); }
+                finally { _progressBar.Visible = false; }
                 return;
             }
 

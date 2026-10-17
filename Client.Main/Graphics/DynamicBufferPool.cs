@@ -13,7 +13,11 @@ namespace Client.Main.Graphics
     /// </summary>
     public static class DynamicBufferPool
     {
+#if ANDROID
+        private const int MaxBuffersPerBucket = 2;
+#else
         private const int MaxBuffersPerBucket = 8;
+#endif
         private const int PruneIntervalFrames = 120;
         private const int SmallVertexBucketStep = 128;
         private const int MediumVertexBucketStep = 512;
@@ -26,8 +30,12 @@ namespace Client.Main.Graphics
 #else
         private const int MinFramesBeforeReuse = 2;   // avoid same-frame reuse elsewhere too
 #endif
+#if ANDROID
+        private const int MaxIdleFrames = 900;
+#else
         // Increase idle window to avoid churn on iGPU: ~60s at 60 FPS
         private const int MaxIdleFrames = 3600;        // drop long-idle buffers to cap VRAM usage
+#endif
 
         private static readonly SortedDictionary<int, Queue<PoolEntry<DynamicVertexBuffer>>> _vertexPools = new();
         private static readonly SortedDictionary<int, Queue<PoolEntry<DynamicIndexBuffer>>> _index16Pools = new();

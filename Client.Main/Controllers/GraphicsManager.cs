@@ -22,6 +22,7 @@ namespace Client.Main.Controllers
         public SpriteBatch Sprite { get; private set; }
         public SpriteFont Font { get; private set; }
         public SpriteFont SmallFont { get; private set; }
+        private readonly Dictionary<int, SpriteFont> _textFonts = new();
         public Texture2D Pixel { get; private set; }
         public Texture2D BlackPixel { get; private set; }
         public Texture2D ItemChrome02Texture { get; private set; }
@@ -154,21 +155,52 @@ namespace Client.Main.Controllers
             SmallFont = string.Equals(Constants.FONT_NAME, "Arial", StringComparison.OrdinalIgnoreCase)
                 ? _contentManager.Load<SpriteFont>("ArialSmall")
                 : null;
+            _textFonts.Clear();
+            if (SmallFont != null)
+            {
+                _textFonts[14] = SmallFont;
+                _textFonts[25] = Font;
+                foreach (int size in new[] { 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 20, 22, 24 })
+                    _textFonts[size] = _contentManager.Load<SpriteFont>($"Arial{size}");
+            }
         }
 
         public static SpriteFont GetUiFont(float desiredSize, out float scale)
         {
-            const float smallFontSize = 14f;
-            GraphicsManager manager = Instance;
+            float pixelsPerUnit=Math.Max(.1f,MathF.Abs(UiScaler.Scale));
+            // Keep ordinary labels readable in small windows; compact HUD text can
+            // still explicitly request sizes below 12 and fit its narrow artwork.
+            if(desiredSize>=12f)desiredSize=Math.Max(desiredSize,11f/pixelsPerUnit);
+            return SelectTextFont(desiredSize,pixelsPerUnit,out scale);
+        }
 
-            if (desiredSize <= smallFontSize && manager?.SmallFont != null)
+        private static SpriteFont SelectTextFont(float desiredSize, float pixelScale, out float scale)
+        {
+            var manager = Instance;
+            if (manager.SmallFont == null || manager._textFonts.Count == 0)
             {
-                scale = desiredSize / smallFontSize;
-                return manager.SmallFont;
+                scale = desiredSize / Constants.BASE_FONT_SIZE;
+                return manager.Font;
             }
+            float pixels = desiredSize * Math.Max(.1f, pixelScale);
+            int closest = 14;
+            foreach (int size in manager._textFonts.Keys)
+                if (Math.Abs(size - pixels) < Math.Abs(closest - pixels)) closest = size;
+            // Small raster glyphs must land one texture pixel per screen pixel.
+            // Preserve continuous scaling only for sizes larger than our atlas set.
+            scale = pixels <= 25f ? 1f / Math.Max(.1f,pixelScale) : desiredSize / closest;
+            return manager._textFonts[closest];
+        }
 
-            scale = desiredSize / Constants.BASE_FONT_SIZE;
-            return manager?.Font;
+        public static SpriteFont GetSmallTextFont(SpriteFont font, ref float scale, bool pixelCoordinates = true)
+        {
+            var manager = Instance;
+            float size = font == manager.Font ? Constants.BASE_FONT_SIZE : 0;
+            foreach (var entry in manager._textFonts)
+                if (entry.Value == font) { size = entry.Key; break; }
+            if (size == 0) return font;
+            return SelectTextFont(size * scale,
+                pixelCoordinates ? 1f : MathF.Abs(UiScaler.SpriteTransform.M11), out scale);
         }
 
         private void InitializeFXAAEffect()

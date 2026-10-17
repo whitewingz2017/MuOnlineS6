@@ -14,6 +14,13 @@ namespace Client.Main.Models
         GM,
 
         Info,
+        World,
+        Notice,
+        Warning,
+        Loot,
+        Experience,
+        Location,
+        Trade,
 
         Unknown = -1
     }

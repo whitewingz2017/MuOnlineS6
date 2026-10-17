@@ -22,7 +22,7 @@ public class InventoryItem
                          byte[] rawData,
                          int durability = 255, int level = 0)
     {
-        Definition = def;
+        Definition = ItemDatabase.ResolveItemAppearance(def,rawData?.Length>0?ItemDatabase.ParseItemDetails(rawData).Level:level);
         GridPosition = pos;
         Durability = durability;
         Level = level;

@@ -20,6 +20,7 @@ namespace Client.Main.Scenes
     public abstract class BaseScene : GameControl
     {
         internal bool DeferScreenUi { get; set; }
+        public virtual bool CanDrawScreenUi => false;
         public new WorldControl World { get; protected set; }
 
         /// <summary>

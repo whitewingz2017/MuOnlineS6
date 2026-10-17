@@ -24,6 +24,16 @@ namespace Client.Main.Core.Utilities
         private static Dictionary<(byte Group, short Id), ItemDefinition> Definitions
             => _definitionsTask.Value.GetAwaiter().GetResult();
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<int,ItemDefinition> KundunModels = new();
+        public static ItemDefinition ResolveItemAppearance(ItemDefinition definition,int level)
+        {
+            // MuMain ZzzInventory/ZzzOpenData: Box of Luck levels 8..12 use
+            // MODEL_EVENT + 10 (MagicBox08), rather than the base potion model.
+            if(definition?.Group==14 && definition.Id==11 && level is >=8 and <=12)
+                return KundunModels.GetOrAdd(level,_=>definition.WithModel("Item/MagicBox08.bmd"));
+            return definition;
+        }
+
         /// <summary>
         /// Starts loading item definitions during application startup so the first inventory or
         /// shop access does not synchronously initialize the whole database on the render thread.
@@ -282,14 +292,14 @@ namespace Client.Main.Core.Utilities
                 var def = GetItemDefinition(ext.Group, ext.Number);
                 if (def != null)
                 {
-                    return def;
+                    return ResolveItemAppearance(def,ext.Level);
                 }
             }
 
             if (itemData.Length < 6) return null;
             short id = itemData[0];
             byte group = (byte)(itemData[5] >> 4);
-            return GetItemDefinition(group, id);
+            return ResolveItemAppearance(GetItemDefinition(group, id),ParseItemDetails(itemData).Level);
         }
 
         public static byte GetItemGroup(ReadOnlySpan<byte> itemData)

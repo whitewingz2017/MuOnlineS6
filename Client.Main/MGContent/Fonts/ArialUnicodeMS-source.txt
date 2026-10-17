@@ -1,0 +1,1 @@
+Arial Unicode MS Regular extracted from the local Mudream.online/Data/Font.dpk archive at the user's request. Original entry: Data/Font/Arial-Unicode-Regular.ttf. Existing font licensing applies; this note does not grant redistribution rights.

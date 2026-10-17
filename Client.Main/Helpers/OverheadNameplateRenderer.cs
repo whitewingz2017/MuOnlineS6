@@ -1,4 +1,4 @@
-﻿using Client.Main.Controllers;
+using Client.Main.Controllers;
 using Client.Main.Graphics;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -21,6 +21,7 @@ namespace Client.Main.Helpers
                 Name = name;
                 HealthFraction = healthFraction;
                 RenderScale = renderScale;
+                SourceViewport = MuGame.Instance.GraphicsDevice.Viewport;
             }
 
             public bool IsStore { get; }
@@ -31,9 +32,10 @@ namespace Client.Main.Helpers
             public string Name { get; }
             public float? HealthFraction { get; }
             public float RenderScale { get; }
+            public Viewport SourceViewport { get; }
         }
 
-        private const float BaseNameScale = 0.42f;
+        private const float BaseNameScale = 0.50f;
         private const float BaseBarWidth = 70f;
         private const float BaseBarHeight = 6f;
         private const float BaseBarOffsetY = 2f;
@@ -44,6 +46,7 @@ namespace Client.Main.Helpers
 
         private const int MaxRetainedQueueCapacity = 512;
         private static readonly List<QueuedNameplate> s_queue = new(256);
+        internal static bool DeferToNativeOverlay { get; set; }
         public static int LastFrameQueuedNameplates { get; private set; }
 
         private static class Theme
@@ -101,6 +104,8 @@ namespace Client.Main.Helpers
         public static void BeginFrame()
         {
             s_queue.Clear();
+            Client.Main.Graphics.WorldLabelRenderer.BeginFrame();
+            Client.Main.Objects.Effects.DamageTextObject.BeginOverlayFrame();
         }
 
         public static void EnqueueNameplate(SpriteFont font, Vector3 screen, string name, float? healthFraction, float renderScale, bool isStore = false, bool showHealthBar = false, Color? nameColor = null)
@@ -113,26 +118,36 @@ namespace Client.Main.Helpers
 
         public static void FlushQueuedNameplates(SpriteBatch spriteBatch)
         {
-            if (spriteBatch == null || s_queue.Count == 0)
+            if (DeferToNativeOverlay || spriteBatch == null || s_queue.Count == 0)
                 return;
 
             // Use an overlay batch even when the caller has world depth writes enabled.
             // Deferred ordering keeps the trough behind its textured health fill.
             using var scope = new SpriteBatchScope(spriteBatch, SpriteSortMode.Deferred,
-                BlendState.NonPremultiplied, SamplerState.LinearClamp, DepthStencilState.None);
+                BlendState.AlphaBlend, SamplerState.LinearClamp, DepthStencilState.None);
 
             try
             {
                 for (int i = 0; i < s_queue.Count; i++)
                 {
                     var entry = s_queue[i];
+                    // Projection was measured in the world target. Reproject into the
+                    // final viewport so font pixels never pass through world upscaling.
+                    var source = entry.SourceViewport;
+                    var destination = spriteBatch.GraphicsDevice.Viewport;
+                    float ratioX = destination.Width / (float)Math.Max(1, source.Width);
+                    float ratioY = destination.Height / (float)Math.Max(1, source.Height);
+                    Vector3 screen = new(
+                        destination.X + (entry.Screen.X - source.X) * ratioX,
+                        destination.Y + (entry.Screen.Y - source.Y) * ratioY,
+                        entry.Screen.Z);
                     DrawNameplate(
                         spriteBatch,
                         entry.Font,
-                        entry.Screen,
+                        screen,
                         entry.Name,
                         entry.HealthFraction,
-                        entry.RenderScale, entry.IsStore, entry.ShowHealthBar, entry.NameColor);
+                        entry.RenderScale * ratioY, entry.IsStore, entry.ShowHealthBar, entry.NameColor);
                 }
             }
             finally
@@ -157,6 +172,7 @@ namespace Client.Main.Helpers
             if (Client.Main.Controls.UI.UiThemeManager.IsMobilePlatform)
                 scale = MathF.Max(scale, MathF.Min(UiScaler.ScaleX, UiScaler.ScaleY) * 1.25f);
             float nameScale = BaseNameScale * scale;
+            font = GraphicsManager.GetSmallTextFont(font, ref nameScale);
             Vector2 nameSize = font.MeasureString(name) * nameScale;
 
             float padX = MathF.Max(1f, BaseNamePaddingX * scale);
@@ -197,7 +213,7 @@ namespace Client.Main.Helpers
                 return;
 
             float depth = MathHelper.Clamp(screen.Z, 0f, 1f);
-            Vector2 textPos = new(nameRect.X + padX, nameRect.Y + padY);
+            Vector2 textPos = new(MathF.Round(nameRect.X + padX), MathF.Round(nameRect.Y + padY));
 
             if(isStore)
             {
@@ -211,15 +227,13 @@ namespace Client.Main.Helpers
                 foreach (string line in name.Split('\n'))
                 {
                     Vector2 pos = new(screen.X - font.MeasureString(line).X * nameScale / 2f, y);
-                    spriteBatch.DrawString(font, line, pos + Vector2.One, Color.Black * 0.7f, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
-                    spriteBatch.DrawString(font, line, pos, Theme.TextGold, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
+                    OutlinedTextRenderer.Draw(spriteBatch, font, line, pos, Theme.TextGold, nameScale, depth, pixelCoordinates: true);
                     y += font.LineSpacing * nameScale;
                 }
             }
             else
             {
-                spriteBatch.DrawString(font, name, textPos + Vector2.One, Color.Black * 0.7f, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
-                spriteBatch.DrawString(font, name, textPos, nameColor ?? Color.White, 0f, Vector2.Zero, nameScale, SpriteEffects.None, depth);
+                OutlinedTextRenderer.Draw(spriteBatch, font, name, textPos, nameColor ?? Color.White, nameScale, depth, pixelCoordinates: true);
             }
 
             if (hasBar)

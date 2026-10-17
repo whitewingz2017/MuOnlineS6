@@ -185,6 +185,10 @@ namespace Client.Main.Controls
         private readonly List<DroppedItemObject> _droppedItems = [];
         private readonly DroppedItemRenderSelector _droppedItemSelector = new();
         private readonly Queue<WorldObject> _objectsToInitialize = [];
+#if ANDROID
+        private const float DeferredMapWarmupRadius = 2000f;
+        private readonly Queue<ModelObject> _deferredMapWarmup = [];
+#endif
         private readonly HashSet<WorldObject> _queuedForInitialization = [];
         private readonly ConcurrentDictionary<WorldObject, bool> _initializationHiddenStates = new();
         private readonly List<WorldObject> _visibleObjects = [];
@@ -556,7 +560,50 @@ namespace Client.Main.Controls
             long hoverStarted = UpdatePassProfiler.Start();
             WorldHoverSystem.UpdateHover(_visibleObjects, Scene);
             UpdatePassProfiler.AddWorldHover(hoverStarted);
+#if ANDROID
+            PrepareDeferredMapResources();
+#endif
         }
+
+#if ANDROID
+        private void PrepareDeferredMapResources()
+        {
+            if (!Visible || _deferredMapWarmup.Count == 0)
+                return;
+
+            long started = Stopwatch.GetTimestamp();
+            int processed = 0;
+            do
+            {
+                var model = _deferredMapWarmup.Dequeue();
+                if (model.Status == GameControlStatus.Ready && !model.Hidden &&
+                    ReferenceEquals(model.World, this) && IsWithinDeferredWarmupRange(model))
+                {
+                    try
+                    {
+                        model.PrepareRenderResourcesForFirstFrame();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Deferred map graphics preparation failed for {ObjectType}.", model.GetType().Name);
+                    }
+                }
+                processed++;
+            }
+            while (_deferredMapWarmup.Count > 0 && processed < 4 &&
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds < 1d);
+        }
+
+        private bool IsWithinDeferredWarmupRange(ModelObject model)
+        {
+            Vector3 center = this is WalkableWorldControl walkable && walkable.Walker != null
+                ? walkable.Walker.Position
+                : Camera.Instance.Target;
+            float dx = model.Position.X - center.X;
+            float dy = model.Position.Y - center.Y;
+            return dx * dx + dy * dy <= DeferredMapWarmupRadius * DeferredMapWarmupRadius;
+        }
+#endif
 
         internal void PrepareInitialVisibilitySnapshot()
         {
@@ -626,33 +673,38 @@ namespace Client.Main.Controls
             long sliceStarted = Stopwatch.GetTimestamp();
             int preparedInSlice = 0;
             int preparedTotal = 0;
+            // Snapshot the initial view because preparation yields across frames.
+            IReadOnlyList<WorldObject> modelsToPrepare = _visibleObjects.ToArray();
 #if ANDROID
-            // Map BMD loading decodes CPU assets only. Warm placed models while the
-            // loading screen is still up, including those outside the initial view,
-            // so walking does not trigger their first texture/buffer upload in Draw.
-            IReadOnlyList<WorldObject> modelsToPrepare = Objects.GetSnapshotArray();
-#else
-            var modelsToPrepare = _visibleObjects;
+            // Prepare a margin around the initial view, not the entire map: eagerly
+            // allocating per-instance buffers for distant scenery wastes mobile RAM.
+            _deferredMapWarmup.Clear();
+            var initialView = new HashSet<WorldObject>(modelsToPrepare);
+            foreach (var obj in Objects.GetSnapshotArray())
+            {
+                if (obj is ModelObject model && model.IsMapPlacementObject &&
+                    model.Status == GameControlStatus.Ready && !model.Hidden &&
+                    !initialView.Contains(model) && IsWithinDeferredWarmupRange(model))
+                {
+                    _deferredMapWarmup.Enqueue(model);
+                }
+            }
 #endif
             for (int i = 0; i < modelsToPrepare.Count; i++)
             {
                 if (modelsToPrepare[i] is not ModelObject model ||
                     model.Status != GameControlStatus.Ready || model.Hidden)
                     continue;
-#if ANDROID
-                if (!model.Visible && !model.IsMapPlacementObject)
-                    continue;
-#else
                 if (!model.Visible)
                     continue;
-#endif
 
                 model.PrepareRenderResourcesForFirstFrame();
                 preparedInSlice++;
                 preparedTotal++;
 
-                if (preparedInSlice < 4 &&
-                    Stopwatch.GetElapsedTime(sliceStarted).TotalMilliseconds < 2d)
+                // Keep loading responsive without spending a frame per four cheap models.
+                if (preparedInSlice < 64 &&
+                    Stopwatch.GetElapsedTime(sliceStarted).TotalMilliseconds < 8d)
                 {
                     continue;
                 }
@@ -2816,6 +2868,9 @@ namespace Client.Main.Controls
 
         public override void Dispose()
         {
+#if ANDROID
+            _deferredMapWarmup.Clear();
+#endif
             _cutoutMapBatch.Dispose();
             var sw = Stopwatch.StartNew();
 

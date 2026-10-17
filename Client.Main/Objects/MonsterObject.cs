@@ -391,7 +391,7 @@ namespace Client.Main.Objects
                 return;
 
             float? hp = _hasHealthFraction ? _healthFraction : null;
-            OverheadNameplateRenderer.EnqueueNameplate(font, screen, name, hp, Constants.RENDER_SCALE, showHealthBar: true,nameColor: Color.Cyan);
+            OverheadNameplateRenderer.EnqueueNameplate(font, screen, name, hp, Constants.RENDER_SCALE, showHealthBar: true,nameColor: Color.White);
         }
 
         /// <summary>

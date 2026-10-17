@@ -47,6 +47,8 @@ namespace Client.Data.Texture
             {
                 Width = width,
                 Height = height,
+                ContentWidth = nx,
+                ContentHeight = ny,
                 Components = COMPONENTS,
                 Data = data,
                 IsCompressed = false,

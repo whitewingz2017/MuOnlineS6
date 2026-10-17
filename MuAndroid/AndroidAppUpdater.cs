@@ -2,9 +2,12 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Threading;
+using Client.Main.Helpers;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -13,47 +16,80 @@ using Android.Provider;
 
 namespace MuAndroid;
 
-internal sealed class AndroidAppUpdater
+internal sealed class AndroidAppUpdater : IDisposable
 {
     private static readonly Uri Server = new("http://143.14.88.45:8088/");
     private readonly Activity _activity;
     private string _pendingApk;
     private bool _installing;
-    private bool _checked;
+    private readonly CancellationTokenSource _checks=new();
+    private int _checking;
     private int _downloading;
     public AndroidAppUpdater(Activity activity) => _activity = activity;
 
-    public async Task CheckAsync()
+    public async Task MonitorAsync()
     {
-        if (_checked) return;
-        _checked = true;
+        try
+        {
+            await AppUpdatePoller.RunAsync(CheckAsync,TimeSpan.FromSeconds(30),_checks.Token).ConfigureAwait(false);
+        }
+        catch(System.OperationCanceledException){ }
+    }
+
+    public void Dispose(){_checks.Cancel();AppUpdateNotice.Clear();}
+
+    public async Task CheckAsync(bool updateAtStartup=false)
+    {
+        if(Volatile.Read(ref _downloading)!=0 || Interlocked.Exchange(ref _checking,1)!=0)return;
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            using var response = await http.GetAsync(new Uri(Server, "api/updates/android")).ConfigureAwait(false);
+            using var request=new HttpRequestMessage(HttpMethod.Get,
+                new Uri(Server,$"api/updates/android?check={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"));
+            request.Headers.CacheControl=new CacheControlHeaderValue{NoCache=true,NoStore=true,MustRevalidate=true};
+            using var response = await http.SendAsync(request,_checks.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return;
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
             var release = json.RootElement;
             string version = release.GetProperty("version").GetString();
             var installed = _activity.PackageManager.GetPackageInfo(_activity.PackageName, PackageInfoFlags.SigningCertificates);
-            if (CompareVersions(version, installed.VersionName) <= 0) return;
+            if (CompareVersions(version, installed.VersionName) <= 0) { AppUpdateNotice.Clear();return; }
             var url = new Uri(Server, release.GetProperty("downloadUrl").GetString());
             if (url.Scheme != Server.Scheme || url.Authority != Server.Authority) return;
             string hash = release.GetProperty("sha256").GetString();
             long size = release.GetProperty("fileSize").GetInt64();
             if (hash?.Length != 64 || size <= 0 || size > 2147483648L) return;
             string notes = release.GetProperty("notes").GetString();
-            bool mandatory = release.TryGetProperty("mandatory", out var flag) && flag.GetBoolean();
-            Client.Main.Helpers.AppUpdateScreen.Retry = () => _activity.RunOnUiThread(async () => await DownloadAsync(url, hash, size, version));
-            Client.Main.Helpers.AppUpdateScreen.Continue = mandatory ? null : () =>
+            if(!_checks.IsCancellationRequested)
             {
-                Client.Main.Helpers.AppUpdateScreen.Close();
-                _ = Client.Main.MuGame.Network.ForceReconnectToConnectServerAsync();
-            };
-            Client.Main.Helpers.AppUpdateScreen.Show(notes, size);
-            await DownloadAsync(url, hash, size, version);
+                AppUpdateNotice.Publish(new AppUpdateOffer(version,notes,size,
+                    ()=>_activity.RunOnUiThread(async()=>await BeginUpdateAsync(url,hash,size,version,notes))));
+                if(updateAtStartup)
+                    _activity.RunOnUiThread(async()=>await BeginUpdateAsync(url,hash,size,version,notes));
+            }
         }
         catch (Exception ex) { Android.Util.Log.Info("TwinMUUpdater", $"Update check unavailable: {ex.Message}"); }
+        finally{Interlocked.Exchange(ref _checking,0);}
+    }
+
+    private async Task BeginUpdateAsync(Uri url,string hash,long size,string version,string notes)
+    {
+        if(_checks.IsCancellationRequested || Volatile.Read(ref _downloading)!=0 || AppUpdateScreen.Active)return;
+        AppUpdateScreen.Retry=()=>_activity.RunOnUiThread(async()=>await DownloadAsync(url,hash,size,version));
+        AppUpdateScreen.Continue=()=>Client.Main.MuGame.ScheduleOnMainThread(()=>
+        {
+            AppUpdateScreen.Close();
+            Client.Main.MuGame.Instance.ChangeScene<Client.Main.Scenes.LoginScene>();
+        });
+        AppUpdateScreen.Show(notes,size);
+        AppUpdateNotice.Clear();
+        try
+        {
+            if(Client.Main.MuGame.Network!=null)
+                await Client.Main.MuGame.Network.SuspendForApplicationUpdateAsync();
+            await DownloadAsync(url,hash,size,version);
+        }
+        catch(Exception ex){AppUpdateScreen.Fail(ex.Message);}
     }
 
     internal static int CompareVersions(string left, string right)

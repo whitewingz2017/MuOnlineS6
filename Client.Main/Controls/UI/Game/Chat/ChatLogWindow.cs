@@ -12,7 +12,7 @@ using Microsoft.Xna.Framework.Input;
 
 namespace Client.Main.Controls.UI
 {
-    public class ChatLogWindow : UIControl, IUiTexturePreloadable
+    public partial class ChatLogWindow : UIControl, IUiTexturePreloadable
     {
         public const int CHATLOG_WIDTH = 281;
         private const int MAX_TOTAL_MESSAGES = 200;
@@ -71,6 +71,14 @@ namespace Client.Main.Controls.UI
         private Rectangle _scrollBarArea;
         private Rectangle _scrollThumbArea;
         private Rectangle _resizeHandleArea;
+        private bool _mobileComposerVisible;
+
+        internal void SetMobileComposerVisible(bool visible)
+        {
+            if(_mobileComposerVisible==visible)return;
+            _mobileComposerVisible=visible;
+            UpdateLayout();
+        }
         private float _lineHeight; // Calculated line height from the font
         private int? _bottomAnchor;
 
@@ -176,6 +184,8 @@ namespace Client.Main.Controls.UI
             }
 
 
+            if (IsSystemLogType(type)) AddSystemLog(text, type);
+
             // Split text into lines if too long
             List<ChatMessage> splitLines = SplitText(senderId, text, type);
             if (splitLines.Count == 0) return; // Nothing to add
@@ -192,7 +202,8 @@ namespace Client.Main.Controls.UI
                 }
             }
 
-            // Always add to 'All'
+            // Gameplay notices have their own left-side log.
+            if (IsSystemLogType(type)) return;
             AddSplitLinesInternal(_messages[MessageType.All], splitLines, MAX_TOTAL_MESSAGES);
             // Update scroll if 'All' is active
             if (_currentViewType == MessageType.All)
@@ -341,6 +352,7 @@ namespace Client.Main.Controls.UI
         /// </summary>
         public void ClearAll()
         {
+            _systemLog.Clear();
             foreach (var list in _messages.Values)
             {
                 list.Clear();
@@ -354,11 +366,12 @@ namespace Client.Main.Controls.UI
         public override void Update(GameTime gameTime)
         {
             if (Status != GameControlStatus.Ready || !Visible || _font == null) return;
+            _systemLogTime = gameTime.TotalGameTime.TotalSeconds;
+            _systemLog.RemoveAll(entry => _systemLogTime - entry.Start > 15);
 
             if(UiThemeManager.IsMobileInterfaceActive)
             {
-                Interactive=true;
-                if(!_showFrame)ShowFrame(true);
+                Interactive=_showFrame;
                 if(Width!=Client.Main.Controls.UI.Game.Hud.MobileHudLayout.ChatWidth)UpdateLayout();
                 SetShowingLines(_showingLines);
             }
@@ -369,7 +382,7 @@ namespace Client.Main.Controls.UI
             if(UiThemeManager.IsMobileInterfaceActive && !_isDraggingResize && !_isDraggingScrollbar && !_mobileBodyDrag &&
                 Scene?.MouseHoverControl is { } hovered && hovered!=this && hovered!=Scene.World)return;
 
-            if(UiThemeManager.IsMobileInterfaceActive)
+            if(UiThemeManager.IsMobileInterfaceActive && _showFrame)
             {
                 if(mouse.LeftButton==ButtonState.Pressed && prevMouse.LeftButton==ButtonState.Released &&
                     DisplayRectangle.Contains(mouse.Position) && !_scrollBarArea.Contains(mouse.Position))
@@ -428,13 +441,15 @@ namespace Client.Main.Controls.UI
         }
 
         public override bool ContainsPointerPoint(Point point) => base.ContainsPointerPoint(point) ||
-            (UiThemeManager.IsMobileInterfaceActive && _resizeHandleArea.Contains(point));
+            (UiThemeManager.IsMobileInterfaceActive && _showFrame && _resizeHandleArea.Contains(point));
 
         public override void Draw(GameTime gameTime)
         {
             if (Status != GameControlStatus.Ready || !Visible || _font == null)
                 return;
 
+            DrawSystemLog();
+            if (!_isChatLogVisible) return;
             if (IsSeason6)
             {
                 DrawSeason6(gameTime);
@@ -449,12 +464,8 @@ namespace Client.Main.Controls.UI
             float startX = DisplayRectangle.X + WND_LEFT_RIGHT_EDGE;
             float clientWidth = CalculateClientWidth();
 
-            // 1. Draw background (only when frame is visible)
             if (_showFrame)
-            {
-                Color bg = new Color(0, 0, 0) * _backgroundAlpha;
-                spriteBatch.Draw(GraphicsManager.Instance.Pixel, DisplayRectangle, bg);
-            }
+                spriteBatch.Draw(GraphicsManager.Instance.Pixel, DisplayRectangle, Color.Black * (_backgroundAlpha * Alpha));
 
             // 2. Draw messages
             if (totalLinesInView > 0 && _lineHeight > 0)
@@ -475,31 +486,8 @@ namespace Client.Main.Controls.UI
                     var text = msg.DisplayText;
                     var textPos = new Vector2(startX, y);
                     var txtCol = GetMessageColor(msg.Type);
-                    var bgCol = GetMessageBackgroundColor(msg.Type, _showFrame);
-
-                    // Draw message background if any
-                    if (bgCol.A > 0)
-                    {
-                        // MeasureString can be slow, consider caching or estimating
-                        float textWidth = font.MeasureString(text).X * _fontScale;
-                        float bgWidth = Math.Min(clientWidth, textWidth);
-                        spriteBatch.Draw(GraphicsManager.Instance.Pixel,
-                                new Rectangle((int)textPos.X, (int)textPos.Y, (int)bgWidth, (int)_lineHeight),
-                                bgCol);
-                    }
-
-                    // Hover effect (only when frame is visible)
-                    if (_showFrame && i == _hoveredMessageGlobalIndex)
-                    {
-                        var hoverRect = new Rectangle(
-                            (int)startX, (int)y,
-                            (int)clientWidth, (int)_lineHeight);
-                        spriteBatch.Draw(GraphicsManager.Instance.Pixel, hoverRect, new Color(30, 30, 30, 180));
-                        txtCol = new Color(255, 128, 255);
-                    }
-
                     // Draw text
-                    spriteBatch.DrawString(font, text, textPos, txtCol, 0f, Vector2.Zero, _fontScale, SpriteEffects.None, 0f);
+                    Client.Main.Helpers.OutlinedTextRenderer.Draw(spriteBatch, font, text, textPos, txtCol, _fontScale);
 
                     y += _lineHeight;
                 }
@@ -509,11 +497,7 @@ namespace Client.Main.Controls.UI
             if (_showFrame)
             {
                 DrawScrollbar(spriteBatch);
-                if(UiThemeManager.IsMobileInterfaceActive)
-                {
-                    spriteBatch.Draw(GraphicsManager.Instance.Pixel,_resizeHandleArea,new Color(30,100,120,210));
-                    Client.Main.Controls.UI.Game.Hud.MobileHudLayout.Text(spriteBatch,"^",_resizeHandleArea,13,Color.White);
-                }
+                if(UiThemeManager.IsMobileInterfaceActive)DrawMobileResizeHandle(spriteBatch);
                 else DrawResizeHandle(spriteBatch);
             }
         }
@@ -700,6 +684,12 @@ namespace Client.Main.Controls.UI
                 _fontScale = 0.40f;
             }
 
+            if(GraphicsManager.Instance.Font != null)
+            {
+                float desiredSize=Math.Max(13f,13f/Math.Max(.1f,UiScaler.Scale));
+                _font=GraphicsManager.GetUiFont(desiredSize,out _fontScale);
+                _fontBold=_font;
+            }
             CalculateLineHeight();
             if (_lineHeight <= 0) return;
 
@@ -722,7 +712,9 @@ namespace Client.Main.Controls.UI
 
                 int resizeX = DisplayRectangle.X;
                 // The resize handle is always ABOVE the top edge of the window
-                int resizeY = DisplayRectangle.Y - RESIZING_BTN_HEIGHT;
+                int composerSpace=UiThemeManager.IsMobileInterfaceActive && _mobileComposerVisible
+                    ? ChatInputBoxControl.MobileComposerHeight+2 : 0;
+                int resizeY = DisplayRectangle.Y - RESIZING_BTN_HEIGHT - composerSpace;
                 _resizeHandleArea = new Rectangle(resizeX, resizeY, Width, RESIZING_BTN_HEIGHT);
 
                 UpdateScrollbar(); // Update thumb position based on new layout
@@ -743,19 +735,7 @@ namespace Client.Main.Controls.UI
                 return;
 
             Rectangle panel = DisplayRectangle;
-            if (_showFrame)
-            {
-                Color panelColor = ModernHudTheme.BgDark * 0.94f * Alpha;
-                spriteBatch.Draw(pixel, panel, ModernHudTheme.BorderOuter * Alpha);
-                Rectangle inner = new(panel.X + 1, panel.Y + 1,
-                    Math.Max(1, panel.Width - 2), Math.Max(1, panel.Height - 2));
-                UiDrawHelper.DrawVerticalGradient(spriteBatch, inner,
-                    panelColor, ModernHudTheme.BgDarkest * 0.92f * Alpha);
-                spriteBatch.Draw(pixel,
-                    new Rectangle(inner.X + 2, inner.Y, Math.Max(1, inner.Width - 4), 2),
-                    ModernHudTheme.Accent * 0.8f * Alpha);
-            }
-
+            if (_showFrame) spriteBatch.Draw(pixel, panel, Color.Black * (_backgroundAlpha * Alpha));
             var messages = _messages[_currentViewType];
             int first = Math.Max(0, messages.Count - _showingLines - _scrollOffset);
             int last = Math.Min(messages.Count - 1, first + _showingLines - 1);
@@ -767,16 +747,13 @@ namespace Client.Main.Controls.UI
                 Color textColor = GetSeason6MessageColor(message.Type);
                 string text = message.DisplayText;
                 Vector2 textPosition = new(panel.X + 10f, y);
-                spriteBatch.DrawString(_font, text, textPosition + Vector2.One,
-                    Color.Black * 0.75f * Alpha, 0f, Vector2.Zero, _fontScale,
-                    SpriteEffects.None, 0f);
-                spriteBatch.DrawString(_font, text, textPosition, textColor * Alpha,
-                    0f, Vector2.Zero, _fontScale, SpriteEffects.None, 0f);
+                Client.Main.Helpers.OutlinedTextRenderer.Draw(spriteBatch, _font, text, textPosition, textColor * Alpha, _fontScale);
                 y += lineHeight;
             }
 
             if (_showFrame)
             {
+                if(UiThemeManager.IsMobileInterfaceActive)DrawMobileResizeHandle(spriteBatch);
                 Rectangle scrollbar = new(panel.Right - 8, panel.Y + 7, 4, Math.Max(1, panel.Height - 14));
                 spriteBatch.Draw(pixel, scrollbar, ModernHudTheme.SlotBg * Alpha);
                 int maxOffset = Math.Max(0, messages.Count - _showingLines);
@@ -788,20 +765,14 @@ namespace Client.Main.Controls.UI
             }
         }
 
-        private static Color GetSeason6MessageColor(MessageType type)
+        private void DrawMobileResizeHandle(SpriteBatch spriteBatch)
         {
-            return type switch
-            {
-                MessageType.Error => ModernHudTheme.Danger,
-                MessageType.System => ModernHudTheme.AccentBright,
-                MessageType.GM => ModernHudTheme.TextGold,
-                MessageType.Party => ModernHudTheme.Success,
-                MessageType.Guild or MessageType.Union or MessageType.Gens => ModernHudTheme.SecondaryBright,
-                MessageType.Whisper => ModernHudTheme.Warning,
-                MessageType.Info => ModernHudTheme.TextGold,
-                _ => ModernHudTheme.TextWhite
-            };
+            if(!_showFrame || _resizeHandleArea.IsEmpty)return;
+            spriteBatch.Draw(GraphicsManager.Instance.Pixel,_resizeHandleArea,new Color(30,100,120,210)*Alpha);
+            Client.Main.Controls.UI.Game.Hud.MobileHudLayout.Text(spriteBatch,"^",_resizeHandleArea,13,Color.White*Alpha);
         }
+
+        private static Color GetSeason6MessageColor(MessageType type) => ChatTextColors.For(type);
 
         private void UpdateScrollbar()
         {
@@ -830,44 +801,7 @@ namespace Client.Main.Controls.UI
             _scrollThumbArea = new Rectangle(thumbX, thumbTopY, SCROLL_BTN_WIDTH, SCROLL_BTN_HEIGHT);
         }
 
-        private Color GetMessageColor(MessageType type)
-        {
-            // Text colors as in C++
-            switch (type)
-            {
-                case MessageType.Whisper: return Color.Black;
-                case MessageType.System: return new Color(100, 150, 255);
-                case MessageType.Error: return new Color(255, 30, 0);
-                case MessageType.Chat: return new Color(205, 220, 239);
-                case MessageType.Party: return Color.Black;
-                case MessageType.Guild: return Color.Black;
-                case MessageType.Union: return Color.Black;
-                case MessageType.Gens: return Color.Black;
-                case MessageType.GM: return new Color(250, 200, 50);
-                case MessageType.Info: return Color.Goldenrod; // For GoldenCenter etc.
-                default: return Color.White;
-            }
-        }
-
-        private Color GetMessageBackgroundColor(MessageType type, bool frameVisible)
-        {
-            // Message background colors as in C++
-            byte chatAlpha = (byte)(frameVisible ? 100 : 150);
-            switch (type)
-            {
-                case MessageType.Whisper: return new Color(255, 200, 50, 150);
-                case MessageType.System: return new Color(0, 0, 0, 150);
-                case MessageType.Error: return new Color(0, 0, 0, 150);
-                case MessageType.Chat: return new Color(0, 0, 0, (int)chatAlpha);
-                case MessageType.Party: return new Color(0, 200, 255, 150);
-                case MessageType.Guild: return new Color(0, 255, 150, 200);
-                case MessageType.Union: return new Color(200, 200, 0, 200);
-                case MessageType.Gens: return new Color(150, 200, 100, 200);
-                case MessageType.GM: return new Color(30, 30, 30, 200);
-                case MessageType.Info: return Color.Transparent; // Info usually has no background
-                default: return Color.Transparent;
-            }
-        }
+        private static Color GetMessageColor(MessageType type) => ChatTextColors.For(type);
 
         private List<ChatMessage> SplitText(string senderId, string text, MessageType type)
         {

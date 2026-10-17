@@ -1,4 +1,4 @@
-﻿using Client.Main.Controllers;
+using Client.Main.Controllers;
 using Client.Main.Models;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -134,6 +134,9 @@ namespace Client.Main.Controls.UI
             if (!Visible || string.IsNullOrEmpty(_renderedText) || _renderFont == null)
                 return;
 
+            // Choose against the current screen transform, including after a resize.
+            _renderFont = GraphicsManager.GetUiFont(FontSize,out _scaleFactor);
+            _baseTextSize = _renderFont.MeasureString(_renderedText)*_scaleFactor;
             var sb = GraphicsManager.Instance.Sprite;
             var font = _renderFont;
 
@@ -175,6 +178,8 @@ namespace Client.Main.Controls.UI
             }
 
             Matrix combinedTransform = UiScaler.SpriteTransform;
+            textPosition.X=(MathF.Round(textPosition.X*combinedTransform.M11+combinedTransform.M41)-combinedTransform.M41)/combinedTransform.M11;
+            textPosition.Y=(MathF.Round(textPosition.Y*combinedTransform.M22+combinedTransform.M42)-combinedTransform.M42)/combinedTransform.M22;
             if (IsItalic)
             {
                 const float skew = 0.2f;
@@ -189,7 +194,7 @@ namespace Client.Main.Controls.UI
 
             if (HasShadow)
             {
-                var shadowColor = new Color(ShadowColor, ShadowOpacity * Alpha);
+                var shadowColor = ShadowColor * (ShadowOpacity * Alpha);
                 var shadowPosition = textPosition + ShadowOffset;
 
                 if (IsBold)
@@ -203,7 +208,7 @@ namespace Client.Main.Controls.UI
                 }
             }
 
-            var textColor = new Color(TextColor, Alpha);
+            var textColor = TextColor * Alpha;
 
             if (IsBold)
             {

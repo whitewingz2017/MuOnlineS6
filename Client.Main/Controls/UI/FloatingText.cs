@@ -30,12 +30,9 @@ namespace Client.Main.Controls.UI
         private const float ORIGINAL_FPS = 25f;
         private const float FLASH_STEPS = 10f;
         private const float FLASH_ON_STEPS = 5f;
-        private const int BACKGROUND_PADDING_X = 2;
-        private const int BACKGROUND_PADDING_Y = 1;
 
         private static readonly Color GoldenNoticeColor = new(255, 200, 80);
         private static readonly Color GuildNoticeColor = new(100, 255, 200);
-        private static readonly Color NoticeBackgroundColor = new(0, 0, 0, 128);
 
         // ─────────────────────────── Constructors ───────────────────────────
         public FloatingText(string text, Color color, Vector2 spawnCenter, float creationTime)
@@ -109,34 +106,13 @@ namespace Client.Main.Controls.UI
             if (!Visible || _alpha <= 0.01f || string.IsNullOrEmpty(Text)) return;
 
             var spriteBatch = GraphicsManager.Instance.Sprite;
-            var pixel = GraphicsManager.Instance.Pixel;
 
             Vector2 scaledSize = _rawSize * FONT_SCALE;
             Vector2 drawPos = _center - scaledSize * 0.5f;
 
-            if (pixel != null)
-            {
-                var background = new Rectangle(
-                    (int)MathF.Floor(drawPos.X) - BACKGROUND_PADDING_X,
-                    (int)MathF.Floor(drawPos.Y) - BACKGROUND_PADDING_Y,
-                    (int)MathF.Ceiling(scaledSize.X) + BACKGROUND_PADDING_X * 2,
-                    (int)MathF.Ceiling(scaledSize.Y) + BACKGROUND_PADDING_Y * 2);
-
-                spriteBatch.Draw(pixel, background, NoticeBackgroundColor);
-            }
-
             Color textColor = (IsGoldenNotice ? GoldenNoticeColor : GuildNoticeColor) * _alpha;
 
-            spriteBatch.DrawString(
-                _font,
-                Text,
-                drawPos,
-                textColor,
-                0f,
-                Vector2.Zero,
-                FONT_SCALE,
-                SpriteEffects.None,
-                0f);
+            Client.Main.Helpers.OutlinedTextRenderer.Draw(spriteBatch, _font, Text, drawPos, textColor, FONT_SCALE);
         }
 
         private bool IsGoldenNotice =>

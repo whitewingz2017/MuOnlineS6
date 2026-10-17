@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Client.Main.Controllers;
 using Client.Main.Controls;
@@ -130,6 +131,18 @@ namespace Client.Main.Scenes
             MuGame.Network?.GetCharacterState()?.PersonalShop.NearbyTitles.Clear();
             WorldControl previousWorld = _scene.World;
             WorldControl nextWorld = null;
+            var loadTimer = Stopwatch.StartNew();
+            var stageTimer = Stopwatch.StartNew();
+            string stage = "prepare world";
+
+            void BeginStage(string nextStage)
+            {
+                _logger?.LogInformation(
+                    "Map load {World}: {Stage} took {ElapsedMs:F0} ms (total {TotalMs:F0} ms).",
+                    worldType.Name, stage, stageTimer.Elapsed.TotalMilliseconds, loadTimer.Elapsed.TotalMilliseconds);
+                stage = nextStage;
+                stageTimer.Restart();
+            }
 
             try
             {
@@ -170,7 +183,9 @@ namespace Client.Main.Scenes
                     MainThreadDispatcher.WorkPriority.Critical);
 
                 _logger?.LogDebug("GameScene.ChangeMap<{World}>: Initializing hidden world...", worldType.Name);
+                BeginStage("initialize terrain and map objects");
                 await nextWorld.Initialize();
+                BeginStage("attach hero and restore helper");
 
                 await MuGame.YieldToNextFrameAsync(
                     $"MapChange.{worldType.Name}.AttachHiddenWorld",
@@ -193,11 +208,14 @@ namespace Client.Main.Scenes
                 if (nextWorld.Status == GameControlStatus.Ready)
                 {
                     _loadingScreen.Progress = 0.45f;
+                    BeginStage("import nearby players");
                     await (_scopeImportController?.ImportPendingRemotePlayersAsync() ?? Task.CompletedTask);
+                    BeginStage("import NPCs and monsters");
                     await MuGame.YieldToNextFrameAsync(
                         $"MapChange.{worldType.Name}.ImportNpcs",
                         MainThreadDispatcher.WorkPriority.High);
                     await (_scopeImportController?.ImportPendingNpcsMonstersAsync() ?? Task.CompletedTask);
+                    BeginStage("import dropped items");
                     await MuGame.YieldToNextFrameAsync(
                         $"MapChange.{worldType.Name}.ImportDrops",
                         MainThreadDispatcher.WorkPriority.High);
@@ -214,9 +232,11 @@ namespace Client.Main.Scenes
                     $"MapChange.{worldType.Name}.PrepareResources",
                     MainThreadDispatcher.WorkPriority.Critical);
                 nextWorld.PrepareInitialVisibilitySnapshot();
+                BeginStage("prepare terrain and model graphics");
                 await nextWorld.PrepareInitialRenderResourcesAsync(
                     $"MapChange.{worldType.Name}.PrewarmModel");
                 _scene.Hero.PrepareRenderResourcesForFirstFrame();
+                BeginStage("activate world");
 
                 _loadingScreen.Progress = 0.7f;
                 await _scene.QueueWorldActivationAfterLoadingFrame(() =>
@@ -236,6 +256,7 @@ namespace Client.Main.Scenes
 
                 if (previousWorld != null)
                 {
+                    BeginStage("dispose previous world");
                     _scene.Controls.Remove(previousWorld);
                     previousWorld.Dispose();
                     previousWorld = null;
@@ -247,6 +268,7 @@ namespace Client.Main.Scenes
                     MainThreadDispatcher.WorkPriority.High);
 
                 _loadingScreen.Progress = 0.95f;
+                BeginStage("notify server and finalize");
                 await MuGame.Network.SendClientReadyAfterMapChangeAsync();
 
                 await MuGame.YieldToNextFrameAsync(
@@ -265,6 +287,9 @@ namespace Client.Main.Scenes
             }
             catch
             {
+                _logger?.LogWarning(
+                    "Map load {World} failed during {Stage} after {TotalMs:F0} ms.",
+                    worldType.Name, stage, loadTimer.Elapsed.TotalMilliseconds);
                 await MuGame.YieldToNextFrameAsync(
                     $"MapChange.{worldType.Name}.Rollback",
                     MainThreadDispatcher.WorkPriority.Critical);
@@ -314,6 +339,7 @@ namespace Client.Main.Scenes
                     _progressBar.Visible = false;
                 _hud.Visible = true;
                 _isChangingWorld = false;
+                BeginStage("complete");
             }
         }
 

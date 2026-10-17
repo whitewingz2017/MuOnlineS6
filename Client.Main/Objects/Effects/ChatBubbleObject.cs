@@ -25,12 +25,10 @@ namespace Client.Main.Objects.Effects
         private static readonly Vector3 OverlayLifecyclePosition = new(-Constants.TERRAIN_SCALE, -Constants.TERRAIN_SCALE, 0f);
 
         private string _text;
-        private readonly string _playerName;
         private readonly ushort _targetId;
         private float _lifetime;
         private float _originalLifetime;
 
-        private LabelControl _nameLabel;
         private LabelControl _textLabel;
         private SpriteFont _font;
         private float _elapsed;
@@ -45,7 +43,6 @@ namespace Client.Main.Objects.Effects
         public ChatBubbleObject(string text, ushort targetId, string playerName, float lifetime = DefaultLifetime)
         {
             _text = text ?? string.Empty;
-            _playerName = playerName ?? string.Empty;
             _targetId = targetId;
             _lifetime = lifetime;
             _originalLifetime = lifetime;
@@ -60,27 +57,12 @@ namespace Client.Main.Objects.Effects
         {
             _font = GraphicsManager.Instance.Font;
 
-            _nameLabel = new LabelControl
-            {
-                Text = _playerName,
-                FontSize = 10f,
-                TextColor = Color.Yellow,
-                HasShadow = true,
-                ShadowColor = Color.Black,
-                ShadowOpacity = 0.8f,
-                BackgroundColor = new Color(20, 20, 60, 180),
-                Padding = new Margin { Left = 4, Right = 4, Top = 2, Bottom = 2 },
-                UseManualPosition = true,
-                UseControlSizeBackground = true,
-                Visible = false
-            };
-
             _textLabel = new LabelControl
             {
                 Text = _text,
-                FontSize = 10f,
+                FontSize = 12f,
                 TextColor = Color.White,
-                HasShadow = true,
+                HasShadow = false,
                 ShadowColor = Color.Black,
                 ShadowOpacity = 0.8f,
                 BackgroundColor = new Color(0, 0, 0, 160),
@@ -94,9 +76,7 @@ namespace Client.Main.Objects.Effects
 
             if (World?.Scene != null)
             {
-                World.Scene.Controls.Add(_nameLabel);
                 World.Scene.Controls.Add(_textLabel);
-                await _nameLabel.Load();
                 await _textLabel.Load();
             }
 
@@ -157,56 +137,24 @@ namespace Client.Main.Objects.Effects
             // Convert screen coordinates to virtual coordinates for UI system
             var virtualPos = UiScaler.ToVirtual(new Point((int)screen.X, (int)screen.Y));
 
-            Vector2 nameSize = MeasureLabelSize(_nameLabel);
             Vector2 textSize = MeasureLabelSize(_textLabel);
-
-            int nameWidth = (int)nameSize.X + _nameLabel.Padding.Left + _nameLabel.Padding.Right;
-            int textWidth = (int)textSize.X + _textLabel.Padding.Left + _textLabel.Padding.Right;
-
-            int nameHeight = (int)nameSize.Y + _nameLabel.Padding.Top + _nameLabel.Padding.Bottom;
-            int textHeight = (int)textSize.Y + _textLabel.Padding.Top + _textLabel.Padding.Bottom;
-
-            int maxWidth = Math.Max(nameWidth, textWidth);
-
-            _nameLabel.ControlSize = new Point(
-                maxWidth - (_nameLabel.Padding.Left + _nameLabel.Padding.Right),
-                (int)nameSize.Y);
-            _textLabel.ControlSize = new Point(
-                maxWidth - (_textLabel.Padding.Left + _textLabel.Padding.Right),
-                (int)textSize.Y);
-
-            int bubbleHeight = nameHeight + textHeight;
-
-            int bubbleX = (int)(virtualPos.X - maxWidth / 2f);
-
-            _nameLabel.X = bubbleX;
-            _nameLabel.Y = (int)(virtualPos.Y - bubbleHeight - PixelGap);
-
-            _textLabel.X = bubbleX;
-            _textLabel.Y = _nameLabel.Y + nameHeight;
-
-            _nameLabel.Visible = true;
-            _textLabel.Visible = true;
+            _textLabel.ControlSize=textSize.ToPoint();
+            int width=(int)MathF.Ceiling(textSize.X)+_textLabel.Padding.Left+_textLabel.Padding.Right;
+            int height=(int)MathF.Ceiling(textSize.Y)+_textLabel.Padding.Top+_textLabel.Padding.Bottom;
+            _textLabel.X=(int)(virtualPos.X-width*.5f);
+            // Keep the message above the existing nameplate; do not repeat the name.
+            _textLabel.Y=(int)virtualPos.Y-height-PixelGap-8;
+            _textLabel.Visible=true;
         }
 
         private void HideLabels()
         {
-            if (_nameLabel != null)
-                _nameLabel.Visible = false;
-
             if (_textLabel != null)
                 _textLabel.Visible = false;
         }
 
         private void RemoveLabels()
         {
-            if (_nameLabel != null)
-            {
-                _nameLabel.Parent?.Controls.Remove(_nameLabel);
-                _nameLabel.Dispose();
-                _nameLabel = null;
-            }
-
             if (_textLabel != null)
             {
                 _textLabel.Parent?.Controls.Remove(_textLabel);
@@ -220,8 +168,8 @@ namespace Client.Main.Objects.Effects
             if (_font == null)
                 return Vector2.Zero;
 
-            float scale = label.FontSize / Constants.BASE_FONT_SIZE;
-            Vector2 size = _font.MeasureString(label.Text) * scale;
+            var font=GraphicsManager.GetUiFont(label.FontSize,out float scale);
+            Vector2 size = font.MeasureString(label.Text) * scale;
 
             if (label.HasShadow)
             {
@@ -243,7 +191,7 @@ namespace Client.Main.Objects.Effects
             if (_font == null || string.IsNullOrEmpty(rawText))
                 return rawText;
 
-            float scale = fontSize / Constants.BASE_FONT_SIZE;
+            var font=GraphicsManager.GetUiFont(fontSize,out float scale);
             var words = rawText.Split(' ');
             var sb = new StringBuilder();
             var current = new StringBuilder();
@@ -251,7 +199,7 @@ namespace Client.Main.Objects.Effects
             foreach (var w in words)
             {
                 string test = current.Length == 0 ? w : current + " " + w;
-                float width = _font.MeasureString(test).X * scale;
+                float width = font.MeasureString(test).X * scale;
 
                 if (width <= maxWidth)
                 {

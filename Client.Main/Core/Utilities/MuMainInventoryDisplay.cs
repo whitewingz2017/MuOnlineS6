@@ -15,6 +15,9 @@ internal readonly record struct MuMainInventoryDisplay(
 
     public static MuMainInventoryDisplay Get(ItemDefinition definition)
     {
+        if(definition?.Group==14 && definition.Id==11 &&
+            definition.TexturePath?.EndsWith("MagicBox08.bmd",StringComparison.OrdinalIgnoreCase)==true)
+            return new(new(270,-10,0),.001f,0,new(.5f,.6f),Vector3.Zero);
         if (definition != null && Displays.TryGetValue(MuMainItemMetadata.Key(definition).ToString(), out var row))
             return new(new(row[0], row[1], row[2]), row[3], row[4], new(row[5], row[6]), new(row[7], row[8], row[9]));
         return new(new(270, -10, 0), 0.0025f, 0, new(0.5f, 0.6f), Vector3.Zero);

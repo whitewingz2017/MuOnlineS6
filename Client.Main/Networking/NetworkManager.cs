@@ -289,6 +289,12 @@ namespace Client.Main.Networking
         /// Useful when host/port are changed at runtime (e.g., from UI).
         /// </summary>
         public async Task SuspendForRegistrationAsync()
+            => await SuspendConnectionAsync();
+
+        public async Task SuspendForApplicationUpdateAsync()
+            => await SuspendConnectionAsync();
+
+        private async Task SuspendConnectionAsync()
         {
             if(_connectionManager.IsConnected)
             {
@@ -735,7 +741,9 @@ namespace Client.Main.Networking
                 case LogOutType.BackToServerSelection:
                     try
                     {
-                        await _connectionManager.DisconnectAsync();
+                        // Detach the game-server disconnect handler before closing an
+                        // intentional logout, so it cannot display "Disconnected".
+                        await SuspendConnectionAsync();
                     }
                     catch (Exception ex)
                     {

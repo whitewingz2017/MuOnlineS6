@@ -14,12 +14,18 @@ namespace Client.Main.Objects.Monsters
     {
         private readonly WeaponObject _rightHandWeapon;
 
+        public override WorldObjectRenderPolicy RenderPolicy =>
+            base.RenderPolicy.With(preserveBlendMeshesInLowQuality: true);
+
         public IceQueen()
         {
             RenderShadow = false; // SourceMain5.2 RenderCharacter: MONSTER_ICE_QUEEN excluded from blob shadow pass
             BlendMesh = 2;
             BlendMeshLight = 1f;
             LightEnabled = false;
+            // Unlit bodies use Light directly as their CPU vertex colour.
+            // Its default is zero, which turns the mobile fallback into a silhouette.
+            Light = Vector3.One;
             Scale = 1.1f; // Set according to C++ Setting_Monster
             MoveSpeed = 250f; // SourceMain5.2: default monster MoveSpeed (10 * 25 FPS)
             Blood = false; // SourceMain5.2 CreateBlood: MODEL_ICE_QUEEN exempt from death blood decals

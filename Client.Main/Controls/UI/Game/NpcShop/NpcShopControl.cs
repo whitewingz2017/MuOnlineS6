@@ -130,6 +130,8 @@ namespace Client.Main.Controls.UI.Game
         private InventoryItem _hoveredItem;
         private InventoryItem _mobileSelectedItem;
         private RequestDialog _mobileBuyDialog;
+        private readonly NpcPurchaseBatch _purchaseBatch;
+        private bool _purchaseTimedOut;
         private Point _hoveredSlot = new(-1, -1);
         private GameTime _currentGameTime;
 
@@ -150,6 +152,9 @@ namespace Client.Main.Controls.UI.Game
 
         private NpcShopControl()
         {
+            _purchaseBatch=new NpcPurchaseBatch(slot=>
+                { _=MuGame.Network.GetCharacterService().SendBuyItemFromNpcRequestAsync(slot); },
+                ()=>Visible && MuGame.Network?.IsConnected==true);
             BuildLayoutMetrics();
 
             ControlSize = new Point(WINDOW_WIDTH, WindowHeight);
@@ -165,6 +170,7 @@ namespace Client.Main.Controls.UI.Game
         public override bool NonDisposable => true;
         public static NpcShopControl Instance => _instance ??= new NpcShopControl();
         public static bool IsOpen => _instance?.Visible == true;
+        internal static void NotifyPurchaseResult(bool success)=>_instance?._purchaseBatch.Acknowledge(success);
 
         /// <summary>
         /// Forces immediate position calculation based on Align property.
@@ -287,6 +293,12 @@ namespace Client.Main.Controls.UI.Game
         {
             base.Update(gameTime);
             EnsureCharacterState();
+            if(_purchaseBatch.CheckTimeout())
+            {
+                _purchaseTimedOut=true;
+                RequestDialog.ShowInfo("The merchant did not respond. Remaining purchases were stopped. Close and reopen the merchant before buying again.");
+            }
+            if(!Visible)_purchaseBatch.Cancel();
 
             // Handle deferred show - wait one frame after warmup to avoid black screen
             if (_pendingShow && !Visible)
@@ -921,13 +933,6 @@ namespace Client.Main.Controls.UI.Game
                 Texture2D texture = ResolveItemTexture(item, rect.Width, rect.Height, isHovered);
 
                 // Glow similar to inventory/vault
-                Color glowColor = ItemUiHelper.GetItemGlowColor(item, GlowPalette);
-                if (glowColor.A > 0 || isHovered)
-                {
-                    Color finalGlow = isHovered ? Color.Lerp(glowColor, Theme.Accent, 0.4f) : glowColor;
-                    finalGlow.A = (byte)Math.Min(255, finalGlow.A + (isHovered ? 40 : 0));
-                    ItemUiHelper.DrawItemGlow(spriteBatch, pixel, rect, finalGlow);
-                }
 
                 // Cell background
                 if (pixel != null)
@@ -950,17 +955,13 @@ namespace Client.Main.Controls.UI.Game
                     ItemGridRenderHelper.DrawItemPlaceholder(spriteBatch, pixel, font, rect, item, Theme.BgLight, Theme.TextGray * 0.8f);
                 }
 
-                if (font != null && item.Definition.BaseDurability == 0 && item.Definition.MagicDurability == 0 && item.Durability > 1)
+                if (font != null && (item.Definition.IsQuickSlotConsumable() ||
+                    item.Definition.BaseDurability == 0 && item.Definition.MagicDurability == 0) && item.Durability > 1)
                 {
                     ItemGridRenderHelper.DrawItemStackCount(spriteBatch, font, rect, item.Durability, Theme.TextGold, Alpha);
                 }
 
-                ItemGridRenderHelper.DrawItemLevelBadge(spriteBatch, GraphicsManager.Instance.Pixel, font, rect, item.Details.Level,
-               lvl => lvl >= 9 ? Theme.AccentBright :
-                      lvl >= 7 ? Theme.Accent :
-                      lvl >= 4 ? Theme.AccentDim :
-                      Theme.TextGray,
-               new Color(0, 0, 0, 180));
+
 
                 if (_jewelEntries.Count > 0)
                 {
@@ -981,8 +982,6 @@ namespace Client.Main.Controls.UI.Game
             {
                 lines.Add(($"Buy Price: {buyPrice} Zen", Theme.TextGold));
             }
-            if (UiThemeManager.IsMobilePlatform)
-                lines.Add(("Tap again to buy", Theme.TextGold));
             float scale = ItemUiHelper.FitTooltipScale(_font, lines, 0.44f, UiScaler.VirtualSize);
 
             const int paddingX = 4;
@@ -1014,31 +1013,7 @@ namespace Client.Main.Controls.UI.Game
             var pixel = GraphicsManager.Instance.Pixel;
             if (pixel == null) return;
 
-            spriteBatch.Draw(pixel, tooltipRect, Color.Black * 0.8f);
-            Color borderColor = Color.White;
-            const int borderThickness = 1;
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Y, tooltipRect.Width, borderThickness), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Bottom - borderThickness, tooltipRect.Width, borderThickness), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Y, borderThickness, tooltipRect.Height), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.Right - borderThickness, tooltipRect.Y, borderThickness, tooltipRect.Height), borderColor);
-
-            int textY = tooltipRect.Y + paddingY;
-
-            foreach (var (text, color) in lines)
-            {
-                Vector2 textSize = _font.MeasureString(text) * scale;
-                int textX = tooltipRect.X + (tooltipRect.Width - (int)textSize.X) / 2;
-
-                spriteBatch.DrawString(_font, text, new Vector2(textX + 1, textY + 1), Color.Black * 0.7f,
-                                       0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-                Color lineColor = color;
-                spriteBatch.DrawString(_font, text, new Vector2(textX, textY), lineColor,
-                                       0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-
-                textY += ItemUiHelper.TooltipLineHeight(_font, text, scale);
-
-
-            }
+            ItemUiHelper.DrawTooltipPanel(spriteBatch, pixel, _font, lines, tooltipRect, scale);
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -1069,35 +1044,26 @@ namespace Client.Main.Controls.UI.Game
                 Scene?.SetMouseInputConsumed();
             }
 
-            if (_hoveredItem == null) return;
+            if (_hoveredItem == null || _purchaseBatch.IsActive || _purchaseTimedOut) return;
 
             byte slot = (byte)(_hoveredItem.GridPosition.Y * SHOP_COLUMNS + _hoveredItem.GridPosition.X);
             var svc = MuGame.Network?.GetCharacterService();
             if (svc != null)
             {
                 var selectedItem = _hoveredItem;
-                if(!UiThemeManager.IsMobilePlatform && !UiThemeManager.IsMobileInterfaceActive)
-                {
-                    _mobileSelectedItem=null;
-                    _ = svc.SendBuyItemFromNpcRequestAsync(slot);
-                    return;
-                }
-                if (UiThemeManager.IsMobilePlatform && !ReferenceEquals(_mobileSelectedItem, selectedItem))
-                {
-                    _mobileSelectedItem = selectedItem;
-                    // First tap keeps the item's tooltip visible. The confirmation
-                    // dialog is reserved for a second tap on this same item.
-                    return;
-                }
                 _mobileSelectedItem = selectedItem;
-                var dialog = RequestDialog.Show($"Are you sure to buy this?\n{selectedItem.Definition.Name}\nBuy Price: {ItemPriceCalculator.CalculateBuyPrice(selectedItem):N0} Zen",
-                    onAccept: () =>
+                int stackSize=selectedItem.Definition.IsQuickSlotConsumable()?Math.Max(1,selectedItem.Durability):1;
+                long unitPrice=ItemPriceCalculator.CalculateBuyPrice(selectedItem);
+                var dialog = RequestDialog.ShowQuantity(quantity=>
+                    $"{selectedItem.Definition.Name}\n"+
+                    (stackSize>1?$"{quantity:N0} stacks x {stackSize:N0} = {quantity*stackSize:N0} items\n":$"Quantity: {quantity:N0}\n")+
+                    $"Total: {unitPrice*quantity:N0} Zen",
+                    onBuy: quantity =>
                     {
                         _mobileSelectedItem = null;
                         if (Visible && _items.Contains(selectedItem))
-                            _ = svc.SendBuyItemFromNpcRequestAsync(slot);
-                    }, onReject: () => _mobileSelectedItem = null,
-                    acceptText: "Buy", rejectText: "Cancel");
+                            _purchaseBatch.Start(slot,quantity);
+                    }, onCancel: () => _mobileSelectedItem = null);
                 if (UiThemeManager.IsMobilePlatform)
                     PositionMobileBuyDialog(dialog);
             }
@@ -1155,6 +1121,8 @@ namespace Client.Main.Controls.UI.Game
 
         private void HandleVisibilityLost()
         {
+            _purchaseBatch.Cancel();
+            _purchaseTimedOut=false;
             SendCloseNpcRequest();
             _characterState?.ClearShopItems();
             _items.Clear();
@@ -1181,8 +1149,7 @@ namespace Client.Main.Controls.UI.Game
             var controls = scene.Controls.GetSnapshotArray();
             for (int i = controls.Length - 1; i >= 0; i--)
             {
-                if (controls[i] is DialogControl dialog && dialog.Visible &&
-                    !ReferenceEquals(dialog, _mobileBuyDialog))
+                if (controls[i] is DialogControl dialog && dialog.Visible)
                 {
                     return true;
                 }
@@ -1238,10 +1205,9 @@ namespace Client.Main.Controls.UI.Game
                     ?? new ItemDefinition(0, ItemDatabase.GetItemName(data) ?? "Unknown Item", 1, 1, "Interface/newui_item_box.tga");
 
                 var item = new InventoryItem(def, new Point(gridX, gridY), data);
-                if (data.Length > 2)
-                {
-                    item.Durability = data[2];
-                }
+                // Season 6 extended data stores level at byte 2 and stack size at byte 3.
+                // Use the same protocol-aware parser as the inventory.
+                item.Durability = ItemDatabase.GetItemDurability(data);
 
                 _items.Add(item);
             }

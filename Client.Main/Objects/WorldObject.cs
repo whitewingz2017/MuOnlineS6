@@ -240,7 +240,7 @@ namespace Client.Main.Objects
                 {
                     Interlocked.Exchange(ref _loadInProgress, 0);
                     if (IsDisposeRequested)
-                        Dispose();
+                        DisposeAfterLoad();
                     else
                         Status = GameControlStatus.NonInitialized;
                     return;
@@ -262,7 +262,7 @@ namespace Client.Main.Objects
                 if (IsDisposeRequested || Status == GameControlStatus.Disposed)
                 {
                     Interlocked.Exchange(ref _loadInProgress, 0);
-                    Dispose();
+                    DisposeAfterLoad();
                     return;
                 }
 
@@ -283,7 +283,7 @@ namespace Client.Main.Objects
                 if (IsDisposeRequested || Status == GameControlStatus.Disposed)
                 {
                     Interlocked.Exchange(ref _loadInProgress, 0);
-                    Dispose();
+                    DisposeAfterLoad();
                     return;
                 }
 
@@ -291,6 +291,23 @@ namespace Client.Main.Objects
                 _logger?.LogDebug(e, "Exception in WorldObject");
                 Status = GameControlStatus.Error;
             }
+        }
+
+        private void DisposeAfterLoad()
+        {
+            // Load continuations may resume on a worker after the old world has gone.
+            // Derived Dispose implementations release GPU resources and must run on
+            // the graphics thread even when the first disposal happened during Load.
+            if (MuGame.IsMainThread)
+            {
+                Dispose();
+                return;
+            }
+
+            MuGame.ScheduleOnMainThread(
+                Dispose,
+                MainThreadDispatcher.WorkPriority.High,
+                $"WorldObject.DisposeAfterLoad.{GetType().Name}");
         }
 
         public virtual Task LoadContent()

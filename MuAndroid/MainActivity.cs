@@ -199,7 +199,7 @@ namespace MuAndroid
         protected override void OnCreate(Bundle bundle)
         {
             base.OnCreate(bundle);
-            MuGame.DisplayVersion = PackageManager.GetPackageInfo(PackageName, 0)?.VersionName ?? "1.3.9";
+            MuGame.DisplayVersion = PackageManager.GetPackageInfo(PackageName, 0)?.VersionName ?? "1.4.6";
             MuGame.PlatformLoggerProvider = new AndroidLogcatLoggerProvider();
             Constants.SETTINGS_PATH = EnsureAndroidConfig();
             TextFieldControl.ControlType = typeof(AndroidTextFieldControl);
@@ -272,9 +272,9 @@ namespace MuAndroid
                 // This ensures the DecorView is fully initialized
                 HideSystemUI();
 
-                _game.Run();
                 _appUpdater = new AndroidAppUpdater(this);
-                _ = _appUpdater.CheckAsync();
+                _ = _appUpdater.MonitorAsync();
+                _game.Run();
             }
             catch (Exception ex)
             {
@@ -294,6 +294,13 @@ namespace MuAndroid
         {
             base.OnResume();
             _appUpdater?.ResumeInstall();
+            if(_appUpdater!=null)_ = _appUpdater.CheckAsync();
+        }
+
+        protected override void OnDestroy()
+        {
+            _appUpdater?.Dispose();
+            base.OnDestroy();
         }
 
         private void HideSystemUI()

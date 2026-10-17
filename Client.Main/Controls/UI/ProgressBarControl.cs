@@ -140,6 +140,19 @@ namespace Client.Main.Controls.UI
             DrawBorder(sprite, pixel, barX, barY, barW, ProgressBarHeight, new Color(60, 65, 80), 1);
 
             if (font == null) return;
+            if(UiThemeManager.IsMobileInterfaceActive)
+            {
+                Game.Hud.MobileHudLayout.Text(sprite,$"{clampedProgress:P0}",new Rectangle(barX,barY,barW,ProgressBarHeight),18,Color.White);
+                Game.Hud.MobileHudLayout.Text(sprite,StatusText,new Rectangle(barX,barY-38,barW,32),18,Color.White,false);
+                if(ShowStats)
+                {
+                    int statsY=barY+ProgressBarHeight+8,third=barW/3;
+                    Game.Hud.MobileHudLayout.Text(sprite,SizeText,new Rectangle(barX,statsY,third,26),14,Color.LightGray,false);
+                    Game.Hud.MobileHudLayout.Text(sprite,SpeedText,new Rectangle(barX+third,statsY,third,26),14,Color.LightSkyBlue);
+                    Game.Hud.MobileHudLayout.Text(sprite,EtaText,new Rectangle(barX+third*2,statsY,third,26),14,Color.LightGray);
+                }
+                return;
+            }
 
             // Percentage
             string pctText = $"{clampedProgress * 100:F0}%";

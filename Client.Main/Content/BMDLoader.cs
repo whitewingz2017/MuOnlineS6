@@ -141,7 +141,11 @@ namespace Client.Main.Content
         private string _frameTopCacheMissModelName = string.Empty;
         private int _frameTopCacheMissModelCount;
         private const int GpuCachePruneIntervalFrames = 300;
+#if ANDROID
+        private const int GpuCacheRetentionFrames = 900;
+#else
         private const int GpuCacheRetentionFrames = 3600;
+#endif
         private int _lastGpuCachePruneFrame;
         // Parallel.For has a measurable setup/synchronization cost. Keep small and
         // medium meshes on the calling thread and parallelize only genuinely large jobs.

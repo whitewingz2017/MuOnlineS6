@@ -1134,13 +1134,6 @@ namespace Client.Main.Controls.UI.Game
                 Texture2D texture = ResolveItemTexture(item, rect.Width, rect.Height, isHovered, allowGenerate: true);
 
                 // Glow similar to inventory
-                Color glowColor = ItemUiHelper.GetItemGlowColor(item, GlowPalette);
-                if (glowColor.A > 0 || isHovered)
-                {
-                    Color finalGlow = isHovered ? Color.Lerp(glowColor, Theme.Accent, 0.4f) : glowColor;
-                    finalGlow.A = (byte)Math.Min(255, finalGlow.A + (isHovered ? 40 : 0));
-                    ItemUiHelper.DrawItemGlow(spriteBatch, pixel, rect, finalGlow);
-                }
 
                 // Cell background
                 if (pixel != null)
@@ -1170,12 +1163,7 @@ namespace Client.Main.Controls.UI.Game
 
                 if (font != null && item.Details.Level > 0)
                 {
-                    ItemGridRenderHelper.DrawItemLevelBadge(spriteBatch, pixel, font, rect, item.Details.Level,
-                                       lvl => lvl >= 9 ? Theme.Danger :
-                                              lvl >= 7 ? Theme.Accent :
-                                              lvl >= 4 ? Theme.AccentDim :
-                                              Theme.TextGray,
-                                       new Color(0, 0, 0, 180));
+
                 }
             }
 
@@ -1221,31 +1209,7 @@ namespace Client.Main.Controls.UI.Game
             var pixel = GraphicsManager.Instance.Pixel;
             if (pixel == null) return;
 
-            spriteBatch.Draw(pixel, tooltipRect, Color.Black * 0.8f);
-            Color borderColor = Color.White;
-            const int borderThickness = 1;
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Y, tooltipRect.Width, borderThickness), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Bottom - borderThickness, tooltipRect.Width, borderThickness), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.X, tooltipRect.Y, borderThickness, tooltipRect.Height), borderColor);
-            spriteBatch.Draw(pixel, new Rectangle(tooltipRect.Right - borderThickness, tooltipRect.Y, borderThickness, tooltipRect.Height), borderColor);
-
-            int textY = tooltipRect.Y + paddingY;
-
-            foreach (var (text, color) in lines)
-            {
-                Vector2 textSize = _font.MeasureString(text) * scale;
-                int textX = tooltipRect.X + (tooltipRect.Width - (int)textSize.X) / 2;
-
-                spriteBatch.DrawString(_font, text, new Vector2(textX + 1, textY + 1), Color.Black * 0.7f,
-                                       0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-                Color lineColor = color;
-                spriteBatch.DrawString(_font, text, new Vector2(textX, textY), lineColor,
-                                       0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-
-                textY += ItemUiHelper.TooltipLineHeight(_font, text, scale);
-
-
-            }
+            ItemUiHelper.DrawTooltipPanel(spriteBatch, pixel, _font, lines, tooltipRect, scale);
         }
 
         // ═══════════════════════════════════════════════════════════════

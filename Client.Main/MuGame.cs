@@ -46,7 +46,8 @@ namespace Client.Main
     public class MuGame : Game
 #endif
     {
-        public static string DisplayVersion { get; set; } = "1.3.9";
+        public static string DisplayVersion { get; set; } = "1.4.6";
+        public bool ConnectOnLoad { get; set; } = true;
 #if WINDOWS_DX
         public event EventHandler<TimeSpan> PreviewUpdate;
         public event EventHandler<EventArgs> EndUpdate;
@@ -864,7 +865,7 @@ namespace Client.Main
             if (Network != null) // Ensure network was initialized
             {
                 // Start connection without blocking LoadContent
-                _ = Network.ConnectToConnectServerAsync();
+                if(ConnectOnLoad)_ = Network.ConnectToConnectServerAsync();
             }
             else
             {
@@ -910,9 +911,10 @@ namespace Client.Main
                         requireTempTarget2: postProcessPasses >= 2,
                         requireRecoveryTarget: gameSceneRecovery);
 
-                    bool nativeUi = ActiveScene is GameScene readyScene && readyScene.CanDrawScreenUi;
+                    bool nativeUi = ActiveScene.CanDrawScreenUi;
                     bool containedRenderFailure;
                     ActiveScene.DeferScreenUi = nativeUi;
+                    Client.Main.Helpers.OverheadNameplateRenderer.DeferToNativeOverlay = true;
                     try
                     {
                         containedRenderFailure = DrawSceneToMainRenderTarget(gameTime);
@@ -920,6 +922,7 @@ namespace Client.Main
                     finally
                     {
                         ActiveScene.DeferScreenUi = false;
+                        Client.Main.Helpers.OverheadNameplateRenderer.DeferToNativeOverlay = false;
                     }
                     LogBlackFrameDiagnostics(containedRenderFailure);
                     if (gameSceneRecovery &&
@@ -940,6 +943,10 @@ namespace Client.Main
                         ApplyPostProcessingEffects();
                         RenderPassProfiler.AddPostProcess(postProcessStarted);
                     }
+
+                    Client.Main.Helpers.OverheadNameplateRenderer.FlushQueuedNameplates(GraphicsManager.Instance.Sprite);
+                    Client.Main.Graphics.WorldLabelRenderer.FlushNativeOverlay();
+                    Client.Main.Objects.Effects.DamageTextObject.FlushNativeOverlay(gameTime);
 
                     if (nativeUi)
                     {
@@ -1020,19 +1027,17 @@ namespace Client.Main
             if (graphics?.Sprite == null || graphics.Font == null)
                 return;
 
-            var font = GraphicsManager.GetUiFont(OperatingSystem.IsAndroid() ? 24f : 14f, out float scale) ?? graphics.Font;
+            bool mobileVersion=UiThemeManager.IsMobileInterfaceActive;
+            float scale = (mobileVersion?12f*UiScaler.ScaleY:9f) / Constants.BASE_FONT_SIZE;
+            var font = GraphicsManager.GetSmallTextFont(graphics.Font, ref scale);
             string label = "Version " + DisplayVersion;
             Vector2 size = font.MeasureString(label) * scale;
             var viewport = GraphicsDevice.Viewport;
-            float bottomInset=UiThemeManager.IsMobileInterfaceActive?12f+22f*UiScaler.ScaleY:6f;
-            var position = new Vector2(viewport.Width - size.X - 10f, viewport.Height - size.Y - bottomInset);
+            var position = new Vector2(MathF.Round(viewport.X + viewport.Width - size.X - 14f), MathF.Round(viewport.Y + viewport.Height - size.Y - (mobileVersion?2f:10f)));
             var sprite = graphics.Sprite;
             sprite.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp,
                 DepthStencilState.None, RasterizerState.CullNone, null, Matrix.Identity);
-            sprite.DrawString(font, label, position + Vector2.One, Color.Black, 0f,
-                Vector2.Zero, scale, SpriteEffects.None, 0f);
-            sprite.DrawString(font, label, position, Color.White, 0f,
-                Vector2.Zero, scale, SpriteEffects.None, 0f);
+            Client.Main.Helpers.OutlinedTextRenderer.Draw(sprite,font,label,position,Color.White,scale,pixelCoordinates:true);
             sprite.End();
         }
 

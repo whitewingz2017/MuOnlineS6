@@ -15,12 +15,24 @@ namespace Client.Main.Objects.Monsters
     [NpcInfo(70, "Queen Rainer")]
     public class QueenRainier : MonsterObject
     {
+        // The entire body is the source client's unlit blend pass, not an
+        // optional overlay. Keep it on low-quality/mobile render paths too.
+        public override WorldObjectRenderPolicy RenderPolicy =>
+            base.RenderPolicy.With(preserveBlendMeshesInLowQuality: true);
+
+        // Use the CPU-skinned, textured blend path on all devices. Terrain-lit
+        // skinning makes the luminous body black in unlit Icarus sky cells.
+        protected override bool AllowDynamicLightingShader => false;
+        protected override bool AllowGpuSkinning => false;
+
         public QueenRainier()
         {
             Scale = 1.3f;
             MoveSpeed = 250f;
             BlendMesh = -2;
             BlendMeshLight = 1.0f;
+            LightEnabled = false;
+            Light = Vector3.One;
             RenderShadow = false;
             Children.Add(new MonsterBoneLightningEffect
             {

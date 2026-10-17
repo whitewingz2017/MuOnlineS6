@@ -25,6 +25,8 @@ namespace Client.Main.Scenes
 {
     public class LoadScene : BaseScene
     {
+        public override bool CanDrawScreenUi => Status==GameControlStatus.Ready && _progressBar!=null;
+        internal override void DrawScreenUi(GameTime gameTime)=>_progressBar?.Draw(gameTime);
         #region Constants & Configuration
 
         // Download tuning - balanced for all platforms
@@ -866,7 +868,7 @@ namespace Client.Main.Scenes
             _progressBar.SpeedText = FormatSpeed(progress.SpeedBytesPerSecond);
             _progressBar.EtaText = FormatEta(progress.EstimatedTimeRemaining);
             _progressBar.Visible = true;
-            _progressBar.Draw(gameTime);
+            if(!DeferScreenUi)_progressBar.Draw(gameTime);
         }
 
         private new void DrawBackground()

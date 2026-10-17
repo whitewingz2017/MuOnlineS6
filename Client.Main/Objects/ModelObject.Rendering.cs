@@ -630,18 +630,19 @@ namespace Client.Main.Objects
                 if (RenderShadow && !LowQuality && !useShadowMap && !isNight)
                     doShadow = TryGetShadowMatrix(out shadowMatrix);
 
-                bool highlightAllowed = !LowQuality && IsMouseHover &&
-                                        !(this is MonsterObject monster && monster.IsDead);
+                ModelObject hoverActor = GetShadowActorRoot();
+                bool highlightAllowed = hoverActor.IsMouseHover &&
+                                        !(hoverActor is MonsterObject monster && monster.IsDead);
                 Matrix highlightMatrix = Matrix.Identity;
                 Vector3 highlightColor = Vector3.One;
                 if (highlightAllowed)
                 {
-                    const float scaleHighlight = 0.015f;
+                    const float scaleHighlight = 0.03f;
                     const float scaleFactor = 1f + scaleHighlight;
                     highlightMatrix = Matrix.CreateScale(scaleFactor) *
                                       Matrix.CreateTranslation(-scaleHighlight, -scaleHighlight, -scaleHighlight) *
                                       worldPos;
-                    highlightColor = this is MonsterObject ? _redHighlight : _greenHighlight;
+                    highlightColor = hoverActor is MonsterObject or PlayerObject ? _redHighlight : _greenHighlight;
                 }
 
                 bool rootBlobDrawn = DrawRootBlobShadowIfNeeded(
@@ -771,19 +772,20 @@ namespace Client.Main.Objects
                 shadowOpacity *= MathHelper.Clamp(1f - lum * 0.6f, 0.35f, 1f);
             }
 
-            bool highlightAllowed = !isAfterDraw && !LowQuality && IsMouseHover &&
-                                   !(this is MonsterObject m && m.IsDead);
+            ModelObject hoverActor = GetShadowActorRoot();
+            bool highlightAllowed = !isAfterDraw && hoverActor.IsMouseHover &&
+                                   !(hoverActor is MonsterObject m && m.IsDead);
             Matrix highlightMatrix = Matrix.Identity;
             Vector3 highlightColor = Vector3.One;
 
             if (highlightAllowed)
             {
-                const float scaleHighlight = 0.015f;
+                const float scaleHighlight = 0.03f;
                 const float scaleFactor = 1f + scaleHighlight;
                 highlightMatrix = Matrix.CreateScale(scaleFactor) *
                     Matrix.CreateTranslation(-scaleHighlight, -scaleHighlight, -scaleHighlight) *
                     worldPos;
-                highlightColor = this is MonsterObject ? _redHighlight : _greenHighlight;
+                highlightColor = hoverActor is MonsterObject or PlayerObject ? _redHighlight : _greenHighlight;
             }
 
             // Render each persistent group with minimal state changes.

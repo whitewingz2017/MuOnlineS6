@@ -101,26 +101,7 @@ namespace Client.Main.Controls.UI.Game.Common
                                    0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
         }
 
-        public static void DrawItemLevelBadge(SpriteBatch spriteBatch, Texture2D pixel, SpriteFont font, Rectangle rect, int level, Func<int, Color> levelColorSelector, Color shadowColor)
-        {
-            if (font == null || level <= 0 || pixel == null) return;
 
-            string text = $"+{level}";
-            SpriteFont renderFont = GraphicsManager.GetUiFont(9f, out float scale) ?? font;
-
-            Vector2 textSize = renderFont.MeasureString(text) * scale;
-            Vector2 pos = new(
-                rect.X + 2,
-                MathF.Round(rect.Bottom - textSize.Y - 2));
-
-            Color levelColor = levelColorSelector(level);
-
-            var bgRect = new Rectangle((int)pos.X - 2, (int)pos.Y - 1, (int)textSize.X + 4, (int)textSize.Y + 2);
-            spriteBatch.Draw(pixel, bgRect, shadowColor);
-
-            spriteBatch.DrawString(renderFont, text, pos + Vector2.One, Color.Black * 0.8f, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-            spriteBatch.DrawString(renderFont, text, pos, levelColor, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-        }
 
         public static void DrawItemPlaceholder(SpriteBatch spriteBatch, Texture2D pixel, SpriteFont font, Rectangle rect, InventoryItem item, Color bgColor, Color textColor)
         {

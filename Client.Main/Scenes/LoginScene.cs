@@ -24,6 +24,8 @@ namespace Client.Main.Scenes
 {
     public class LoginScene : BaseScene
     {
+        public override bool CanDrawScreenUi => Status == GameControlStatus.Ready;
+
         // Fields
         private LoginDialog _loginDialog;
         private ServerGroupSelector _nonEventGroup;
@@ -49,6 +51,7 @@ namespace Client.Main.Scenes
         // Constructors
         public LoginScene()
         {
+            Controls.Add(new Client.Main.Controls.UI.Game.Hud.MobileUpdateControl());
             _logger = MuGame.AppLoggerFactory?.CreateLogger<LoginScene>() ??
                       throw new InvalidOperationException("LoggerFactory not initialized in MuGame");
             _logger.LogInformation("LoginScene constructor called.");

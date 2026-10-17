@@ -731,19 +731,19 @@ namespace Client.Main.Controls.UI.Game.PauseMenu
 
                 try
                 {
-                    _ = net.ConnectToConnectServerAsync();
+                    await net.ForceReconnectToConnectServerAsync();
                 }
                 catch (Exception ex)
                 {
                     _logger?.LogWarning(ex, "PauseMenu: Failed to initiate connect server reconnect after logout.");
                 }
 
-                MuGame.Instance.ChangeScene(new LoginScene());
+                MuGame.ScheduleOnMainThread(() => MuGame.Instance.ChangeScene(new LoginScene()));
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Error while returning to server select");
-                MuGame.Instance.ChangeScene(new LoginScene());
+                MuGame.ScheduleOnMainThread(() => MuGame.Instance.ChangeScene(new LoginScene()));
             }
         }
 

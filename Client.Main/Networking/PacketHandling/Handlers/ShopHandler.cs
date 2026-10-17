@@ -308,6 +308,7 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                     _logger.LogWarning("NPC item buy failed. Packet len={Len}", packet.Length);
                     MuGame.ScheduleOnMainThread(() =>
                     {
+                        NpcShopControl.NotifyPurchaseResult(false);
                         string reason = ChatMessageHandler.TryGetRecentBlueSystemMessage(2000);
                         if (string.IsNullOrWhiteSpace(reason))
                         {
@@ -324,11 +325,13 @@ namespace Client.Main.Networking.PacketHandling.Handlers
                 var data = bought.ItemData.ToArray();
 
                 _characterState.AddOrUpdateInventoryItem(slot, data);
+                MuGame.ScheduleOnMainThread(()=>NpcShopControl.NotifyPurchaseResult(true));
                 _logger.LogInformation("Item bought to inventory slot {Slot}: {Name}", slot, ItemDatabase.GetItemName(data) ?? "Item");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error handling 0x32 buy result packet.");
+                MuGame.ScheduleOnMainThread(()=>NpcShopControl.NotifyPurchaseResult(false));
             }
             return Task.CompletedTask;
         }

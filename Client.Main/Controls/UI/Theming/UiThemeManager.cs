@@ -288,6 +288,21 @@ public static class UiThemeManager
         return lazy.Value;
     }
 
+    // Inventory artwork is shared by Mobile, Classic PC and Hybrid.
+    public static string? GetInventoryAssetPath(UiThemeAsset asset) =>
+        asset >= UiThemeAsset.InventoryPanel && asset <= UiThemeAsset.InventoryBoxRing &&
+        _classic.Assets.TryGetValue(asset, out string? path) ? path : null;
+
+    public static Task<Texture2D?> LoadInventoryTextureAsync(UiThemeAsset asset, string? fallbackPath = null)
+    {
+        string? path = GetInventoryAssetPath(asset);
+        if (path == null) return Task.FromResult<Texture2D?>(null);
+        string key = $"Inventory:{Normalize(path)}:{Normalize(fallbackPath)}";
+        return _textureTasks.GetOrAdd(key, _ => new Lazy<Task<Texture2D?>>(
+            () => LoadTextureCoreAsync(path, fallbackPath),
+            System.Threading.LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+    }
+
     public static Task<Texture2D?> LoadNativeTextureAsync(UiThemeAsset asset, string? fallbackPath = null)
     {
         if (!Current.Assets.TryGetValue(asset, out string? path))
@@ -455,7 +470,7 @@ public static class UiThemeManager
             [UiThemeAsset.VirtualJoystickKnob] = "Interface/DH/mi_stick_knob.OZP",
             [UiThemeAsset.ImprintPanel] = "Interface/Imprint/imprint_panel.OZP",
             [UiThemeAsset.PotionPanel] = "Interface/Imprint/imprint_panel.OZP",
-            [UiThemeAsset.InventoryPanel] = "Interface/Imprint/imprint_panel.OZP",
+            [UiThemeAsset.InventoryPanel] = "Interface/newui_msgbox_back1.ozj",
             [UiThemeAsset.InventoryTitle] = "Interface/Inventory/inv_title.OZP",
             [UiThemeAsset.InventoryRect] = "Interface/Inventory/inv_rect.OZP",
             [UiThemeAsset.InventoryCircle] = "Interface/Inventory/inv_circle.OZP",
@@ -463,17 +478,17 @@ public static class UiThemeManager
             [UiThemeAsset.InventoryBottomBar] = "Interface/Inventory/inv_bottom_bar.OZP",
             [UiThemeAsset.InventoryButtonDark] = "Interface/Inventory/inv_btn_dark.OZP",
             [UiThemeAsset.InventoryButtonGold] = "Interface/Inventory/inv_btn_gold.OZP",
-            [UiThemeAsset.InventoryBoxWeapon] = "Interface/Inventory/inv_box_weapon.OZP",
-            [UiThemeAsset.InventoryBoxShield] = "Interface/Inventory/inv_box_shield.OZP",
-            [UiThemeAsset.InventoryBoxArmor] = "Interface/Inventory/inv_box_armor.OZP",
-            [UiThemeAsset.InventoryBoxHelm] = "Interface/Inventory/inv_box_helm.OZP",
-            [UiThemeAsset.InventoryBoxPants] = "Interface/Inventory/inv_box_pants.OZP",
-            [UiThemeAsset.InventoryBoxGloves] = "Interface/Inventory/inv_box_gloves.OZP",
-            [UiThemeAsset.InventoryBoxBoots] = "Interface/Inventory/inv_box_boots.OZP",
-            [UiThemeAsset.InventoryBoxWings] = "Interface/Inventory/inv_box_wings.OZP",
-            [UiThemeAsset.InventoryBoxPet] = "Interface/Inventory/inv_box_pet.OZP",
-            [UiThemeAsset.InventoryBoxPend] = "Interface/Inventory/inv_box_pend.OZP",
-            [UiThemeAsset.InventoryBoxRing] = "Interface/Inventory/inv_box_ring.OZP",
+            [UiThemeAsset.InventoryBoxWeapon] = "Interface/newui_item_weapon(L).ozt",
+            [UiThemeAsset.InventoryBoxShield] = "Interface/newui_item_weapon(R).ozt",
+            [UiThemeAsset.InventoryBoxArmor] = "Interface/newui_item_upper.OZT",
+            [UiThemeAsset.InventoryBoxHelm] = "Interface/newui_item_cap.ozt",
+            [UiThemeAsset.InventoryBoxPants] = "Interface/newui_item_lower.ozt",
+            [UiThemeAsset.InventoryBoxGloves] = "Interface/newui_item_gloves.ozt",
+            [UiThemeAsset.InventoryBoxBoots] = "Interface/newui_item_boots.ozt",
+            [UiThemeAsset.InventoryBoxWings] = "Interface/newui_item_wing.ozt",
+            [UiThemeAsset.InventoryBoxPet] = "Interface/newui_item_fairy.ozt",
+            [UiThemeAsset.InventoryBoxPend] = "Interface/newui_item_necklace.ozt",
+            [UiThemeAsset.InventoryBoxRing] = "Interface/newui_item_ring.ozt",
             [UiThemeAsset.MasteryBackground] = "Interface/Mastery/mastery_bg.OZP",
             [UiThemeAsset.CharacterSlots] = "Interface/CharCreate/char_slots.OZT",
             [UiThemeAsset.CharacterSlotBorder] = "Interface/CharCreate/borda_retangular.OZT",

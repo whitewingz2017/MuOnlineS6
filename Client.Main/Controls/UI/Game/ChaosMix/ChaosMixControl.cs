@@ -657,14 +657,6 @@ namespace Client.Main.Controls.UI.Game
                 bool isHovered = item == _hoveredItem;
                 Texture2D texture = ResolveItemTexture(item, rect.Width, rect.Height, animated: isHovered, allowGenerate: true);
 
-                Color glowColor = ItemUiHelper.GetItemGlowColor(item, GlowPalette);
-                if (glowColor.A > 0 || isHovered)
-                {
-                    Color finalGlow = isHovered ? Color.Lerp(glowColor, Theme.Accent, 0.4f) : glowColor;
-                    finalGlow.A = (byte)Math.Min(255, finalGlow.A + (isHovered ? 40 : 0));
-                    ItemUiHelper.DrawItemGlow(sb, pixel, rect, finalGlow);
-                }
-
                 sb.Draw(pixel, new Rectangle(rect.X + 1, rect.Y + 1, rect.Width - 2, rect.Height - 2), isHovered ? Theme.SlotHover : Theme.SlotBg);
 
                 if (texture != null)

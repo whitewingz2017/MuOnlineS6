@@ -1,4 +1,4 @@
-﻿using Client.Main.Content;
+using Client.Main.Content;
 using Client.Main.Controllers;
 using Client.Main.Helpers;
 using Client.Main.Models;
@@ -464,6 +464,9 @@ namespace Client.Main.Controls.UI
             Vector2 textPos = new Vector2(DisplayRectangle.X + TextMargin - _scrollOffset,
                                           DisplayRectangle.Y + (DisplayRectangle.Height - font.MeasureString("A").Y * scale) / 2f);
 
+            var transform=UiScaler.SpriteTransform;
+            textPos.X=(MathF.Round(textPos.X*transform.M11+transform.M41)-transform.M41)/transform.M11;
+            textPos.Y=(MathF.Round(textPos.Y*transform.M22+transform.M42)-transform.M42)/transform.M22;
             spriteBatch.DrawString(font, text, textPos, TextColor, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
 
             if (IsFocused && _showCursor)

@@ -281,6 +281,13 @@ var model = new DroppedItemModel();
                         );
 
                         model.Scale = 0.6f;
+                        if(_definition.Group==14 && _definition.Id==11 &&
+                            _definition.TexturePath.EndsWith("MagicBox08.bmd",StringComparison.OrdinalIgnoreCase))
+                        {
+                            // MuMain MODEL_EVENT + 10 ground placement for Kundun boxes.
+                            model.Angle=new Vector3(0,0,-MathHelper.PiOver4);
+                            model.Scale=.2f;
+                        }
                         model.LightEnabled = true;
 
 if (!await TryLoadChildModel(model, world, loadGeneration))

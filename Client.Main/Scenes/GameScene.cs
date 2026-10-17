@@ -423,6 +423,7 @@ namespace Client.Main.Scenes
             Controls.Add(_classicTouchMenu);
             _mobilePlayerPanel = new MobilePlayerPanel(characterState, () => Hero, () => MobilePkMode, ToggleMobileAttackMode);
             Controls.Add(_mobilePlayerPanel);
+            Controls.Add(new MobileUpdateControl());
             Controls.Add(new MobilePickupControl(PickupNearestItem));
             Controls.Add(new MobileTargetControl(()=>_mobileTarget));
 
@@ -775,6 +776,7 @@ namespace Client.Main.Scenes
                 await MuGame.YieldToNextFrameAsync(
                     "GameScene.Load.PrewarmCombatRendering",
                     MainThreadDispatcher.WorkPriority.Low);
+                await CombatTextAtlas.LoadAsync();
                 DamageTextObject.PrewarmRendering();
 
                 await MuGame.YieldToNextFrameAsync(
@@ -1195,7 +1197,7 @@ namespace Client.Main.Scenes
             !_initialWorldActivationCooldown && World != null && World.Visible &&
             World.Status == GameControlStatus.Ready;
 
-        internal bool CanDrawScreenUi => _sceneShellInitialized && IsWorldReadyToDraw;
+        public override bool CanDrawScreenUi => _sceneShellInitialized && IsWorldReadyToDraw;
 
         internal void PrepareShadowMapForDraw()
         {
@@ -1512,11 +1514,12 @@ namespace Client.Main.Scenes
             if(UiThemeManager.IsMobileInterfaceActive)
             {
                 _chatInput.Alpha=1f;
-                _chatLog.ShowFrame(true);
+                _chatLog.SetMobileComposerVisible(_chatInput.Visible);
+                _chatLog.ShowFrame(_chatInput.Visible);
                 _chatLog.SetBackgroundAlpha(.55f);
                 _chatLog.AnchorAbove(MobileHudLayout.ChatX,MobileHudLayout.ChatBottom);
                 _chatInput.X=MobileHudLayout.ChatX;
-                _chatInput.Y=_chatLog.Y-60;
+                _chatInput.Y=_chatLog.Y-ChatInputBoxControl.MobileComposerHeight;
                 return;
             }
             _chatInput.Alpha = 1f;

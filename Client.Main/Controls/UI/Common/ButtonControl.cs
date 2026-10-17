@@ -185,7 +185,11 @@ namespace Client.Main.Controls.UI.Common
                 Vector2 textPosition = new Vector2(
                     MathF.Round(DisplayPosition.X + (DisplaySize.X - textSize.X) / 2),
                     MathF.Round(DisplayPosition.Y + (DisplaySize.Y - textSize.Y) / 2));
-                GraphicsManager.Instance.Sprite.DrawString(font, _truncatedText, textPosition + Vector2.One, Color.Black * 0.65f * Alpha, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+                var transform=UiScaler.SpriteTransform;
+                textPosition.X=(MathF.Round(textPosition.X*transform.M11+transform.M41)-transform.M41)/transform.M11;
+                textPosition.Y=(MathF.Round(textPosition.Y*transform.M22+transform.M42)-transform.M42)/transform.M22;
+                var shadowOffset=new Vector2(1f/transform.M11,1f/transform.M22);
+                GraphicsManager.Instance.Sprite.DrawString(font, _truncatedText, textPosition + shadowOffset, Color.Black * 0.65f * Alpha, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
                 GraphicsManager.Instance.Sprite.DrawString(font, _truncatedText, textPosition, currentTextColor * Alpha, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
             }
         }

@@ -39,7 +39,7 @@ public static class AppUpdateScreen
         batch.Draw(pixel,notes,new Color(0,0,0,155));
         MobileHudLayout.Text(batch,"UPDATES",new Rectangle(notes.X+8,notes.Y+4,notes.Width-16,24),16,Color.Gold,false);
         // Wrap release notes and clip to the available panel; no hardcoded release claims.
-        var font=GraphicsManager.Instance.Font;float scale=14f/font.LineSpacing;
+        var font=GraphicsManager.GetUiFont(16,out float scale);
         int y=notes.Y+32;
         foreach(string paragraph in Notes.Replace("\r","").Split('\n'))
         {
@@ -49,12 +49,12 @@ public static class AppUpdateScreen
                 string candidate=line.Length==0?word:line+" "+word;
                 if(font.MeasureString(candidate).X*scale>notes.Width-20 && line.Length>0)
                 {
-                    if(y+18>notes.Bottom)break;
-                    batch.DrawString(font,line,new Vector2(notes.X+9,y),Color.White,0,Vector2.Zero,scale,SpriteEffects.None,0);y+=18;line=word;
+                    if(y+24>notes.Bottom)break;
+                    OutlinedTextRenderer.Draw(batch,font,line,new Vector2(notes.X+9,y),Color.White,scale);y+=24;line=word;
                 }else line=candidate;
             }
-            if(y+18>notes.Bottom)break;
-            batch.DrawString(font,line,new Vector2(notes.X+9,y),Color.White,0,Vector2.Zero,scale,SpriteEffects.None,0);y+=18;
+            if(y+24>notes.Bottom)break;
+            OutlinedTextRenderer.Draw(batch,font,line,new Vector2(notes.X+9,y),Color.White,scale);y+=24;
         }
         MobileHudLayout.Text(batch,Status,new Rectangle(left,bottom-39,width,24),16,Color.White,false);
         var bar=new Rectangle(left,bottom-12,width,20);batch.Draw(pixel,bar,new Color(80,90,85));
@@ -65,12 +65,30 @@ public static class AppUpdateScreen
         MobileHudLayout.Text(batch,$"{BytesPerSecond/1048576d:0.00} MB/s",new Rectangle(window.Center.X-90,bottom+13,180,20),13,Color.LightSkyBlue);
         if(Error.Length>0)
         {
-            var panel=new Rectangle(window.Center.X-240,window.Center.Y-70,480,140);
+            int panelWidth=Math.Min(600,window.Width-32),panelHeight=Math.Min(300,window.Height-40);
+            var panel=new Rectangle(window.Center.X-panelWidth/2,window.Center.Y-panelHeight/2,panelWidth,panelHeight);
             batch.Draw(pixel,panel,new Color(0,0,0,240));
-            MobileHudLayout.Text(batch,Error,new Rectangle(panel.X+10,panel.Y+10,460,65),14,Color.White);
-            Button("Retry",new Rectangle(panel.X+15,panel.Bottom-49,215,38),Retry);
-            Button("Return to login",new Rectangle(panel.X+250,panel.Bottom-49,215,38),Continue);
+            DrawWrapped(batch,Error,new Rectangle(panel.X+12,panel.Y+12,panel.Width-24,panel.Height-76));
+            int buttonWidth=(panel.Width-45)/2;
+            Button("Retry",new Rectangle(panel.X+15,panel.Bottom-49,buttonWidth,38),Retry);
+            Button("Return to login",new Rectangle(panel.X+30+buttonWidth,panel.Bottom-49,buttonWidth,38),Continue);
         }
+    }
+    private static void DrawWrapped(SpriteBatch batch,string text,Rectangle bounds)
+    {
+        var font=GraphicsManager.GetUiFont(16,out float scale);
+        int y=bounds.Y;string line="";
+        foreach(string word in text.Replace("\r","").Replace('\n',' ').Split(' '))
+        {
+            string next=line.Length==0?word:line+" "+word;
+            if(line.Length>0 && font.MeasureString(next).X*scale>bounds.Width)
+            {
+                MobileHudLayout.Text(batch,line,new Rectangle(bounds.X,y,bounds.Width,25),16,Color.White,false);
+                y+=25;if(y+25>bounds.Bottom)return;line=word;
+            }
+            else line=next;
+        }
+        if(y+25<=bounds.Bottom)MobileHudLayout.Text(batch,line,new Rectangle(bounds.X,y,bounds.Width,25),16,Color.White,false);
     }
     private static void Button(string text,Rectangle rect,Action action)
     {

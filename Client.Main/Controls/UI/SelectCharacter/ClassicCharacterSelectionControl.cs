@@ -115,7 +115,7 @@ public sealed class ClassicCharacterSelectionControl : UIControl
     public void SetCharacters(IEnumerable<Entry> entries)
     {
         _entries.Clear();
-        _entries.AddRange(entries.Take(10));
+        _entries.AddRange(entries.Take(SlotCount));
         _selectedIndex = _entries.Count > 0 ? 0 : -1;
     }
 
@@ -133,6 +133,8 @@ public sealed class ClassicCharacterSelectionControl : UIControl
     protected override void OnThemeChanged(UiThemeChangedEventArgs e)
     {
         base.OnThemeChanged(e);
+        _pressedSlot = -1;
+        LayoutRects();
         _loadedTheme = (UiThemeId)(-1);
         if (UiThemeManager.CurrentId == UiThemeId.Classic && Status == GameControlStatus.Ready)
             _ = Load();
@@ -152,10 +154,12 @@ public sealed class ClassicCharacterSelectionControl : UIControl
             Math.Max(1, (int)MathF.Round(height * PrefabScale)));
     }
 
+    private static int SlotCount => UiThemeManager.IsMobilePlatform || UiThemeManager.IsMobileInterfaceActive ? 5 : 10;
+
     private void LayoutRects()
     {
         _slotRects.Clear();
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < SlotCount; i++)
             _slotRects.Add(Centered(SlotCenterX, SlotTopY - SlotPitch * i, SlotWidth, SlotHeight));
 
         _startRect = Centered(StartCenterX, StartCenterY, StartWidth, StartHeight);
