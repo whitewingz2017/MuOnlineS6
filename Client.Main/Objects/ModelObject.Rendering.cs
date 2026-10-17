@@ -1364,6 +1364,50 @@ namespace Client.Main.Objects
             }
         }
 
+        protected void DrawSourceEnvironmentMesh(int mesh, Texture2D texture, Vector3 tint, int mode, float seconds)
+        {
+            if (_meshes == null || (uint)mesh >= (uint)_meshes.Length || texture == null || IsHiddenMesh(mesh))
+                return;
+            // CPU-skinned buffers are also the normal OpenGL model draw path.
+            var vb = _meshes[mesh].CpuVertexBuffer;
+            var ib = _meshes[mesh].CpuIndexBuffer;
+            var effect = GraphicsManager.Instance.DynamicLightingEffect;
+            var technique = TryGetTechnique(effect, "SourceEnvironment");
+            if (vb == null || ib == null || technique == null) return;
+            var gd = GraphicsDevice;
+            var previousBlend = gd.BlendState;
+            var previousDepth = gd.DepthStencilState;
+            var previousRaster = gd.RasterizerState;
+            var previousTechnique = effect.CurrentTechnique;
+            try
+            {
+                effect.CurrentTechnique = technique;
+                effect.Parameters["World"]?.SetValue(Matrix.CreateFromQuaternion(Client.Main.Core.Utilities.MathUtils.AngleQuaternion(TotalAngle)));
+                effect.Parameters["WorldViewProjection"]?.SetValue(WorldPosition * Camera.Instance.ViewProjection);
+                effect.Parameters["DiffuseTexture"]?.SetValue(texture);
+                effect.Parameters["MaterialTint"]?.SetValue(tint);
+                effect.Parameters["Alpha"]?.SetValue(TotalAlpha);
+                effect.Parameters["SourceEnvironmentMode"]?.SetValue((float)mode);
+                effect.Parameters["SourceEnvironmentTime"]?.SetValue(seconds);
+                gd.BlendState = mode == 2 ? BlendState.Opaque : Blendings.OneOneAdditive;
+                gd.DepthStencilState = DepthStencilState.DepthRead;
+                gd.RasterizerState = IsMeshTwoSided(mesh, false) ? _cullNone : _cullClockwise;
+                gd.SetVertexBuffer(vb);
+                gd.Indices = ib;
+                effect.CurrentTechnique.Passes[0].Apply();
+                ApplyQualityModelSampler(gd);
+                gd.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, ib.IndexCount / 3);
+            }
+            finally
+            {
+                gd.BlendState = previousBlend;
+                gd.DepthStencilState = previousDepth;
+                gd.RasterizerState = previousRaster;
+                effect.CurrentTechnique = previousTechnique;
+                effect.Parameters["MaterialTint"]?.SetValue(Vector3.One);
+            }
+        }
+
         public virtual void DrawMesh(int mesh)
         {
             if (Model?.Meshes == null || mesh < 0 || mesh >= Model.Meshes.Length)
@@ -1888,6 +1932,20 @@ namespace Client.Main.Objects
                     bindings.TextureCoordinateOffset?.SetValue(meshTextureOffset);
                     bindings.AdditiveAlphaCutoff?.SetValue(GetAdditiveAlphaCutoff(blendState));
 
+                    // Walker sunlight is intentionally disabled, but that must not
+                    // remove BMD's neutral directional shading as well.
+                    bool modelLighting = UseSourceModelLighting && !isBlendMesh;
+                    bindings.ModelLightingEnabled?.SetValue(modelLighting ? 1f : 0f);
+                    if (modelLighting)
+                    {
+                        Vector3 bodyLight = Light;
+                        Vector3 position = WorldPosition.Translation;
+                        if (World?.Terrain != null)
+                            bodyLight += EvaluateCombinedTerrainLight(position.X, position.Y);
+                        bindings.ModelBodyLight?.SetValue(useGpuSkinning
+                            ? bodyLight * Color.ToVector3() : Vector3.One);
+                    }
+
                     // Set texture
                     bindings.DiffuseTexture?.SetValue(texture);
 
@@ -1908,6 +1966,7 @@ namespace Client.Main.Objects
                     // Never leave a per-mesh UV offset resident in the shared effect.
                     bindings.TextureCoordinateOffset?.SetValue(Vector2.Zero);
                     bindings.AdditiveAlphaCutoff?.SetValue(0f);
+                    bindings.ModelLightingEnabled?.SetValue(0f);
                     if (depthStateChanged)
                         gd.DepthStencilState = prevDepthState;
                 }

@@ -62,6 +62,8 @@ namespace Client.Main.Objects
                 IsWaterTexture = effect.Parameters["IsWaterTexture"];
                 TextureCoordinateOffset = effect.Parameters["TextureCoordinateOffset"];
                 MaterialTint = effect.Parameters["MaterialTint"];
+                ModelLightingEnabled = effect.Parameters["ModelLightingEnabled"];
+                ModelBodyLight = effect.Parameters["ModelBodyLight"];
             }
 
             public EffectParameter BoneMatrices { get; }
@@ -107,6 +109,8 @@ namespace Client.Main.Objects
             public EffectParameter IsWaterTexture { get; }
             public EffectParameter TextureCoordinateOffset { get; }
             public EffectParameter MaterialTint { get; }
+            public EffectParameter ModelLightingEnabled { get; }
+            public EffectParameter ModelBodyLight { get; }
 
             // Tracks the palette currently resident in this shared Effect instance.
             // Rendering another object invalidates the owner, while consecutive meshes of
@@ -277,6 +281,7 @@ namespace Client.Main.Objects
             bindings.ShadowStrength?.SetValue(sunEnabled ? SunCycleManager.GetEffectiveShadowStrength() : 0f);
 
             bindings.Alpha?.SetValue(TotalAlpha);
+            bindings.ModelLightingEnabled?.SetValue(0f);
             // DynamicLightingEffect is shared across every object and terrain pass.
             // Keep its default neutral; the selected mesh applies its offset immediately
             // before drawing and resets it afterward.

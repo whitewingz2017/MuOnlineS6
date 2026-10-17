@@ -3,7 +3,7 @@ namespace Client.Main.Controls.UI.Game.Hud
     /// <summary>Classic theme geometry for the NPC shop. Slot stride remains eight.</summary>
     public static class NpcShopLayout
     {
-        public static int PanelW = 316;
+        public static int PanelW = 320;
         public static int PanelH = 716;
         public static int DragBarH = 78;
         public static int CardX = 16;

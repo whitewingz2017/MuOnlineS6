@@ -157,6 +157,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             public int[] MeshOrder;
             public PreviewMeshGeometry[] Meshes;
             public bool UsesPlayerIdlePose;
+            public BoundingBox Bounds;
 
             public bool IsValid
             {
@@ -684,6 +685,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 MeshOrder = BuildMeshRenderOrder(bmd, definition),
                 Meshes = new PreviewMeshGeometry[bmd.Meshes.Length],
                 UsesPlayerIdlePose = usesPlayerIdlePose,
+                Bounds = ComputeBounds(bmd, bones),
             };
 
             for (int meshIndex = 0; meshIndex < bmd.Meshes.Length; meshIndex++)
@@ -1267,6 +1269,8 @@ namespace Client.Main.Controls.UI.Game.Inventory
                     display = display with { Anchor = new Vector2(0.5f, props.Level == 0 ? 0.65f : 0.8f) };
                 Matrix world = display.WorldMatrix(def, layoutWidth > 0 ? layoutWidth : width,
                     layoutHeight > 0 ? layoutHeight : height, rotationAngle);
+                if (layoutWidth <= 0)
+                    world = FitPreviewToSlot(world, pose.Bounds, width, height);
                 Matrix worldViewProjection = world * view * projection;
                 Vector3 eyePosition = new(0f, 0f, 1000f);
                 bool useItemMaterial = props.ShouldUseItemMaterial &&
@@ -1641,6 +1645,27 @@ namespace Client.Main.Controls.UI.Game.Inventory
             return local;
         }
 
+        private static Matrix FitPreviewToSlot(Matrix world, BoundingBox bounds, int width, int height)
+        {
+            Vector3 min = new(float.MaxValue), max = new(float.MinValue);
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 point = Vector3.Transform(new Vector3(
+                    (i & 1) == 0 ? bounds.Min.X : bounds.Max.X,
+                    (i & 2) == 0 ? bounds.Min.Y : bounds.Max.Y,
+                    (i & 4) == 0 ? bounds.Min.Z : bounds.Max.Z), world);
+                min = Vector3.Min(min, point);
+                max = Vector3.Max(max, point);
+            }
+            if (!float.IsFinite(min.X) || !float.IsFinite(max.Y)) return world;
+            if (min.X >= -width / 2f + 2 && max.X <= width / 2f - 2 &&
+                min.Y >= -height / 2f + 2 && max.Y <= height / 2f - 2) return world;
+            float scale = MathF.Min(1, MathF.Min(Math.Max(1, width - 4) / MathF.Max(.001f, max.X - min.X),
+                Math.Max(1, height - 4) / MathF.Max(.001f, max.Y - min.Y)));
+            Vector3 center = (min + max) * .5f;
+            return world * Matrix.CreateTranslation(-center.X, -center.Y, 0) * Matrix.CreateScale(scale);
+        }
+
         private static BoundingBox ComputeBounds(Client.Data.BMD.BMD bmd, Matrix[] bones)
         {
             Vector3 min = new(float.MaxValue);
@@ -1649,7 +1674,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             {
                 foreach (var vert in mesh.Vertices)
                 {
-                    Matrix m = vert.Node < bones.Length ? bones[vert.Node] : Matrix.Identity;
+                    Matrix m = vert.Node >= 0 && vert.Node < bones.Length ? bones[vert.Node] : Matrix.Identity;
                     Vector3 pos = Vector3.Transform(new Vector3(vert.Position.X, vert.Position.Y, vert.Position.Z), m);
                     min = Vector3.Min(min, pos);
                     max = Vector3.Max(max, pos);

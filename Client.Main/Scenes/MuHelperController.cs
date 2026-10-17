@@ -177,7 +177,7 @@ namespace Client.Main.Scenes
             if (!CanOperate(out string reason))
             {
                 _logger?.LogInformation("MU Helper server start rejected locally: {Reason}", reason);
-                StateChanged?.Invoke();
+                Stop();
                 return;
             }
 
@@ -270,6 +270,13 @@ namespace Client.Main.Scenes
 
         public void Update(GameTime gameTime)
         {
+            if ((_active || _startRequestPending) && !CanOperate(out string stopReason))
+            {
+                _logger?.LogInformation("MU Helper stopping: {Reason}", stopReason);
+                Stop();
+                return;
+            }
+
             // Emergency mana recovery is independent of Helper activation and level.
             // Reuse its in-flight guard and cooldown so both paths cannot send twice.
             var emergencyState=MuGame.Network?.GetCharacterState();
@@ -284,13 +291,6 @@ namespace Client.Main.Scenes
             }
             if (!_active)
                 return;
-
-            if (!CanOperate(out string reason))
-            {
-                _logger?.LogInformation("MU Helper stopping: {Reason}", reason);
-                Stop();
-                return;
-            }
 
             var now = DateTime.UtcNow;
             if (now < _nextActionAt)
@@ -372,8 +372,13 @@ namespace Client.Main.Scenes
                 return false;
             }
 
+            // Location can already refer to the movement destination. Also check the
+            // rendered tile so walking out of town cannot start Helper prematurely.
             var flags = world.Terrain.RequestTerrainFlag((int)hero.Location.X, (int)hero.Location.Y);
-            if (flags.HasFlag(TWFlags.SafeZone))
+            var positionFlags = world.Terrain.RequestTerrainFlag(
+                (int)(hero.Position.X / Constants.TERRAIN_SCALE),
+                (int)(hero.Position.Y / Constants.TERRAIN_SCALE));
+            if (flags.HasFlag(TWFlags.SafeZone) || positionFlags.HasFlag(TWFlags.SafeZone))
             {
                 reason = "entered a SafeZone";
                 return false;

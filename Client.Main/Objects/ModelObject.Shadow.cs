@@ -1219,6 +1219,7 @@ namespace Client.Main.Objects
                         if (shadowCasterTechnique != null)
                         {
                             bindings.World?.SetValue(WorldPosition);
+                            bindings.WorldViewProjection?.SetValue(WorldPosition * lightViewProjection);
                             bindings.LightViewProjection?.SetValue(lightViewProjection);
                             bindings.ShadowMapTexelSize?.SetValue(shadowTexel);
                             bindings.ShadowBias?.SetValue(Constants.SHADOW_BIAS);
@@ -1238,6 +1239,10 @@ namespace Client.Main.Objects
                             for (int i = 0; i < meshCount; i++)
                             {
                                 if (IsHiddenMesh(i))
+                                    continue;
+                                // Light beams, flames and luminous wings cannot cast
+                                // solid silhouettes. Alpha-cutout foliage still can.
+                                if (IsBlendMesh(i) || SourceItemMaterialRules.IsAdditive(GetMeshBlendState(i, false)))
                                     continue;
 
                                 bool useGpuSkinning = shadowCasterSkinnedTechnique != null &&

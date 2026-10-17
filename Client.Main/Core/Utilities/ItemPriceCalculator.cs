@@ -20,13 +20,48 @@ namespace Client.Main.Core.Utilities
         public static int CalculateBuyPrice(InventoryItem item)
         {
             if (item == null) return 0;
-            return (int)CalculatePrice(item, PriceMode.Buy);
+            return (int)Math.Min(int.MaxValue, CalculateServerPrice(item, false));
         }
 
         public static int CalculateSellPrice(InventoryItem item)
         {
             if (item == null) return 0;
-            return (int)CalculatePrice(item, PriceMode.Sell);
+            return (int)Math.Min(int.MaxValue, CalculateServerPrice(item, true));
+        }
+
+        private static long CalculateServerPrice(InventoryItem item, bool sell)
+        {
+            var d = item.Definition;
+            if (!ServerItemPrices.Profiles.TryGetValue((d.Group, d.Id), out var profile))
+                return CalculatePrice(item, sell ? PriceMode.Sell : PriceMode.Buy);
+            var details = item.Details;
+            int excellentCount = CountBits((byte)(details.ExcellentFlags & 0x3F));
+            int index = Math.Clamp(details.Level, 0, 15) + (excellentCount > 0 ? 16 : 0);
+            long gold = profile.Prices[index];
+            if (profile.Stack)
+            {
+                gold *= item.Durability;
+                if (d.Group == 4 && profile.Durability[index] > 0) gold /= profile.Durability[index];
+            }
+            if (profile.Options)
+            {
+                if (details.HasSkill && profile.SkillValue) gold += (long)(gold * 1.5);
+                if (details.HasLuck) gold += gold * 25 / 100;
+                int option = details.OptionLevel;
+                if (option == 1) gold += (long)(gold * .6);
+                else if (option > 1) gold += (long)(gold * .7 * Math.Pow(2, option - 1));
+                for (int i = 0; i < excellentCount; i++) gold += gold;
+            }
+            gold = Math.Min(gold, MAX_PRICE);
+            if (sell)
+            {
+                gold /= 3;
+                if (d.Group == 14 && d.Id <= 8) return gold / 10 * 10;
+                int maximum = profile.Durability[index];
+                if (!profile.Stack && maximum > 1 && maximum > item.Durability)
+                    gold -= (long)(gold * .6 * (1f - (float)item.Durability / maximum));
+            }
+            return RoundPrice(gold);
         }
 
         public static int CalculateRepairPrice(InventoryItem item, bool npcDiscount = true)

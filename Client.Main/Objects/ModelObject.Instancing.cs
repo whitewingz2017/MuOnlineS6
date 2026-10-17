@@ -736,6 +736,8 @@ namespace Client.Main.Objects
                     world,
                     crowdTechnique,
                     _cachedStaticMapSunOnlyInstancingTechnique);
+                bindings.ModelLightingEnabled?.SetValue(1f);
+                bindings.ModelBodyLight?.SetValue(Vector3.One);
 
                 gd.BlendState = BlendState.Opaque;
                 gd.SamplerStates[0] = GraphicsManager.GetQualityLinearSamplerState();
@@ -802,6 +804,7 @@ namespace Client.Main.Objects
                 gd.RasterizerState = prevRaster;
                 gd.SamplerStates[0] = prevSampler;
                 ClearWalkerCrowdLegacyInstancingQueues();
+                bindings.ModelLightingEnabled?.SetValue(0f);
             }
         }
 
@@ -1253,7 +1256,7 @@ namespace Client.Main.Objects
         private bool CanUseFullStaticMapShadowInstancing()
         {
             if (!IsStaticMapShadowInstancingSupported() ||
-                !RenderShadow ||
+                !CastsDirectionalShadow ||
                 Children.Count != 0 ||
                 !GetStaticMapTypeCompatibility().DefaultShadowCaster)
             {
@@ -1708,6 +1711,8 @@ namespace Client.Main.Objects
             ModelEffectBindings bindings = GetModelEffectBindings(effect);
             bindings.ViewProjection?.SetValue(camera.ViewProjection);
             bindings.Alpha?.SetValue(1f);
+            // Shared with individual character draws; never inherit their BMD light.
+            bindings.ModelLightingEnabled?.SetValue(0f);
             bindings.TextureCoordinateOffset?.SetValue(Vector2.Zero);
             bindings.TerrainDynamicIntensityScale?.SetValue(1.5f);
             bindings.DebugLightingAreas?.SetValue(Constants.DEBUG_LIGHTING_AREAS ? 1.0f : 0.0f);

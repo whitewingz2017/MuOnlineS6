@@ -577,6 +577,8 @@ namespace Client.Main.Objects
                     world,
                     crowdTechnique,
                     _cachedWalkerCrowdMultiPoseSunOnlyTechnique);
+                bindings.ModelLightingEnabled?.SetValue(1f);
+                bindings.ModelBodyLight?.SetValue(Vector3.One);
                 bindings.CrowdBonePaletteTexture.SetValue(_walkerCrowdActiveBonePaletteTexture);
                 bindings.CrowdBonePaletteRowCount.SetValue((float)poseCount);
 
@@ -650,6 +652,7 @@ namespace Client.Main.Objects
                 gd.RasterizerState = previousRasterizer;
                 gd.SamplerStates[0] = previousSampler;
                 ClearWalkerCrowdMultiPoseQueues();
+                bindings.ModelLightingEnabled?.SetValue(0f);
             }
         }
 

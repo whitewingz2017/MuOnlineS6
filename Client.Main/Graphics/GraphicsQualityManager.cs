@@ -99,7 +99,7 @@ namespace Client.Main.Graphics
                 return preset;
 
             if (OperatingSystem.IsAndroid())
-                return GraphicsQualityPreset.Low;
+                return GraphicsQualityPreset.Medium;
 
             LastAdapterInfo = GetAdapterInfo(adapter);
 
@@ -118,6 +118,7 @@ namespace Client.Main.Graphics
             switch (preset)
             {
                 case GraphicsQualityPreset.Low:
+                    Constants.ApplyShadowQualityPreset(Constants.ShadowQuality.Off);
                     Constants.RENDER_SCALE = 0.75f;
                     Constants.MSAA_ENABLED = false;
                     Constants.ENABLE_DYNAMIC_LIGHTS = false;
@@ -126,21 +127,24 @@ namespace Client.Main.Graphics
                     Constants.OPTIMIZE_FOR_INTEGRATED_GPU = true;
                     Constants.HIGH_QUALITY_TEXTURES = false;
                     Constants.DRAW_GRASS = false;
-                    // Android Auto resolves to Low after MainActivity applies its defaults.
-                    // Keep equipment upgrade/excellent/ancient materials on that profile.
+                    // Keep equipment upgrade/excellent/ancient materials even when
+                    // the user explicitly selects the low-cost profile.
                     Constants.ENABLE_ITEM_MATERIAL_SHADER = true;
                     Constants.ENABLE_MONSTER_MATERIAL_SHADER = false;
                     Constants.ENABLE_WEAPON_TRAIL = false;
                     break;
 
                 case GraphicsQualityPreset.Medium:
-                    Constants.RENDER_SCALE = 0.9f;
+                    Constants.ApplyShadowQualityPreset(Constants.ShadowQuality.Medium);
+                    // Mobile Auto uses this profile. Preserve native pixel detail and
+                    // mip/anisotropic filtering without the grass/terrain cost of High.
+                    Constants.RENDER_SCALE = OperatingSystem.IsAndroid() ? 1.0f : 0.9f;
                     Constants.MSAA_ENABLED = false;
                     Constants.ENABLE_DYNAMIC_LIGHTS = true;
                     Constants.ENABLE_DYNAMIC_LIGHTING_SHADER = true;
                     Constants.ENABLE_TERRAIN_GPU_LIGHTING = false;
                     Constants.OPTIMIZE_FOR_INTEGRATED_GPU = true;
-                    Constants.HIGH_QUALITY_TEXTURES = false;
+                    Constants.HIGH_QUALITY_TEXTURES = OperatingSystem.IsAndroid();
                     Constants.DRAW_GRASS = false;
                     Constants.ENABLE_ITEM_MATERIAL_SHADER = true;
                     Constants.ENABLE_MONSTER_MATERIAL_SHADER = true;
@@ -149,6 +153,7 @@ namespace Client.Main.Graphics
 
                 case GraphicsQualityPreset.High:
                 default:
+                    Constants.ApplyShadowQualityPreset(Constants.ShadowQuality.High);
                     Constants.RENDER_SCALE = 1.0f;
                     Constants.MSAA_ENABLED = false;
                     Constants.ENABLE_DYNAMIC_LIGHTS = true;

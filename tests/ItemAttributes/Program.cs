@@ -6,6 +6,51 @@ using Client.Main.Core.Utilities;
 using Microsoft.Xna.Framework;
 using MUnique.OpenMU.Network.Packets;
 
+if (args.Contains("--preview-containment-only"))
+{
+    var fit = typeof(BmdPreviewRenderer).GetMethod("FitPreviewToSlot", BindingFlags.NonPublic | BindingFlags.Static)!;
+    var bounds = new BoundingBox(new Vector3(-20, -10, -30), new Vector3(20, 10, 30));
+    int checkedPoses = 0;
+    foreach (int width in new[] { 32, 64, 128 })
+    foreach (int height in new[] { 32, 96, 128 })
+    foreach (int angle in new[] { 0, 37, 90, 145 })
+    foreach (float scale in new[] { .1f, 1f, 4f })
+    {
+        var world = Matrix.CreateScale(scale) * Matrix.CreateRotationY(MathHelper.ToRadians(angle)) *
+            Matrix.CreateRotationZ(MathHelper.ToRadians(angle)) * Matrix.CreateTranslation(60, -40, 0);
+        var contained = (Matrix)fit.Invoke(null, new object[] { world, bounds, width, height })!;
+        foreach (var corner in bounds.GetCorners())
+        {
+            var point = Vector3.Transform(corner, contained);
+            if (!float.IsFinite(point.X) || !float.IsFinite(point.Y) ||
+                MathF.Abs(point.X) > width / 2f - 1.99f || MathF.Abs(point.Y) > height / 2f - 1.99f)
+                throw new Exception($"Preview escapes its {width}x{height} slot at angle {angle}, scale {scale}.");
+        }
+        checkedPoses++;
+    }
+    Console.WriteLine($"Verified {checkedPoses} item poses stay inside their slots, including rotated and offset models.");
+    return;
+}
+
+if (args.Contains("--shop-prices-only"))
+{
+    InventoryItem PriceItem(int group, int id, byte level, byte durability, byte flags = 0) =>
+        new(new ItemDefinition(id, "Price regression", 2, 2) { Group = group }, Point.Zero,
+            [(byte)(group << 4), (byte)id, level, durability, flags], durability, level);
+    void Expect(string name, int actual, int expected)
+    {
+        if (actual != expected) throw new Exception($"{name}: expected {expected}, got {actual}.");
+    }
+    var pants = PriceItem(9, 2, 3, 26, 2);
+    Expect("Pad Pants +3 luck 26/31", ItemPriceCalculator.CalculateSellPrice(pants), 810);
+    Expect("255 large healing +1", ItemPriceCalculator.CalculateBuyPrice(PriceItem(14, 3, 1, 255)), 765000);
+    Expect("Single large healing +1", ItemPriceCalculator.CalculateBuyPrice(PriceItem(14, 3, 1, 1)), 3000);
+    Expect("255 small healing", ItemPriceCalculator.CalculateBuyPrice(PriceItem(14, 1, 0, 255)), 20400);
+    Expect("Sell large healing stack", ItemPriceCalculator.CalculateSellPrice(PriceItem(14, 3, 1, 255)), 255000);
+    Console.WriteLine("Verified 5 shop price cases against the server transaction formula.");
+    return;
+}
+
 if (args.Contains("--potion-slots-only"))
 {
     var hudType = typeof(Client.Main.Controls.UI.Game.Hud.ModernBottomHud);

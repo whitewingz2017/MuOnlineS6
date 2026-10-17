@@ -10,6 +10,7 @@ using Client.Main.Scenes;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Microsoft.Xna.Framework.Input.Touch;
 
 // Virtual joystick used by the Classic mobile HUD.
 namespace Client.Main.Controls.UI.Game.Hud
@@ -36,6 +37,8 @@ namespace Client.Main.Controls.UI.Game.Hud
         private UiThemeId _loadedTheme = (UiThemeId)(-1);
 
         private bool _active;
+        internal static int? CapturedTouchId { get; private set; }
+        private Vector2 _pointer;
         private HeroObject _movementHero;
         private Vector2 _center;        // Fixed base center in virtual UI coordinates.
         private Vector2 _knob;          // Current knob position in virtual UI coordinates.
@@ -74,6 +77,7 @@ namespace Client.Main.Controls.UI.Game.Hud
 
             if (!Visible || Scene == null || MuGame.Network is { IsConnected: false })
             {
+                CapturedTouchId = null;
                 _active = false;
                 _knob = Vector2.Zero;
                 DetachMovementHero();
@@ -89,6 +93,24 @@ namespace Client.Main.Controls.UI.Game.Hud
 
             _center = Center;
 
+            var touches = MuGame.Instance.Touch;
+            if (touches.Count > 0 || CapturedTouchId.HasValue)
+            {
+                down = false;
+                prevDown = _active;
+                foreach (var touch in touches)
+                {
+                    var point = UiScaler.ToVirtual(new Point((int)touch.Position.X, (int)touch.Position.Y)).ToVector2();
+                    if (!CapturedTouchId.HasValue && touch.State == TouchLocationState.Pressed &&
+                        Vector2.Distance(point, _center) <= BaseRadius * 1.35f)
+                        CapturedTouchId = touch.Id;
+                    if (touch.Id != CapturedTouchId) continue;
+                    p = point;
+                    down = touch.State is TouchLocationState.Pressed or TouchLocationState.Moved;
+                }
+            }
+            _pointer = p;
+
             // Começa a arrastar se o toque iniciou dentro da base.
             if (!_active && down && !prevDown)
             {
@@ -102,13 +124,14 @@ namespace Client.Main.Controls.UI.Game.Hud
             if (_active)
             {
                 // Enquanto ativo, consome o ponteiro para o clique-no-mundo não disparar.
-                Scene.SetMouseInputConsumed();
+                if (!CapturedTouchId.HasValue) Scene.SetMouseInputConsumed();
 
                 if (!down)
                 {
                     // Soltou: recentra o manípulo. NÃO chama StopMovement (deixa o char
                     // terminar o passo atual suavemente — evita o "pulo" ao soltar).
                     _active = false;
+                    CapturedTouchId = null;
                     _knob = Vector2.Zero;
                     DetachMovementHero();
                     return;
@@ -144,10 +167,7 @@ namespace Client.Main.Controls.UI.Game.Hud
             if (!_active || !Visible || !ReferenceEquals(walker, _movementHero) ||
                 Scene is not GameScene scene || !ReferenceEquals(scene.Hero, walker))
                 return;
-            var mouse = MuGame.Instance.UiMouseState;
-            if (mouse.LeftButton != ButtonState.Pressed)
-                return;
-            Vector2 offset = mouse.Position.ToVector2() - Center;
+            Vector2 offset = _pointer - Center;
             if (offset.LengthSquared() < BaseRadius * BaseRadius * DeadZone * DeadZone)
                 return;
             DriveMovement(_movementHero, Vector2.Normalize(offset));
@@ -162,6 +182,7 @@ namespace Client.Main.Controls.UI.Game.Hud
 
         public override void Dispose()
         {
+            CapturedTouchId = null;
             DetachMovementHero();
             base.Dispose();
         }

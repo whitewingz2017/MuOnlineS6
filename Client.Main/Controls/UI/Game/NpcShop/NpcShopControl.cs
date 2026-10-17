@@ -20,7 +20,7 @@ using Microsoft.Xna.Framework.Input;
 
 namespace Client.Main.Controls.UI.Game
 {
-    public class NpcShopControl : UIControl
+    public partial class NpcShopControl : UIControl
     {
         // ═══════════════════════════════════════════════════════════════
         // SHOP MODE
@@ -35,6 +35,7 @@ namespace Client.Main.Controls.UI.Game
         // WINDOW DIMENSIONS
         // ═══════════════════════════════════════════════════════════════
         private const int SHOP_COLUMNS = 8;
+        private const int SHOP_CONTENT_ROWS = 15;
         private static bool IsSeason6 => UiThemeManager.CurrentId == UiThemeId.Season6;
         private static int SHOP_ROWS => IsSeason6 ? NpcShopLayout.GridRows : 15;
         private const int SHOP_SQUARE_WIDTH = 32;
@@ -53,7 +54,7 @@ namespace Client.Main.Controls.UI.Game
             ? NpcShopLayout.PanelW
             : GRID_WIDTH + GRID_PADDING * 2 + WINDOW_MARGIN * 2;
         private int WindowHeight => IsSeason6
-            ? NpcShopLayout.PanelH
+            ? Math.Min(NpcShopLayout.PanelH, Math.Max(320, UiScaler.WindowBounds.Height - 4))
             : HEADER_HEIGHT + SECTION_HEADER_HEIGHT + GRID_PADDING * 2 + GRID_HEIGHT + (_isRepairShop ? BUTTON_AREA_HEIGHT : 0) + FOOTER_HEIGHT + WINDOW_MARGIN;
 
         // ═══════════════════════════════════════════════════════════════
@@ -202,26 +203,25 @@ namespace Client.Main.Controls.UI.Game
         {
             if (IsSeason6)
             {
-                _headerRect = new Rectangle(0, 0, NpcShopLayout.PanelW, NpcShopLayout.DragBarH);
-                _gridFrameRect = new Rectangle(NpcShopLayout.CardX, NpcShopLayout.CardY,
-                    NpcShopLayout.CardW, NpcShopLayout.CardH);
-                _gridRect = new Rectangle(NpcShopLayout.GridX, NpcShopLayout.GridY,
-                    NpcShopLayout.GridCols * SHOP_SQUARE_WIDTH,
-                    NpcShopLayout.GridRows * SHOP_SQUARE_HEIGHT);
+                _headerRect = new Rectangle(0, 0, WINDOW_WIDTH, 48);
+                int gridHeight = Math.Min(SHOP_CONTENT_ROWS * SHOP_SQUARE_HEIGHT,
+                    (WindowHeight - (_isRepairShop ? 202 : 160)) / SHOP_SQUARE_HEIGHT * SHOP_SQUARE_HEIGHT);
+                _gridRect = new Rectangle((WINDOW_WIDTH - GRID_WIDTH) / 2, 64, GRID_WIDTH, gridHeight);
+                _gridFrameRect = new Rectangle(_gridRect.X - 3, _gridRect.Y - 3, _gridRect.Width + 6, _gridRect.Height + 6);
                 _buttonAreaRect = _isRepairShop
                     ? new Rectangle(NpcShopLayout.RepairButtonX, NpcShopLayout.RepairButtonY,
                         NpcShopLayout.RepairButtonW * 2 + NpcShopLayout.RepairButtonGap,
                         NpcShopLayout.RepairButtonH)
                     : Rectangle.Empty;
-                _footerRect = new Rectangle(0, NpcShopLayout.FooterY,
+                _footerRect = new Rectangle(0, WindowHeight - 76,
                     NpcShopLayout.PanelW, NpcShopLayout.FooterH);
-                _closeButtonRect = new Rectangle(NpcShopLayout.CloseX, NpcShopLayout.CloseY,
+                _closeButtonRect = new Rectangle(WINDOW_WIDTH - 38, 10,
                     NpcShopLayout.CloseW, NpcShopLayout.CloseH);
-                _repairButtonRect = new Rectangle(NpcShopLayout.RepairButtonX, NpcShopLayout.RepairButtonY,
+                _repairButtonRect = new Rectangle(NpcShopLayout.RepairButtonX, WindowHeight - 126,
                     NpcShopLayout.RepairButtonW, NpcShopLayout.RepairButtonH);
                 _repairAllButtonRect = new Rectangle(
                     NpcShopLayout.RepairButtonX + NpcShopLayout.RepairButtonW + NpcShopLayout.RepairButtonGap,
-                    NpcShopLayout.RepairButtonY, NpcShopLayout.RepairButtonW, NpcShopLayout.RepairButtonH);
+                    WindowHeight - 126, NpcShopLayout.RepairButtonW, NpcShopLayout.RepairButtonH);
                 return;
             }
 
@@ -281,6 +281,7 @@ namespace Client.Main.Controls.UI.Game
             }
 
             _s6Panel = await Load("Interface/Imprint/imprint_panel.OZP", "Interface/GFx/NpcShop_I3.ozd");
+            await LoadNativeMerchantFrameAsync();
             _s6Rect = await Load("Interface/Inventory/inv_rect.OZP");
             _s6DarkCard = await Load("Interface/Imprint/imprint_dark_card.OZP");
             _s6GridRow = await Load("Interface/Inventory/inv_grid_row.OZP");
@@ -293,6 +294,15 @@ namespace Client.Main.Controls.UI.Game
         {
             base.Update(gameTime);
             EnsureCharacterState();
+            if (ViewSize.Y != WindowHeight)
+            {
+                BuildLayoutMetrics();
+                ControlSize = ViewSize = new Point(WINDOW_WIDTH, WindowHeight);
+                _shopScrollOffset = Math.Clamp(_shopScrollOffset, 0, MaximumShopScroll);
+                ForceAlignNow();
+                Y = Math.Clamp(Y, UiScaler.WindowBounds.Top, Math.Max(UiScaler.WindowBounds.Top, UiScaler.WindowBounds.Bottom - ViewSize.Y));
+                InvalidateStaticSurface();
+            }
             if(_purchaseBatch.CheckTimeout())
             {
                 _purchaseTimedOut=true;
@@ -416,8 +426,9 @@ namespace Client.Main.Controls.UI.Game
 
                 if (!_isDragging)
                 {
+                    bool tap = UpdateMerchantScroll(mousePos, leftPressed, leftJustPressed, leftJustReleased);
                     UpdateHoverState();
-                    HandleMouseInput();
+                    if (tap) HandleMouseInput(touchTap: true);
                 }
             }
             else if (_wasVisible)
@@ -478,10 +489,7 @@ namespace Client.Main.Controls.UI.Game
                     spriteBatch.Draw(_staticSurface, DisplayRectangle, Color.White * Alpha);
                 }
 
-                var pixel = GraphicsManager.Instance.Pixel;
-                ItemGridRenderHelper.DrawGridOverlays(spriteBatch, pixel, DisplayRectangle, _gridRect, _hoveredItem, _hoveredSlot,
-                                                      SHOP_SQUARE_WIDTH, SHOP_SQUARE_HEIGHT, Theme.SlotHover, Theme.Accent, Alpha);
-                DrawShopItems(spriteBatch);
+                DrawClippedMerchantItems(spriteBatch);
                 DrawCloseButton(spriteBatch);
                 if (_isRepairShop)
                 {
@@ -658,6 +666,7 @@ namespace Client.Main.Controls.UI.Game
 
         private void DrawSeason6StaticElements(SpriteBatch spriteBatch)
         {
+            if (DrawNativeMerchantSurface(spriteBatch)) return;
             var pixel = GraphicsManager.Instance.Pixel;
             var fullRect = new Rectangle(0, 0, WINDOW_WIDTH, WindowHeight);
             if (IsUsableTexture(_s6Panel))
@@ -890,6 +899,11 @@ namespace Client.Main.Controls.UI.Game
             if (pixel == null) return;
 
             var rect = Translate(_closeButtonRect);
+            if (IsSeason6 && _merchantImages.ContainsKey("newui_item_back04"))
+            {
+                if (_closeHovered) spriteBatch.Draw(pixel, rect, Color.White * .15f);
+                return;
+            }
             if (IsSeason6 && IsUsableTexture(_s6Close))
             {
                 spriteBatch.Draw(_s6Close, rect, Color.White);
@@ -920,15 +934,16 @@ namespace Client.Main.Controls.UI.Game
 
             foreach (var item in _items)
             {
-                if (item.GridPosition.Y < 0 || item.GridPosition.Y >= SHOP_ROWS)
+                if (item.GridPosition.Y < 0 || item.GridPosition.Y >= SHOP_CONTENT_ROWS)
                     continue;
 
                 var rect = new Rectangle(
                     gridOrigin.X + item.GridPosition.X * SHOP_SQUARE_WIDTH,
-                    gridOrigin.Y + item.GridPosition.Y * SHOP_SQUARE_HEIGHT,
+                    gridOrigin.Y + item.GridPosition.Y * SHOP_SQUARE_HEIGHT - (int)_shopScrollOffset,
                     item.Definition.Width * SHOP_SQUARE_WIDTH,
                     item.Definition.Height * SHOP_SQUARE_HEIGHT);
 
+                if (!rect.Intersects(Translate(_gridRect))) continue;
                 bool isHovered = item == _hoveredItem;
                 Texture2D texture = ResolveItemTexture(item, rect.Width, rect.Height, isHovered);
 
@@ -963,11 +978,9 @@ namespace Client.Main.Controls.UI.Game
 
 
 
-                if (_jewelEntries.Count > 0)
-                {
-                    JewelShineOverlay.DrawBatch(spriteBatch, _jewelEntries, _currentGameTime, Alpha, UiScaler.SpriteTransform);
-                }
             }
+            if (_jewelEntries.Count > 0)
+                JewelShineOverlay.DrawBatch(spriteBatch, _jewelEntries, _currentGameTime, Alpha, UiScaler.SpriteTransform, MerchantClipRasterizer);
         }
 
         private void DrawTooltip(SpriteBatch spriteBatch)
@@ -1020,7 +1033,7 @@ namespace Client.Main.Controls.UI.Game
         // INPUT HANDLING
         // ═══════════════════════════════════════════════════════════════
 
-        private void HandleMouseInput()
+        private void HandleMouseInput(bool touchTap = false)
         {
             var mouse = MuGame.Instance.UiMouseState;
             var prev = MuGame.Instance.PrevUiMouseState;
@@ -1028,7 +1041,7 @@ namespace Client.Main.Controls.UI.Game
             bool leftJustPressed = mouse.LeftButton == ButtonState.Pressed &&
                                    prev.LeftButton == ButtonState.Released;
 
-            if (!leftJustPressed) return;
+            if (!leftJustPressed && !touchTap) return;
 
             // Prevent input when a modal dialog is open (e.g., sell confirmation)
             if (IsModalDialogOpen()) return;
@@ -1085,7 +1098,10 @@ namespace Client.Main.Controls.UI.Game
         private void UpdateHoverState()
         {
             var mousePos = MuGame.Instance.UiMouseState.Position;
-            _hoveredSlot = ItemGridRenderHelper.GetSlotAtScreenPosition(DisplayRectangle, _gridRect, SHOP_COLUMNS, SHOP_ROWS, SHOP_SQUARE_WIDTH, SHOP_SQUARE_HEIGHT, mousePos);
+            _hoveredSlot = Translate(_gridRect).Contains(mousePos)
+                ? new Point((mousePos.X - DisplayRectangle.X - _gridRect.X) / SHOP_SQUARE_WIDTH,
+                    (mousePos.Y - DisplayRectangle.Y - _gridRect.Y + (int)_shopScrollOffset) / SHOP_SQUARE_HEIGHT)
+                : new Point(-1, -1);
             _hoveredItem = GetItemAt(mousePos);
         }
 
@@ -1098,18 +1114,18 @@ namespace Client.Main.Controls.UI.Game
 
         private InventoryItem GetItemAt(Point mousePos)
         {
-            if (!DisplayRectangle.Contains(mousePos)) return null;
+            if (!Translate(_gridRect).Contains(mousePos)) return null;
 
             Point gridOrigin = new(DisplayRectangle.X + _gridRect.X, DisplayRectangle.Y + _gridRect.Y);
 
             foreach (var item in _items)
             {
-                if (item.GridPosition.Y < 0 || item.GridPosition.Y >= SHOP_ROWS)
+                if (item.GridPosition.Y < 0 || item.GridPosition.Y >= SHOP_CONTENT_ROWS)
                     continue;
 
                 var rect = new Rectangle(
                     gridOrigin.X + item.GridPosition.X * SHOP_SQUARE_WIDTH,
-                    gridOrigin.Y + item.GridPosition.Y * SHOP_SQUARE_HEIGHT,
+                    gridOrigin.Y + item.GridPosition.Y * SHOP_SQUARE_HEIGHT - (int)_shopScrollOffset,
                     item.Definition.Width * SHOP_SQUARE_WIDTH,
                     item.Definition.Height * SHOP_SQUARE_HEIGHT);
 
@@ -1134,6 +1150,8 @@ namespace Client.Main.Controls.UI.Game
             _mobileBuyDialog = null;
             _hoveredSlot = new Point(-1, -1);
             _isDragging = false;
+            _shopScrollOffset = 0;
+            _shopScrollTouch = false;
             _pendingShow = false;
 
             // Reset repair mode when closing shop
@@ -1189,7 +1207,7 @@ namespace Client.Main.Controls.UI.Game
             _bmdPreviewCache.Clear();
 
             var shopItems = _characterState.GetShopItems();
-            int maxSlots = SHOP_COLUMNS * SHOP_ROWS;
+            int maxSlots = SHOP_COLUMNS * SHOP_CONTENT_ROWS;
             foreach (var kv in shopItems)
             {
                 byte slot = kv.Key;
@@ -1267,7 +1285,9 @@ namespace Client.Main.Controls.UI.Game
                 return tex;
             }
 
-            return BmdPreviewRenderer.GetOverflowPreview(item, width, height, _currentGameTime, animated);
+            return animated
+                ? BmdPreviewRenderer.GetSmoothRotatingPreview(item, width, height, _currentGameTime)
+                : BmdPreviewRenderer.GetMaterialAnimatedPreview(item, width, height, _currentGameTime);
         }
 
         // ═══════════════════════════════════════════════════════════════

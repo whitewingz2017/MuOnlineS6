@@ -53,3 +53,38 @@ source.AppendLine("    };\n}");
 await File.WriteAllTextAsync(Path.Combine(root, "Client.Main/Core/Utilities/ServerItemRequirements.Generated.cs"), source.ToString());
 await File.WriteAllTextAsync(Path.Combine(root, "tests/ItemAttributes/server-requirement-cases.json"), JsonSerializer.Serialize(cases));
 Console.WriteLine($"Exported {config.Items.Count} server item profiles and {cases.Count} requirement cases.");
+
+// Export the server's unrounded base prices and durability curves, so client
+// tooltips use the same item definitions as the transactions on the server.
+var buying = typeof(ItemPriceCalculator).GetMethod("CalculateBuyingPrice", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+var prices = new StringBuilder("// Generated from OpenMU Season Six by tools/ExportServerItemRequirements.\nnamespace Client.Main.Core.Utilities;\ninternal sealed record ServerPriceProfile(bool Stack, bool Options, bool SkillValue, long[] Prices, int[] Durability);\ninternal static class ServerItemPrices\n{\ninternal static readonly System.Collections.Generic.Dictionary<(int,int),ServerPriceProfile> Profiles = new()\n{\n");
+foreach (var d in config.Items.OrderBy(x => x.Group).ThenBy(x => x.Number))
+{
+    var item = context.CreateNew<Item>(); item.Definition = d;
+    bool ammunition = d.Group == 4 && d.Number is 7 or 15;
+    item.Durability = ammunition ? d.Durability : 1;
+    var bases = new List<long>(); var durability = new List<int>();
+    for (int excellent = 0; excellent < 2; excellent++)
+    {
+        item.ItemOptions.Clear();
+        if (excellent != 0)
+        {
+            var link = context.CreateNew<ItemOptionLink>();
+            link.ItemOption = context.CreateNew<IncreasableItemOption>();
+            link.ItemOption.OptionType = ItemOptionTypes.Excellent;
+            item.ItemOptions.Add(link);
+        }
+        for (byte level = 0; level < 16; level++)
+        {
+            item.Level = level;
+            bases.Add((long)buying.Invoke(null, [item])!);
+            durability.Add(item.GetMaximumDurabilityOfOnePiece());
+        }
+    }
+    bool stack = d.Group == 14 && d.Number <= 8 || d.Group == 4 && d.Number is 7 or 15;
+    bool options = d.Value == 0 && (d.Group <= 11 && !(d.Group == 4 && d.Number is 7 or 15) || item.IsWing());
+    bool skillValue = d.Skill?.Number is not (null or 66 or 223 or 224 or 225);
+    prices.AppendLine($"[({d.Group},{d.Number})] = new({stack.ToString().ToLowerInvariant()},{options.ToString().ToLowerInvariant()},{skillValue.ToString().ToLowerInvariant()},[{string.Join(',', bases)}],[{string.Join(',', durability)}]),");
+}
+prices.AppendLine("};\n}");
+await File.WriteAllTextAsync(Path.Combine(root, "Client.Main/Core/Utilities/ServerItemPrices.Generated.cs"), prices.ToString());

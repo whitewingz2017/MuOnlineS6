@@ -128,6 +128,12 @@ UNIFORM_DEFAULT(float2, TextureCoordinateOffset, float2(0.0, 0.0));
 // Per-material tint multiplier for chrome/bright overlay passes
 // (SourceMain5.2 glColor(BodyLight) on RENDER_CHROME/BRIGHT body passes).
 UNIFORM_DEFAULT(float3, MaterialTint, float3(1.0, 1.0, 1.0));
+// MuMain BMD::Transform/EnsureCpuNormals: neutral model-space directional
+// light, independent of the outdoor sun. Characters still need this indoors.
+UNIFORM_DEFAULT(float, ModelLightingEnabled, 0.0);
+UNIFORM_DEFAULT(float3, ModelBodyLight, float3(1.0, 1.0, 1.0));
+UNIFORM_DEFAULT(float, SourceEnvironmentMode, 0.0);
+UNIFORM_DEFAULT(float, SourceEnvironmentTime, 0.0);
 UNIFORM_DEFAULT(float3, HighlightColor, float3(1.0, 0.0, 0.0));
 UNIFORM_DEFAULT(float3, SunDirection, float3(1.0, 0.0, -0.6));
 UNIFORM_DEFAULT(float3, SunColor, float3(1.0, 0.95, 0.85));
@@ -478,6 +484,15 @@ PixelInput BuildPixelInput(float4 clipPos, float3 worldPos, float3 worldNormal,
     o.WorldPos = worldPos;
     o.Normal = worldNormal;
     o.Color = color;
+    // MuMain's HighLight flag is enabled: its unnormalized (1.3, 0, 2)
+    // vector is intentional, with brightness clamped only at the lower bound.
+    // Do not evaluate disabled model lighting for terrain/cut-out vertices:
+    // lerp(..., NaN, 0) still produces NaN on OpenGL when a normal is absent.
+    [branch] if (ModelLightingEnabled > 0.5)
+    {
+        float modelLuminosity = max(0.2, dot(worldNormal, float3(1.3, 0.0, 2.0)) * 0.8 + 0.4);
+        o.Color.rgb *= modelLuminosity;
+    }
     o.DynamicLight = dynamicLight;
     o.ShadowCoord = ComputeShadowCoord(worldPos);
     return o;
@@ -505,6 +520,20 @@ PixelInput VS_TerrainLow(VertexInput input)
         CalculateProceduralUV(worldPos, input.TexCoord),
         input.Color,
         CalculateTerrainLightingLow(worldPos, worldNormal));
+}
+
+// Medium/mobile keeps point lights in the CPU vertex colours. Its shadow
+// receiver must not pull the GL vertex-light array into this shader.
+PixelInput VS_TerrainCpuLit(VertexInput input)
+{
+    PixelInput o = (PixelInput)0;
+    o.Position = mul(float4(input.Position, 1.0), WorldViewProjection);
+    o.WorldPos = input.Position;
+    o.Normal = input.Normal;
+    o.TexCoord = CalculateProceduralUV(input.Position, input.TexCoord);
+    o.Color = input.Color;
+    o.ShadowCoord = ComputeShadowCoord(input.Position);
+    return o;
 }
 
 SnowPixelInput VS_Snow(SnowVertexInput input)
@@ -887,6 +916,7 @@ float3 ShadeObjectRgb(PixelInput input, float3 texRgb, float3 normal,
 
     float shadowFactor = saturate(lerp(1.0 - ShadowStrength, 1.0, ndotl));
     float3 baseLight = AmbientLight * shadowFactor + SunColor * (ndotl * SunStrength);
+    baseLight = lerp(baseLight, ModelBodyLight * input.Color.rgb, ModelLightingEnabled);
 
     float3 dynLight = float3(0.0, 0.0, 0.0);
     if (hasDynamicLight)
@@ -1122,6 +1152,50 @@ technique DynamicLighting_Terrain_Low
     }
 }
 
+technique DynamicLighting_Terrain_CpuLit
+{
+    pass Pass1
+    {
+        VertexShader = compile VS_SHADERMODEL VS_TerrainCpuLit();
+        PixelShader = compile PS_SHADERMODEL PS_Terrain();
+    }
+}
+
+UnlitPixelInput VS_SourceEnvironment(VertexInput input)
+{
+    UnlitPixelInput o;
+    o.Position = mul(float4(input.Position, 1.0), WorldViewProjection);
+    float3 n = mul(input.Normal, (float3x3)World);
+    float wave = frac(SourceEnvironmentTime * 0.1);
+    o.TexCoord = SourceEnvironmentMode < 0.5
+        ? float2(n.z * 0.5 + 0.2, n.y * 0.5 + 0.5)
+        : float2(n.z * 0.5 + wave, n.y * 0.5 + wave * 2.0);
+    o.Color = float4(MaterialTint, Alpha);
+    if (SourceEnvironmentMode > 1.5)
+    {
+        o.TexCoord = input.TexCoord;
+        o.Color.rgb *= min(1.2, max(0.3, dot(n, float3(1.3, 0.0, 2.0)) * 0.8 + 0.4));
+    }
+    return o;
+}
+
+float4 PS_SourceEnvironment(UnlitPixelInput input) : SV_Target
+{
+    float3 sampleColor = tex2D(SamplerState0, input.TexCoord).rgb;
+    if (SourceEnvironmentMode > 1.5)
+        return float4(dot(sampleColor, float3(0.3, 0.59, 0.11)) * 2.5 * input.Color.rgb, input.Color.a);
+    return float4(sampleColor * input.Color.rgb * input.Color.a, input.Color.a);
+}
+
+technique SourceEnvironment
+{
+    pass Pass1
+    {
+        VertexShader = compile VS_SHADERMODEL VS_SourceEnvironment();
+        PixelShader = compile PS_SHADERMODEL PS_SourceEnvironment();
+    }
+}
+
 // ============================================================================
 // SHADOW CASTERS
 // ============================================================================
@@ -1137,7 +1211,9 @@ ShadowVertexOutput ShadowVS(VertexInput input)
 {
     ShadowVertexOutput output;
     float4 worldPos = mul(float4(input.Position, 1.0), World);
-    output.Position = mul(worldPos, LightViewProjection);
+    // Match the main pass's CPU-composed transform. The SM3/GL compiler
+    // loses caster geometry with the chained World/light-matrix multiply.
+    output.Position = mul(float4(input.Position, 1.0), WorldViewProjection);
     output.TexCoord = CalculateProceduralUV(worldPos.xyz, input.TexCoord) + TextureCoordinateOffset;
     output.Depth = output.Position.zw;
     return output;

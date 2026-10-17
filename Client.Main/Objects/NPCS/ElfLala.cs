@@ -20,7 +20,8 @@ namespace Client.Main.Objects.NPCS
 
         public override async Task Load()
         {
-            ExtraHeight = 90f;
+            ExtraHeight = 140f; // MuMain MONSTER_ELF_LALA placement.
+            BlendMesh = 1; // Original luminous/translucent wings.
             Model = await BMDLoader.Instance.Prepare($"NPC/ElfWizard01.bmd");
             await base.Load();
         }

@@ -46,7 +46,7 @@ namespace Client.Main
     public class MuGame : Game
 #endif
     {
-        public static string DisplayVersion { get; set; } = "1.4.6";
+        public static string DisplayVersion { get; set; } = "1.5.5";
         public bool ConnectOnLoad { get; set; } = true;
 #if WINDOWS_DX
         public event EventHandler<TimeSpan> PreviewUpdate;
@@ -1659,10 +1659,17 @@ namespace Client.Main
 
             // --- VIRTUAL MOUSE (UI) ---
 
-            if (Touch.Count > 0)
+            int uiTouchIndex = -1;
+            for (int i = 0; i < Touch.Count; i++)
+            {
+                if (Touch[i].Id == Client.Main.Controls.UI.Game.Hud.VirtualJoystickControl.CapturedTouchId) continue;
+                uiTouchIndex = i;
+                break;
+            }
+            if (uiTouchIndex >= 0)
             {
                 // CASE 1: Touch detected (Android/Touchscreen)
-                var touch = Touch[0];
+                var touch = Touch[uiTouchIndex];
                 var touchPos = touch.Position;
 
                 // Convert touch position to virtual UI coordinates

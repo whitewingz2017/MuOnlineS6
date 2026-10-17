@@ -1047,9 +1047,12 @@ namespace Client.Main.Networking.PacketHandling.Handlers
         [PacketHandler(0x0B, PacketRouter.NoSubCode)]  // MapEventState
         public Task HandleMapEventStateAsync(Memory<byte> packet)
         {
+            if (packet.Length < MapEventState.Length)
+                return Task.CompletedTask;
             try
             {
                 var state = new MapEventState(packet);
+                _characterState.DragonInvasion.Apply((byte)state.Event, state.Enable);
                 _logger.LogInformation(
                     "Map event: {Event}, enabled={Enabled}",
                     state.Event, state.Enable);

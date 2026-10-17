@@ -897,6 +897,15 @@ namespace Client.Main.Scenes
 
         public override void Update(GameTime gameTime)
         {
+            if (MuGame.Network?.IsReconnecting == true) return;
+            // A respawn, teleport, or removal from view ends the previous selection.
+            if (_mobileTarget != null && (Hero == null || Hero.IsDead ||
+                _mobileTarget.World != World || !_mobileTarget.Visible || _mobileTarget.Hidden ||
+                _mobileTarget is MonsterObject { IsDead: true } ||
+                _mobileTarget is PlayerObject { IsDead: true } ||
+                Vector2.DistanceSquared(Hero.Location, _mobileTarget.Location) > 12 * 12 ||
+                World?.Objects.Contains(_mobileTarget) != true))
+                _mobileTarget = null;
             if (Status != GameControlStatus.Ready)
             {
                 _mapController?.UpdateLoading(gameTime);

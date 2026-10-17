@@ -71,7 +71,8 @@ namespace Client.Main.Controls.UI.Game.Common
             IReadOnlyList<(InventoryItem Item, Rectangle Rect)> entries,
             GameTime gameTime,
             float alpha,
-            Matrix? transform = null)
+            Matrix? transform = null,
+            RasterizerState raster = null)
         {
             if (entries == null || entries.Count == 0 || spriteBatch == null)
                 return;
@@ -82,7 +83,7 @@ namespace Client.Main.Controls.UI.Game.Common
                 BlendState.Additive,
                 SamplerState.PointClamp,
                 DepthStencilState.None,
-                RasterizerState.CullNone,
+                raster ?? RasterizerState.CullNone,
                 effect: null,
                 transform: transform ?? Matrix.Identity);
 

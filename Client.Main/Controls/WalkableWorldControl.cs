@@ -22,6 +22,7 @@ namespace Client.Main.Controls
         // --- Fields ---
 
         private CursorObject _cursor;
+        private readonly DragonInvasionController _dragonInvasion = new();
         private float _cursorNextMoveTime;
         private int _previousScrollValue;
         private float _targetCameraDistance;
@@ -90,6 +91,8 @@ namespace Client.Main.Controls
         {
             if (Status != GameControlStatus.Ready || !Visible)
                 return;
+
+            _dragonInvasion.Update(this, time);
 
             _cursorIntegrityCheckTimeMs -= (float)time.ElapsedGameTime.TotalMilliseconds;
             if (_cursorIntegrityCheckTimeMs <= 0f)

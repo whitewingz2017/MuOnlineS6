@@ -182,7 +182,7 @@ namespace MuAndroid
         private void ApplyAndroidDefaults()
         {
             Constants.DRAW_GRASS = false;
-            Constants.ENABLE_DYNAMIC_LIGHTS = false;
+            Constants.ENABLE_DYNAMIC_LIGHTS = true;
             Constants.ENABLE_DYNAMIC_LIGHTING_SHADER = true;
             Constants.ENABLE_TERRAIN_GPU_LIGHTING = false;
             Constants.OPTIMIZE_FOR_INTEGRATED_GPU = true;
@@ -190,8 +190,8 @@ namespace MuAndroid
             Constants.ENABLE_ITEM_MATERIAL_SHADER = true;
             Constants.ENABLE_MONSTER_MATERIAL_SHADER = true;
             Constants.ENABLE_WEAPON_TRAIL = false;
-            Constants.HIGH_QUALITY_TEXTURES = false;
-            Constants.RENDER_SCALE = 0.75f;
+            Constants.HIGH_QUALITY_TEXTURES = true;
+            Constants.RENDER_SCALE = 1.0f;
             Constants.DYNAMIC_LIGHT_UPDATE_FPS = 30;
             Constants.FOV_SCALE = 0.8f;
         }
@@ -199,7 +199,7 @@ namespace MuAndroid
         protected override void OnCreate(Bundle bundle)
         {
             base.OnCreate(bundle);
-            MuGame.DisplayVersion = PackageManager.GetPackageInfo(PackageName, 0)?.VersionName ?? "1.4.6";
+            MuGame.DisplayVersion = PackageManager.GetPackageInfo(PackageName, 0)?.VersionName ?? "1.5.5";
             MuGame.PlatformLoggerProvider = new AndroidLogcatLoggerProvider();
             Constants.SETTINGS_PATH = EnsureAndroidConfig();
             TextFieldControl.ControlType = typeof(AndroidTextFieldControl);

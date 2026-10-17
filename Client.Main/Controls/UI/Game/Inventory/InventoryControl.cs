@@ -2138,6 +2138,7 @@ namespace Client.Main.Controls.UI.Game.Inventory
             }
 
             var equipState = _networkManager?.GetCharacterState();
+            if (IsEquipmentPlacementBlocked(itemToPlace, equipSlot)) return false;
             if (equipState != null && !MuMainItemRules.MeetsRequirements(itemToPlace, equipState))
                 return false;
 
@@ -2646,7 +2647,9 @@ namespace Client.Main.Controls.UI.Game.Inventory
                 return texture;
             }
 
-            return BmdPreviewRenderer.GetOverflowPreview(item, width, height, _currentGameTime, item == _hoveredItem);
+            return item == _hoveredItem
+                ? BmdPreviewRenderer.GetSmoothRotatingPreview(item, width, height, _currentGameTime)
+                : BmdPreviewRenderer.GetMaterialAnimatedPreview(item, width, height, _currentGameTime);
         }
 
         private bool SelectBeforePickup(InventoryItem item, int equipSlot, bool selectFirst)

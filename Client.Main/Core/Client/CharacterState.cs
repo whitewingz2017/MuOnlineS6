@@ -118,6 +118,7 @@ namespace Client.Main.Core.Client
         public byte PositionX { get; set; } = 0;
         public byte PositionY { get; set; } = 0;
         public ushort MapId { get; set; } = 0;
+        public DragonInvasionState DragonInvasion { get; } = new();
         public byte Direction { get; set; } = 0; // Default direction, e.g., West
 
         /// <summary>

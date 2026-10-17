@@ -12,8 +12,8 @@
 
     <OutputType>Exe</OutputType>
     <ApplicationId>TwinMu.TwinMu</ApplicationId>
-    <ApplicationVersion>36</ApplicationVersion>
-    <ApplicationDisplayVersion>1.4.6</ApplicationDisplayVersion>
+    <ApplicationVersion>45</ApplicationVersion>
+    <ApplicationDisplayVersion>1.5.5</ApplicationDisplayVersion>
 
     <AndroidManifest>AndroidManifest.xml</AndroidManifest>
     <MonoGamePlatform>Android</MonoGamePlatform>

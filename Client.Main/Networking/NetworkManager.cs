@@ -58,6 +58,10 @@ namespace Client.Main.Networking
 
         private string _currentHost = string.Empty; // Host of current connection
         private int _currentPort; // Port of current connection
+        private string _sessionUser, _sessionPassword, _reconnectCharacter;
+        private long _lastAliveSentTicks;
+        private int _reconnecting;
+        public bool IsReconnecting => Volatile.Read(ref _reconnecting) != 0;
 
         // Events
         public event EventHandler<ClientConnectionState> ConnectionStateChanged;
@@ -75,7 +79,31 @@ namespace Client.Main.Networking
         public ClientConnectionState CurrentState => _currentState;
         public bool IsConnected => _connectionManager.IsConnected;
         public CharacterState GetCharacterState() => _characterState;
-        public void UpdateBuffs() => _packetRouter.UpdateBuffs();
+        public void UpdateBuffs()
+        {
+            _packetRouter.UpdateBuffs();
+            if (_currentState == ClientConnectionState.InGame && !IsReconnecting &&
+                DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastAliveSentTicks) > TimeSpan.FromSeconds(20).Ticks)
+            {
+                Interlocked.Exchange(ref _lastAliveSentTicks, DateTime.UtcNow.Ticks);
+                _ = ReportAliveAsync();
+            }
+        }
+
+        private async Task ReportAliveAsync()
+        {
+            try
+            {
+                await MUnique.OpenMU.Network.Packets.ClientToServer.ConnectionExtensions.SendPingAsync(
+                    _connectionManager.Connection, unchecked((uint)Environment.TickCount), _characterState.AttackSpeed)
+                    .AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (Exception error)
+            {
+                _logger.LogWarning(error, "Game heartbeat failed.");
+                await HandleDisconnectAsync();
+            }
+        }
         public Task SendClientReadyAfterMapChangeAsync()
             => _characterService.SendClientReadyAfterMapChangeAsync();
 
@@ -423,6 +451,8 @@ namespace Client.Main.Networking
                 return;
             }
             _logger.LogInformation("Sending login request for user: {Username}", username);
+            _sessionUser = username;
+            _sessionPassword = password; // In memory only, to restore this session.
             UpdateState(ClientConnectionState.Authenticating);
             await _loginService.SendLoginRequestAsync(username, password);
         }
@@ -559,6 +589,10 @@ namespace Client.Main.Networking
 
         internal void UpdateState(ClientConnectionState newState)
         {
+            if (newState == ClientConnectionState.Disconnected ||
+                newState == ClientConnectionState.SelectingCharacter)
+                _characterState.DragonInvasion.Reset();
+
             if (_currentState != newState)
             {
                 var oldState = _currentState;
@@ -596,7 +630,15 @@ namespace Client.Main.Networking
         }
 
         internal void ProcessCharacterList(List<(string Name, CharacterClassNumber Class, ushort Level, byte[] Appearance)> characters)
-        {            // If we receive a character list while in-game (e.g., returning to character selection),
+        {
+            if (IsReconnecting)
+            {
+                _lastCharacterList = characters;
+                if (characters?.Any(c => c.Name == _reconnectCharacter) == true)
+                    _ = SendSelectCharacterRequestAsync(_reconnectCharacter);
+                return;
+            }
+            // If we receive a character list while in-game (e.g., returning to character selection),
             // normalize the state back to ConnectedToGameServer so UI can select a character without rejection.
             if (_currentState == ClientConnectionState.InGame)
             {
@@ -685,6 +727,7 @@ namespace Client.Main.Networking
             _logger.LogInformation(">>> ProcessGameServerEntered: Received welcome packet. Calling UpdateState(ConnectedToGameServer)...");
             UpdateState(ClientConnectionState.ConnectedToGameServer);
             _logger.LogInformation("<<< ProcessGameServerEntered: UpdateState called.");
+            if (IsReconnecting) _ = SendLoginRequestAsync(_sessionUser, _sessionPassword);
         }
 
         internal void ProcessLoginSuccess()
@@ -708,6 +751,11 @@ namespace Client.Main.Networking
             else
             {
                 string reasonString = result.ToString();
+                if (IsReconnecting)
+                {
+                    UpdateState(ClientConnectionState.ConnectedToGameServer);
+                    return;
+                }
                 _logger.LogError("Login failed: {ReasonString}", reasonString);
                 OnErrorOccurred($"Login failed: {reasonString}");
                 MuGame.ScheduleOnMainThread(() =>
@@ -721,6 +769,7 @@ namespace Client.Main.Networking
 
         internal async Task ProcessLogoutResponseAsync(LogOutType type)
         {
+            _sessionPassword = null;
             _logger.LogInformation(">>> ProcessLogoutResponse: Received logout response type {Type}", type);
             _characterState.IsInGame = false;
 
@@ -792,6 +841,11 @@ namespace Client.Main.Networking
 
             _logger.LogInformation(">>> ProcessCharacterInformation: Character selected successfully. Updating state to InGame and raising EnteredGame event...");
             UpdateState(ClientConnectionState.InGame); // Change state (this will schedule ConnectionStateChanged)
+            if (IsReconnecting)
+            {
+                Interlocked.Exchange(ref _reconnecting, 0);
+                MuGame.ScheduleOnMainThread(() => MuGame.Instance.ChangeScene(new GameScene()));
+            }
 
             _logger.LogInformation("--- ProcessCharacterInformation: Raising EnteredGame event directly...");
             try
@@ -841,7 +895,62 @@ namespace Client.Main.Networking
             _logger.LogWarning("Connection lost. Previous state: {PreviousState}", previousState);
             UpdateState(ClientConnectionState.Disconnected);
 
+            if ((previousState == ClientConnectionState.InGame || IsReconnecting) &&
+                !string.IsNullOrEmpty(_sessionPassword))
+            {
+                if (Interlocked.CompareExchange(ref _reconnecting, 1, 0) == 0)
+                {
+                    _reconnectCharacter = _characterState.Name;
+                    MuGame.ScheduleOnMainThread(() =>
+                    {
+                        if (MuGame.Instance.ActiveScene is GameScene scene)
+                        {
+                            scene.Hero?.StopMovement();
+                            Client.Main.Controls.UI.MessageWindow.Show("Connection lost. Reconnecting...");
+                        }
+                    });
+                    _ = RestoreSessionAsync();
+                }
+                return ValueTask.CompletedTask;
+            }
             return new ValueTask(_packetRouter.OnDisconnected());
+        }
+
+        private async Task RestoreSessionAsync()
+        {
+            try
+            {
+                for (int attempt = 0; attempt < 36 && IsReconnecting; attempt++)
+                {
+                    if (_connectionManager.IsConnected)
+                    {
+                        var old = _connectionManager.Connection;
+                        old.PacketReceived -= HandlePacketAsync;
+                        old.Disconnected -= HandleDisconnectAsync;
+                    }
+                    await _connectionManager.DisconnectAsync();
+                    await Task.Delay(TimeSpan.FromSeconds(5), _managerCts.Token);
+                    if (!IsReconnecting) return;
+                    UpdateState(ClientConnectionState.ConnectingToGameServer);
+                    _packetRouter.SetRoutingMode(false);
+                    if (await _connectionManager.ConnectAsync(_currentHost, _currentPort, true, _managerCts.Token))
+                    {
+                        var connection = _connectionManager.Connection;
+                        connection.PacketReceived += HandlePacketAsync;
+                        connection.Disconnected += HandleDisconnectAsync;
+                        _connectionManager.StartReceiving(_managerCts.Token);
+                        for (int wait = 0; wait < 100 && IsReconnecting; wait++)
+                            await Task.Delay(100, _managerCts.Token);
+                    }
+                }
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception error) { _logger.LogWarning(error, "Unable to restore the game session."); }
+            if (Interlocked.Exchange(ref _reconnecting, 0) != 0)
+            {
+                _sessionPassword = null;
+                MuGame.ScheduleOnMainThread(() => MuGame.Instance.ChangeScene(new LoginScene()));
+            }
         }
 
         private static byte[] BuildClientVersionBytes(string clientVersion, ILogger logger)

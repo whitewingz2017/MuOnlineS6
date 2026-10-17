@@ -195,9 +195,13 @@ namespace Client.Main.Controls.UI.Game.Inventory
             if (dragged == null) return false;
             if (_equippedItems.TryGetValue(slot, out var occupant) && !ReferenceEquals(occupant, dragged)) return true;
             int expected = dragged.Definition.EquipmentSlot;
+            int baseClass = ((int)(_networkManager?.GetCharacterState().Class ?? 0)) & 0xF0;
+            bool canDualWield = baseClass is 0x10 or 0x30 or 0x60 ||
+                baseClass == 0x50 && dragged.Definition.Group != 5;
             bool matches = expected == slot || expected == 10 && slot == 11 || expected == 11 && slot == 10 ||
-                expected == 0 && slot == 1 && !dragged.Definition.TwoHanded;
+                expected == 0 && slot == 1 && !dragged.Definition.TwoHanded && canDualWield;
             if (!matches) return true;
+            if (slot == 1 && _equippedItems.TryGetValue(0, out var right) && right.Definition.TwoHanded) return true;
             if (slot == 0 && dragged.Definition.TwoHanded && _equippedItems.ContainsKey(1)) return true;
             var state = _networkManager?.GetCharacterState();
             return state != null && !Core.Utilities.MuMainItemRules.MeetsRequirements(dragged, state);

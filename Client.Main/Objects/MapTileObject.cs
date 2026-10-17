@@ -15,6 +15,7 @@ namespace Client.Main.Objects
         {
             BlendState = BlendState.AlphaBlend;
             RenderShadow = false;
+            CastShadowMap = true;
         }
 
         public override async Task Load()

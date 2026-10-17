@@ -492,7 +492,7 @@ namespace Client.Main.Controls.Terrain
             ResetMetrics();
             _grassRenderer.ResetMetrics();
 
-            _useDynamicLightingShader = Constants.ENABLE_TERRAIN_GPU_LIGHTING &&
+            _useDynamicLightingShader = (Constants.ENABLE_TERRAIN_GPU_LIGHTING || Constants.ENABLE_SHADOW_MAPPING) &&
                                         Constants.ENABLE_DYNAMIC_LIGHTING_SHADER &&
                                         GraphicsManager.Instance.DynamicLightingEffect != null;
             _useTerrainIndexBatching = false;
@@ -506,7 +506,7 @@ namespace Client.Main.Controls.Terrain
                 var effect = GraphicsManager.Instance.DynamicLightingEffect;
 
                 // Enable index batching only when the shader supports procedural terrain UVs.
-                if (EnableTerrainIndexBatching && PreferIndexBatching && SupportsProceduralTerrainUv(effect))
+                if (Constants.ENABLE_TERRAIN_GPU_LIGHTING && EnableTerrainIndexBatching && PreferIndexBatching && SupportsProceduralTerrainUv(effect))
                 {
                     EnsureTerrainVertexBuffers();
                     _useTerrainIndexBatching = _terrainVertexBufferBase != null &&
@@ -573,6 +573,10 @@ namespace Client.Main.Controls.Terrain
                     Snow.AmbientLight = AmbientLight;
                     Snow.Draw(_useDynamicLightingShader ? GraphicsManager.Instance.DynamicLightingEffect : null, opaqueOnly: true);
                     _lastBoundTexture = null;
+                    // Snow uses the same Effect and may replace its technique and
+                    // texture/UV bindings. Re-establish the complete terrain pass.
+                    if (_useDynamicLightingShader)
+                        ConfigureDynamicLightingEffect();
                     ApplyTerrainTextureSampler();
                 }
 
@@ -1066,10 +1070,11 @@ namespace Client.Main.Controls.Terrain
                 _useTerrainIndexBatching = false;
                 _graphicsDevice.BlendState = BlendState.Opaque;
                 _graphicsDevice.DepthStencilState = DepthStencilState.Default;
-                _graphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
+                _graphicsDevice.RasterizerState = RasterizerState.CullNone;
 
                 shadowEffect.CurrentTechnique = shadowEffect.Techniques["ShadowCaster"];
                 shadowEffect.Parameters["World"]?.SetValue(Matrix.Identity);
+                shadowEffect.Parameters["WorldViewProjection"]?.SetValue(lightViewProjection);
                 shadowEffect.Parameters["LightViewProjection"]?.SetValue(lightViewProjection);
                 shadowEffect.Parameters["ShadowMapTexelSize"]?.SetValue(
                     new Vector2(1f / Constants.SHADOW_MAP_SIZE, 1f / Constants.SHADOW_MAP_SIZE));
@@ -1178,7 +1183,9 @@ namespace Client.Main.Controls.Terrain
             effect.Parameters["World"]?.SetValue(world);
             effect.Parameters["WorldViewProjection"]?.SetValue(world * Camera.Instance.ViewProjection);
             // Use terrain-specific technique, with a reduced variant for integrated GPUs.
-            string preferredTechnique = Constants.OPTIMIZE_FOR_INTEGRATED_GPU
+            string preferredTechnique = !Constants.ENABLE_TERRAIN_GPU_LIGHTING
+                ? "DynamicLighting_Terrain_CpuLit"
+                : Constants.OPTIMIZE_FOR_INTEGRATED_GPU
                 ? "DynamicLighting_Terrain_Low"
                 : "DynamicLighting_Terrain";
             var terrainTechnique = TryGetTechnique(effect, preferredTechnique) ??
@@ -1197,6 +1204,9 @@ namespace Client.Main.Controls.Terrain
             effect.Parameters["TerrainDynamicIntensityScale"]?.SetValue(1.0f);
             effect.Parameters["Alpha"]?.SetValue(1f);
             effect.Parameters["TextureCoordinateOffset"]?.SetValue(Vector2.Zero);
+            effect.Parameters["ModelLightingEnabled"]?.SetValue(0f);
+            effect.Parameters["MaterialTint"]?.SetValue(Vector3.One);
+            effect.Parameters["AdditiveAlphaCutoff"]?.SetValue(0f);
             effect.Parameters["DebugLightingAreas"]?.SetValue(Constants.DEBUG_LIGHTING_AREAS ? 1.0f : 0.0f);
 
             // Ambient and sun are ignored when using baked vertex lighting, but keep sane defaults.
@@ -2016,7 +2026,7 @@ namespace Client.Main.Controls.Terrain
             _tempTerrainLights[3] = GetVertexBaseLight(i4);
 
             // CPU fallback path: bake dynamic lights into vertex color (shader path does dynamic lighting on GPU).
-            if (!_useDynamicLightingShader && _data.FinalLightMap != null)
+            if (!Constants.ENABLE_TERRAIN_GPU_LIGHTING && _data.FinalLightMap != null)
             {
                 ApplyCpuDynamicLight(ref _tempTerrainLights[0], _tempTerrainVertex[0]);
                 ApplyCpuDynamicLight(ref _tempTerrainLights[1], _tempTerrainVertex[1]);
@@ -2419,6 +2429,7 @@ namespace Client.Main.Controls.Terrain
             }
 
             effect.Parameters["TerrainUvScale"]?.SetValue(_tileUvScaleWorld[textureIndex]);
+            effect.Parameters["UseProceduralTerrainUV"]?.SetValue(1f);
             bool noFlow = WaterSpeed == 0f && DistortionAmplitude == 0f;
             float isWater = textureIndex == 5 && !noFlow ? 1.0f : 0.0f;
             effect.Parameters["IsWaterTexture"]?.SetValue(isWater);
@@ -2550,6 +2561,11 @@ namespace Client.Main.Controls.Terrain
                     var effect = GraphicsManager.Instance.DynamicLightingEffect;
                     if (effect == null || effect.CurrentTechnique == null)
                         return;
+
+                    // Streamed edge/LOD tiles carry explicit UVs. They may follow an
+                    // indexed batch which left procedural sampling enabled.
+                    effect.Parameters["UseProceduralTerrainUV"]?.SetValue(0f);
+                    effect.Parameters["IsWaterTexture"]?.SetValue(0f);
 
                     if (_lastBoundTexture != texture)
                     {

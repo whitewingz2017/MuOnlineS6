@@ -398,6 +398,10 @@ namespace Client.Main.Objects
             }
         }
         public float AnimationSpeed { get; set; } = 4f;
+        // Map scenery uses the bounded directional map, without forcing costly
+        // projected-mesh fallback shadows when it is outside the caster budget.
+        public bool CastShadowMap { get; set; }
+        public bool CastsDirectionalShadow => RenderShadow || CastShadowMap;
         public bool ContinuousAnimation { get; set; }
 
         /// <summary>
@@ -475,6 +479,8 @@ namespace Client.Main.Objects
         protected virtual bool AllowAnimationUpdates => true;
         protected virtual bool AllowLightingUpdates => true;
         protected virtual bool AllowDynamicLightingShader => true;
+        protected virtual bool UseSourceModelLighting =>
+            LightEnabled && (this is WalkerObject || HasWalkerAncestor());
         /// <summary>
         /// Allows legacy models with unsupported or unusual skin data to opt out of the
         /// GPU-skinned path and use the same CPU geometry path as the inventory preview.

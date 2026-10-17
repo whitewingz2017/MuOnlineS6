@@ -620,7 +620,9 @@ namespace Client.Main.Graphics
             if (worldObject is not ModelObject model)
                 return;
 
-            if (!model.Visible || model.Status == GameControlStatus.Disposed || !model.RenderShadow)
+            if (!model.Visible || model.Status == GameControlStatus.Disposed || !model.CastsDirectionalShadow)
+                return;
+            if (model.TotalAlpha <= 0f || SourceItemMaterialRules.IsAdditive(model.BlendState))
                 return;
 
             Vector3 objectPosition = model.WorldPosition.Translation;

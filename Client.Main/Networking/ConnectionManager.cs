@@ -102,7 +102,30 @@ namespace Client.Main.Networking
 
                 // Create new SocketConnection
                 var pipeOptions = new PipeOptions();
-                newSocketConn = await SocketConnection.ConnectAsync(endPoint, pipeOptions);
+                using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                connectTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+                var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                try
+                {
+                    socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                    try
+                    {
+                        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 15);
+                        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 5);
+                        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3);
+                    }
+                    catch (SocketException ex)
+                    {
+                        _logger.LogDebug(ex, "Using the operating system's default TCP keepalive timings.");
+                    }
+                    await socket.ConnectAsync(endPoint, connectTimeout.Token);
+                    newSocketConn = SocketConnection.Create(socket, pipeOptions);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
                 _logger.LogInformation("✔️ Socket connected to {EndPoint}. Socket HashCode: {HashCode}", endPoint, newSocketConn.GetHashCode());
 
                 var connectionLogger = _loggerFactory.CreateLogger<Connection>();
